@@ -35,6 +35,10 @@
   }
 }
 
+.toolbar-pf#paging_div input#masterToggle {
+  margin-top: 6px;
+}
+
 .toolbar-pf#paging_div ul.pagination {
   margin: 0;
 }
@@ -73,7 +77,7 @@
 
 li.brand-white-label.whitelabeled {
   margin-top: 10px;
-  width: 350px;
+  width: 320px;
   height: 38px;
   background: url(/upload/custom_logo.png) right top no-repeat;
   background-size: auto 38px;
@@ -201,6 +205,10 @@ table.table tbody td img {
   vertical-align: top;
 }
 
+.table-borderless tbody tr td, .table-borderless tbody tr th, .table-borderless thead tr th {
+  border: none;
+}
+
 /* Report widget table customizations */
 
 .panel-body {
@@ -224,6 +232,13 @@ table .narrow {
   white-space: nowrap;
 }
 
+table .narrow i { /* font icon styling in table view (equivalent to fa-lg) */
+  padding-left: 2px;
+  font-size: 1.33333333em;
+  line-height: 0.75em;
+  vertical-align: -15%;
+}
+
 /* disables hover and pointer on row */
 
 table.table-hover tbody tr:nth-child(odd).no-hover:hover td {
@@ -236,7 +251,17 @@ table.table-hover tbody tr:nth-child(even).no-hover:hover td {
 
 /* summary screen formatting */
 
-table .label {display: table-cell;width: 20% !important; min-width: 200px; font: normal 12px OpenSansSemibold,Arial,Helvetica,sans-serif;cursor: default;color: #333; text-align: left;}
+.table-summary-screen .label {
+  display: table-cell;
+  width: 20% !important;
+  padding-top: 6px;
+  min-width: 200px;
+  font: normal 12px OpenSansSemibold,Arial,Helvetica,sans-serif;
+  cursor: default;
+  color: #333;
+  text-align: left;
+  white-space: normal
+}
 
 table.table.table-selectable tbody tr.selected td {
   background-color: $link-color;
@@ -368,12 +393,6 @@ iframe, .iframe {
 
 .toolbar-pf-actions .btn-group.dropdown > button > img {
   padding-right: 3px;
-}
-
-/* Adds padding between buttons when they wrap */
-
-.toolbar-pf .toolbar-pf-actions .form-group {
-  margin-bottom: 10px !important
 }
 
 /* sets width to auto for bootstrap-select */
@@ -514,7 +533,129 @@ body#dashboard {
   }
 }
 
+/* custom modal class for Entry Point (creates scrollable area) */
+#automate_treebox {
+  height: 350px !important;
+  overflow-y: auto !important;
+}
 /* scrollable */
 .scrollable {
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* error modal */
+
+.error-modal-miq {
+  & .error-icon {
+    font-size: xx-large;
+    margin-top: 16px;
+  }
+}
+
+/* begin toolbar styling (to be moved to the ui-components repo) */
+
+.toolbar-pf .form-group { /*compensates for filter-pf not being implemented */
+  padding-left: 0;
+}
+
+.toolbar-pf-actions .btn-group .dropdown button img { /* styling for images (not part of toolbar-pf) */
+  padding-right: 3px;
+}
+
+.toolbar-pf .toolbar-pf-actions .form-group { /* adds padding between buttons when they wrap */
+  margin-bottom: 10px;
+}
+
+.toolbar-pf-actions { /* removes double paddding resulting from ^ */
+  margin-bottom: 0px;
+}
+
+.toolbar-pf .form-group .btn,
+.toolbar-pf .form-group .btn-group { /* overrides _toolbar.scss to account for intermediate Angular markup */
+  margin-left: 5px;
+}
+
+.form-group.miq-toolbar-group { /* fixes the display for the main dashboard toolbar only */
+  display: inline-block;
+  .miq-custom-html {
+    form {
+      display: inline-block;
+    }
+    .form-group {
+      margin-bottom: 0 !important;
+      border-right: 0;
+      &:last-child {
+        padding-right: 0px
+      }
+    }
+  }
+}
+
+/* end toolbar styling */
+
+.secondary-collapse-toggle-pf, .tertiary-collapse-toggle-pf {
+  &:before {
+    content: '\f08d';
+  }
+  &.collapsed {
+    &:before {
+      content: '\f08d';
+      display: inline-block;
+      transform: rotate(45deg);
+      -ms-transform: rotate(45deg);
+      -webkit-transform: rotate(45deg);
+    }
+  }
+}
+
+// Navbar item badge position and color
+.navbar-pf-vertical .nav .nav-item-iconic {
+  &.drawer-pf-trigger-icon {
+    width: 40px;
+  }
+  .badge {
+    position: relative;
+    top: -23px;
+    right : -10px;
+    margin: 0px;
+    min-width: 13px;
+    background-color: #0088ce;
+  }
+}
+
+// Toast notifications positioning
+.toast-notifications-list-pf {
+  top: 65px
+}
+
+// Notifications drawer positioning
+.drawer-pf {
+  bottom: 20px;
+  position: absolute;
+  top: 60px;
+  z-index: 950;
+  .panel-body {
+    margin: 0;
+  }
+}
+.drawer-pf.vertical-scroll {
+  right: 15px;
+}
+
+// Panel in sidebar doesn't need bottom margin
+.sidebar-pf-left {
+  .panel-group {
+    margin-bottom: 0px;
+  }
+}
+
+table .label {  // Adds margin to the label to vertically align with text
+  margin-top: 3px;
+}
+
+//  openSCAP result styling
+
+.label-low-severity {
+  background-color: $color-low-severity;
 }

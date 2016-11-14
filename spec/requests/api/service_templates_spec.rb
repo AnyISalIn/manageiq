@@ -6,7 +6,7 @@
 # - Delete service template             /api/service_templates/:id    DELETE
 # - Delete multiple service templates   /api/service_templates        action "delete"
 #
-describe ApiController do
+describe "Service Templates API" do
   let(:dialog1)    { FactoryGirl.create(:dialog, :label => "ServiceDialog1") }
   let(:dialog2)    { FactoryGirl.create(:dialog, :label => "ServiceDialog2") }
 
@@ -49,7 +49,8 @@ describe ApiController do
       run_get service_templates_url(template.id), :attributes => "picture"
 
       expect_result_to_have_keys(%w(id href picture))
-      expect_result_to_match_hash(response_hash, "id" => template.id, "href" => service_templates_url(template.id))
+      expected = {"id" => template.id, "href" => service_templates_url(template.id)}
+      expect_result_to_match_hash(response.parsed_body, expected)
     end
 
     it "allows queries of the related picture and image_href" do
@@ -58,7 +59,7 @@ describe ApiController do
       run_get service_templates_url(template.id), :attributes => "picture,picture.image_href"
 
       expect_result_to_have_keys(%w(id href picture))
-      expect_result_to_match_hash(response_hash["picture"],
+      expect_result_to_match_hash(response.parsed_body["picture"],
                                   "id"          => picture.id,
                                   "resource_id" => template.id,
                                   "image_href"  => /^http:.*#{picture.image_href}$/)
@@ -156,6 +157,45 @@ describe ApiController do
 
       expect { st1.reload }.to raise_error(ActiveRecord::RecordNotFound)
       expect { st2.reload }.to raise_error(ActiveRecord::RecordNotFound)
+    end
+
+    it "can delete a service template through its nested URI" do
+      service_catalog = FactoryGirl.create(:service_template_catalog)
+      service_template = FactoryGirl.create(:service_template, :service_template_catalog => service_catalog)
+      api_basic_authorize action_identifier(:service_templates, :delete, :subresource_actions, :delete)
+
+      expect do
+        run_delete("#{service_catalogs_url(service_catalog.id)}/service_templates/#{service_template.id}")
+      end.to change(ServiceTemplate, :count).by(-1)
+
+      expect(response).to have_http_status(:no_content)
+    end
+  end
+
+  describe "service requests subcollection" do
+    it "can list a service template's service requests" do
+      service_template = FactoryGirl.create(:service_template)
+      service_request = FactoryGirl.create(:service_template_provision_request,
+                                           :requester => @user,
+                                           :source    => service_template)
+      api_basic_authorize(action_identifier(:service_requests, :read, :subcollection_actions, :get))
+
+      run_get("#{service_templates_url(service_template.id)}/service_requests")
+
+      expected = {
+        "count"     => 1,
+        "subcount"  => 1,
+        "name"      => "service_requests",
+        "resources" => [
+          {
+            "href" => a_string_matching(
+              "#{service_templates_url(service_template.id)}/service_requests/#{service_request.id}"
+            )
+          }
+        ]
+      }
+      expect(response.parsed_body).to include(expected)
+      expect(response).to have_http_status(:ok)
     end
   end
 end

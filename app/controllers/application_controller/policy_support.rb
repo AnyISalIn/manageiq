@@ -17,11 +17,6 @@ module ApplicationController::PolicySupport
       changed = (@edit[:new] != @edit[:current])
       render :update do |page|
         page << javascript_prologue
-        if @edit[:new][profile_id] == @edit[:current][profile_id]
-          page << "miqDynatreeNodeAddClass('#{j_str(session[:tree_name])}', 'policy_profile_#{profile_id}','dynatree-title')"
-        else
-          page << "miqDynatreeNodeAddClass('#{j_str(session[:tree_name])}', 'policy_profile_#{profile_id}', 'cfme-blue-bold-node')"
-        end
         if changed != session[:changed]
           session[:changed] = changed
           page << javascript_for_miq_button_visibility(changed)
@@ -90,7 +85,7 @@ module ApplicationController::PolicySupport
                     :url  => "/#{request.parameters["controller"]}/policy_sim?continue=true")
     session[:policies] = {} unless params[:continue]  # Clear current policies, unless continuing previous simulation
     policy_sim_build_screen
-    @tabs = [["polsim", nil], ["polsim", "Policy Simulation"]]
+
     if @explorer
       @record = @tagitems.first
       @in_a_form = true
@@ -110,10 +105,7 @@ module ApplicationController::PolicySupport
       session[:policies][prof.id] = prof.description            # Add it to the list
     end
     policy_sim_build_screen
-    render :update do |page|
-      page << javascript_prologue
-      page.replace_html("main_div", :partial => "layouts/policy_sim")
-    end
+    replace_main_div :partial => "layouts/policy_sim"
   end
 
   # Remove selected policy from the simulation
@@ -121,10 +113,7 @@ module ApplicationController::PolicySupport
     @edit = session[:edit]
     session[:policies].delete(params[:del_pol].to_i)
     policy_sim_build_screen
-    render :update do |page|
-      page << javascript_prologue
-      page.replace_html("main_div", :partial => "layouts/policy_sim")
-    end
+    replace_main_div :partial => "layouts/policy_sim"
   end
 
   def profile_build
@@ -153,11 +142,7 @@ module ApplicationController::PolicySupport
         end
       end
     else
-      add_flash(_("Button not yet implemented"), :error)
-      render :update do |page|
-        page << javascript_prologue
-        page.replace(:flash_msg_div, :partial => "layouts/flash_msg")
-      end
+      render_flash(_("Button not yet implemented"), :error)
     end
   end
 
@@ -186,13 +171,11 @@ module ApplicationController::PolicySupport
       protect
       @refresh_partial = "layouts/protect"
     else
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to :action => 'protect'   # redirect to build policy screen
-      end
+      javascript_redirect :action => 'protect' # redirect to build policy screen
     end
   end
-  %w(image instance vm miq_template container_image ems_container).each do |old_name|
+  %w(image instance vm miq_template
+     container_replicator container_group container_node container_image ems_container).each do |old_name|
     alias_method "#{old_name}_protect".to_sym, :assign_policies
   end
 
@@ -220,8 +203,14 @@ module ApplicationController::PolicySupport
     @edit[:current] = @edit[:new].dup                 # Save the existing counts
     session[:changed] = false
     @in_a_form = true
-    protect_build_tree                                # Build the protect tree
+    protect_build_tree
     build_targets_hash(@politems)
+  end
+
+  def protect_build_tree
+    @edit[:controller_name] = controller_name
+    @edit[:pol_items] = session[:pol_items]
+    @protect_tree = TreeBuilderProtect.new(:protect, :protect_tree, @sb, true, @edit)
   end
 
   # Create policy assignment audit record

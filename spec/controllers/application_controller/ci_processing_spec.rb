@@ -2,7 +2,7 @@ describe ApplicationController do
   before do
     EvmSpecHelper.local_miq_server
     login_as FactoryGirl.create(:user, :features => "everything")
-    allow(controller).to receive(:role_allows).and_return(true)
+    allow(controller).to receive(:role_allows?).and_return(true)
   end
 
   context "Verify proper methods are called for snapshot" do
@@ -90,6 +90,38 @@ describe ApplicationController do
     end
   end
 
+  describe "#supports_reconfigure_disks?" do
+    let(:vm) { FactoryGirl.create(:vm_redhat) }
+
+    context "when a single is vm selected" do
+      let(:supports_reconfigure_disks) { true }
+      before(:each) do
+        allow(vm).to receive(:supports_reconfigure_disks?).and_return(supports_reconfigure_disks)
+        controller.instance_variable_set(:@reconfigitems, [vm])
+      end
+
+      context "when vm supports reconfiguring disks" do
+        it "enables reconfigure disks" do
+          expect(controller.send(:supports_reconfigure_disks?)).to be_truthy
+        end
+      end
+      context "when vm does not supports reconfiguring disks" do
+        let(:supports_reconfigure_disks) { false }
+        it "disables reconfigure disks" do
+          expect(controller.send(:supports_reconfigure_disks?)).to be_falsey
+        end
+      end
+    end
+
+    context "when multiple vms selected" do
+      let(:vm1) { FactoryGirl.create(:vm_redhat) }
+      it "disables reconfigure disks" do
+        controller.instance_variable_set(:@reconfigitems, [vm, vm1])
+        expect(controller.send(:supports_reconfigure_disks?)).to be_falsey
+      end
+    end
+  end
+
   context "#discover" do
     it "checks that keys in @to remain set if there is an error after submit is pressed" do
       from_first = "1"
@@ -171,7 +203,7 @@ describe ApplicationController do
     end
   end
 
-  describe "#ownership_build_screen" do
+  describe "#build_ownership_info" do
     let(:child_role)                     { FactoryGirl.create(:miq_user_role, :name => "Role_1") }
     let(:grand_child_tenant_role)        { FactoryGirl.create(:miq_user_role, :name => "Role_2") }
     let(:great_grand_child_tenant_role)  { FactoryGirl.create(:miq_user_role, :name => "Role_3") }
@@ -201,41 +233,38 @@ describe ApplicationController do
 
     before do
       @vm_or_template = FactoryGirl.create(:vm_or_template)
-      @edit = {:ownership_items => [@vm_or_template.id], :klass => VmOrTemplate, :new => {:user => nil}}
+      @ownership_items = [@vm_or_template.id]
+      @params = {:controller =>'vm_or_template'}
+      @user = nil
     end
 
-    it "lists all groups when (admin user is logged)" do
+    it "lists all non-tenant groups when (admin user is logged)" do
       login_as(admin_user)
-      controller.instance_variable_set(:@edit, @edit)
-      controller.ownership_build_screen
+      controller.instance_variable_set(:@_params, @params)
+      controller.instance_variable_set(:@user, @user)
+
+      controller.build_ownership_info(@ownership_items)
       groups = controller.instance_variable_get(:@groups)
-      expect(groups.count).to eq(MiqGroup.count)
+      expect(groups.count).to eq(MiqGroup.non_tenant_groups.count)
     end
 
     it "lists all users when (admin user is logged)" do
       login_as(admin_user)
-      controller.instance_variable_set(:@edit, @edit)
-      controller.ownership_build_screen
+      controller.instance_variable_set(:@_params, @params)
+      controller.instance_variable_set(:@user, @user)
+      controller.build_ownership_info(@ownership_items)
       users = controller.instance_variable_get(:@users)
       expect(users.count).to eq(User.all.count)
     end
 
     it "lists users in the tenant that the user belongs to and the users in the tenants below" do
       login_as(grand_child_user)
-      controller.instance_variable_set(:@edit, @edit)
-      controller.ownership_build_screen
+      controller.instance_variable_set(:@_params, @params)
+      controller.instance_variable_set(:@user, @user)
+      controller.build_ownership_info(@ownership_items)
       users = controller.instance_variable_get(:@users)
       expected_ids = [great_grand_child_tenant.user_ids, grand_child_tenant.user_ids].flatten
       expect(expected_ids).to match_array(users.values(&:id).map(&:to_i))
-    end
-
-    it "lists all groups that are related to descendants tenats strategy" do
-      login_as(grand_child_user)
-      controller.instance_variable_set(:@edit, @edit)
-      controller.ownership_build_screen
-      groups = controller.instance_variable_get(:@groups)
-      expected_ids = [great_grand_child_tenant.miq_group_ids, grand_child_tenant.miq_group_ids].flatten
-      expect(expected_ids).to match_array(groups.values(&:id).map(&:to_i))
     end
   end
 end
@@ -243,7 +272,7 @@ end
 describe HostController do
   context "#show_association" do
     before(:each) do
-      set_user_privileges
+      stub_user(:features => :all)
       EvmSpecHelper.create_guid_miq_server_zone
       @host = FactoryGirl.create(:host)
       @guest_application = FactoryGirl.create(:guest_application, :name => "foo", :host_id => @host.id)
@@ -328,9 +357,67 @@ describe HostController do
                               :ext_management_system => FactoryGirl.create(:ems_openstack_infra),
                               :storage               => FactoryGirl.create(:storage)
                              )
-      controller.instance_variable_set(:@_params, :miq_grid_checks => "#{vm.id}")
+      controller.instance_variable_set(:@_params, :miq_grid_checks => vm.id.to_s)
       expect(controller).to receive(:process_objects)
       controller.send(:vm_button_operation, 'scan', "Smartstate Analysis")
+    end
+  end
+end
+
+describe ServiceController do
+  context "#vm_button_operation" do
+    before do
+      _guid, @miq_server, @zone = EvmSpecHelper.remote_guid_miq_server_zone
+      allow(MiqServer).to receive(:my_zone).and_return("default")
+      controller.instance_variable_set(:@lastaction, "show_list")
+    end
+
+    it "should render flash message when trying to retire a template" do
+      controller.request.parameters["controller"] = "vm_or_template"
+      vm = FactoryGirl.create(:vm_vmware,
+                              :ext_management_system => FactoryGirl.create(:ems_openstack_infra),
+                              :storage               => FactoryGirl.create(:storage)
+                             )
+      template = FactoryGirl.create(:template,
+                                    :ext_management_system => FactoryGirl.create(:ems_openstack_infra),
+                                    :storage               => FactoryGirl.create(:storage)
+                                   )
+      controller.instance_variable_set(:@_params, :miq_grid_checks => "#{vm.id}, #{template.id}")
+      expect(controller).to receive(:javascript_flash)
+      controller.send(:vm_button_operation, 'retire_now', "Retirement")
+      expect(response.status).to eq(200)
+    end
+
+    it "should continue to retire a vm" do
+      controller.request.parameters["controller"] = "vm_or_template"
+      vm = FactoryGirl.create(:vm_vmware,
+                              :ext_management_system => FactoryGirl.create(:ems_openstack_infra),
+                              :storage               => FactoryGirl.create(:storage)
+                             )
+
+      controller.instance_variable_set(:@_params, :miq_grid_checks => vm.id.to_s)
+      expect(controller).to receive(:show_list)
+      controller.send(:vm_button_operation, 'retire_now', "Retirement")
+      expect(response.status).to eq(200)
+      expect(assigns(:flash_array).first[:message]).to \
+        include("Retirement initiated for 1 VM and Instance from the %{product} Database" % {:product => I18n.t('product.name')})
+    end
+
+    it "should continue to retire a service and does not render flash message 'xxx does not apply xxx' " do
+      controller.request.parameters["controller"] = "service"
+      service = FactoryGirl.create(:service)
+      template = FactoryGirl.create(:template,
+                                    :ext_management_system => FactoryGirl.create(:ems_openstack_infra),
+                                    :storage               => FactoryGirl.create(:storage)
+                                   )
+      service.update_attribute(:id, template.id)
+      service.reload
+      controller.instance_variable_set(:@_params, :miq_grid_checks => service.id.to_s)
+      expect(controller).to receive(:show_list)
+      controller.send(:vm_button_operation, 'retire_now', "Retirement")
+      expect(response.status).to eq(200)
+      expect(assigns(:flash_array).first[:message]).to \
+        include("Retirement initiated for 1 Service from the %{product} Database" % {:product => I18n.t('product.name')})
     end
   end
 end

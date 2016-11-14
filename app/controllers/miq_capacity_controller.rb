@@ -24,7 +24,7 @@ class MiqCapacityController < ApplicationController
     @explorer = true
     @collapse_c_cell = true
     @sb[:active_tab] = "summary"
-    self.x_node = ""
+    self.x_node ||= ""
     @sb[:util] = {}            # reset existing values
     @sb[:util][:options] = {}  # reset existing values
     get_time_profiles # Get time profiles list (global and user specific)
@@ -165,9 +165,9 @@ class MiqCapacityController < ApplicationController
   private :planning_wizard_get_vms_records
 
   def planning_wizard_get_vms(filter_type, filter_value)
-    vms = planning_wizard_get_vms_records(filter_type, filter_value)
+    vms = Rbac.filtered(planning_wizard_get_vms_records(filter_type, filter_value))
     vms.each_with_object({}) do |v, h|
-      description = v.ext_management_system ? _("#{v.ext_management_system.name}:#{v.name}") : v.name
+      description = v.ext_management_system ? "#{v.ext_management_system.name}:#{v.name}" : v.name
       h[v.id.to_s] = description
     end
   end
@@ -509,7 +509,7 @@ class MiqCapacityController < ApplicationController
       :skip_days => @sb[:util][:options][:skip_days],
     }
 
-    render :js => presenter.to_html
+    render :json => presenter.for_render
   end
 
   def planning_build_options
@@ -615,7 +615,7 @@ class MiqCapacityController < ApplicationController
                                       _("Best Fit Clusters")
                                     end
 
-    render :js => presenter.to_html
+    render :json => presenter.for_render
   end
 
   def bottleneck_replace_right_cell
@@ -623,11 +623,17 @@ class MiqCapacityController < ApplicationController
     r = proc { |opts| render_to_string(opts) }
 
     presenter[:osf_node] = x_node
-    presenter.update(:main_div, r[:partial => 'bottlenecks_tabs'])
+    if params.keys.any? { |param| param.include?('tl_report') }
+      presenter.replace(:bottlenecks_report_div, r[:partial => 'bottlenecks_report'])
+    elsif params.keys.any? { |param| param.include?('tl_summ') }
+      presenter.replace(:bottlenecks_summary_div, r[:partial => 'bottlenecks_summary'])
+    else
+      presenter.update(:main_div, r[:partial => 'bottlenecks_tabs'])
+    end
     presenter[:build_calendar] = true
     presenter[:right_cell_text] = @right_cell_text
 
-    render :js => presenter.to_html
+    render :json => presenter.for_render
   end
 
   def bottleneck_get_node_info(treenodeid, refresh = nil)
@@ -714,7 +720,7 @@ class MiqCapacityController < ApplicationController
 
       begin
         @sb[:bottlenecks][:report].generate_table(:userid => session[:userid])
-      rescue StandardError => bang
+      rescue => bang
         add_flash(_("Error building timeline %{error_message}") % {:error_message => bang.message}, :error)
       else
         bottleneck_tl_to_xml
@@ -761,13 +767,18 @@ class MiqCapacityController < ApplicationController
   end
 
   def util_build_tree(type, name)
-    utilization = TreeBuilderUtilization.new(name, type, @sb)
-    @right_cell_text = if type == :bottlenecks
-                         _("Bottlenecks Summary")
-                       else
-                         _("Utilization Summary")
-                       end
-    instance_variable_set :"@#{name}", utilization.tree_nodes
+    selected_node = x_node(name)
+    if type == :bottlenecks
+      @right_cell_text = _("Bottlenecks Summary")
+      @bottlenecks_tree = TreeBuilderUtilization.new(
+        name, type, @sb, true, :selected_node => selected_node
+      )
+    else
+      @right_cell_text = _("Utilization Summary")
+      @utilization_tree = TreeBuilderUtilization.new(
+        name, type, @sb, true, :selected_node => selected_node
+      )
+    end
   end
 
   # Create an array of hashes from the Utilization summary report tab information
@@ -793,4 +804,6 @@ class MiqCapacityController < ApplicationController
     session[:miq_capacity_current_page] = @current_page
     session[:miq_capacity_display]      = @display unless @display.nil?
   end
+
+  menu_section :opt
 end

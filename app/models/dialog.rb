@@ -8,7 +8,7 @@ class Dialog < ApplicationRecord
   validate :validate_children
 
   include DialogMixin
-  has_many   :resource_actions
+  has_many :resource_actions
   virtual_has_one :content, :class_name => "Hash"
 
   before_destroy          :reject_if_has_resource_actions
@@ -17,6 +17,10 @@ class Dialog < ApplicationRecord
   alias_attribute  :name, :label
 
   attr_accessor :target_resource
+
+  belongs_to :blueprint
+
+  delegate :readonly?, :to => :blueprint, :allow_nil => true
 
   def self.seed
     dialog_import_service = DialogImportService.new
@@ -88,8 +92,8 @@ class Dialog < ApplicationRecord
     dialog_field_hash[name.to_s]
   end
 
-  def content(target = nil, resource_action = nil)
-    return DialogSerializer.new.serialize(Array[self]) if target.nil? && resource_action.nil?
+  def content(target = nil, resource_action = nil, all_attributes = false)
+    return DialogSerializer.new.serialize(Array[self], all_attributes) if target.nil? && resource_action.nil?
 
     workflow = ResourceActionWorkflow.new({}, @auth_user_obj, resource_action, :target => target)
 
@@ -98,6 +102,26 @@ class Dialog < ApplicationRecord
       dialog_field.values = dialog_field.values
     end
     DialogSerializer.new.serialize(Array[workflow.dialog])
+  end
+
+  # Allows you to pass dialog tabs as a hash
+  # Will update any item passed with an ID,
+  # Creates a new item without an ID,
+  # Removes any items not passed in the content.
+  def update_tabs(tabs)
+    updated_tabs = []
+    tabs.each do |dialog_tab|
+      if dialog_tab.key?('id')
+        DialogTab.find(dialog_tab['id']).tap do |tab|
+          tab.update_attributes(dialog_tab.except('dialog_groups'))
+          tab.update_dialog_groups(dialog_tab['dialog_groups'])
+          updated_tabs << tab
+        end
+      else
+        updated_tabs << DialogImportService.new.build_dialog_tabs('dialog_tabs' => [dialog_tab]).first
+      end
+    end
+    self.dialog_tabs = updated_tabs
   end
 
   def deep_copy(new_attributes = {})

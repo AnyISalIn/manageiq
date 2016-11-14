@@ -42,12 +42,12 @@ class Snapshot < ApplicationRecord
 
   def self.find_all_evm_snapshots(zone = nil)
     zone ||= MiqServer.my_server.zone
-    require 'MiqVimVm'
+    require 'VMwareWebService/MiqVimVm'
     Snapshot.where(:vm_or_template_id => zone.vm_or_template_ids, :name => MiqVimVm::EVM_SNAPSHOT_NAME).includes(:vm_or_template).to_a
   end
 
   def is_a_type?(stype)
-    require 'MiqVimVm'
+    require 'VMwareWebService/MiqVimVm'
     value = case stype.to_sym
             when :evm_snapshot        then MiqVimVm.const_get("EVM_SNAPSHOT_NAME")
             when :consolidate_helper  then MiqVimVm.const_get("CH_SNAPSHOT_NAME")
@@ -60,7 +60,7 @@ class Snapshot < ApplicationRecord
     if value == :system_snapshot
       return self.is_a_type?(:evm_snapshot) || self.is_a_type?(:consolidate_helper) || self.is_a_type?(:vcb_snapshot)
     elsif value.kind_of?(Regexp)
-      return value =~ name ? true : false
+      return !!(value =~ name)
     else
       return name == value
     end
@@ -93,8 +93,6 @@ class Snapshot < ApplicationRecord
   def not_recently_created?
     !self.recently_created?
   end
-
-  private
 
   def self.xml_to_hashes(xmlNode, vm_or_template_id)
     return nil unless MiqXml.isXmlElement?(xmlNode)
@@ -158,12 +156,14 @@ class Snapshot < ApplicationRecord
 
     all_nh
   end
+  private_class_method :xml_to_hashes
 
   def self.add_snapshot_size_for_ems(parentObj, hashes)
     ss_props = {}
     hashes.each { |h| ss_props[normalize_ss_uid(h[:uid])] = {:total_size => h[:total_size]} }
     parentObj.snapshots.each { |s| s.update_attributes(ss_props[normalize_ss_uid(s[:uid])]) unless ss_props[normalize_ss_uid(s[:uid])].nil? }
   end
+  private_class_method :add_snapshot_size_for_ems
 
   # If the snapshot uid looks like a iso8601 time (2009-09-25T20:11:14.299742Z) drop off the microseconds so
   # we don't skip linking up data because of a format change.  (IE 2009-09-25T20:11:14.000000Z to 2009-09-25T20:11:14.299742Z)
@@ -171,4 +171,5 @@ class Snapshot < ApplicationRecord
     return uid[0, 20] if !uid.nil? && uid.length == 27 && uid[-1, 1] == 'Z'
     uid
   end
+  private_class_method :normalize_ss_uid
 end

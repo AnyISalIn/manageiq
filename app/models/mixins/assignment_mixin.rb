@@ -97,75 +97,44 @@ module AssignmentMixin
       Tag
         .includes(:taggings).references(:taggings)
         .where("taggings.taggable_type = ? and tags.name like ?", name, "#{namespace}/%")
-        .flat_map do |tag|
-          tag.taggings.map do |tagging|
-            {
-              :assigned    => assignment_map[tagging.taggable_id],
-              :assigned_to => Tag.filter_ns([tag], namespace).first
-            }
+        .each_with_object(Hash.new { |h, k| h[k] = [] }) do |tag, ret|
+          tag.taggings.each do |tagging|
+            tag_name = Tag.filter_ns([tag], namespace).first
+            taggable = assignment_map[tagging.taggable_id]
+            ret[tag_name] << taggable if taggable
           end
         end
     end
 
+    # @param target
+    # @option options :parents
+    # @option options :tag_list
     def get_assigned_for_target(target, options = {})
-      # options = {
-      #   :parents      => TODO
-      #   :tag_list     => TODO
-      # }
-      alist = kind_of?(Class) ? assignments_cached : assignments
       if options[:parents]
         parents = options[:parents]
       else
-        model = kind_of?(Class) ? self : model
-        parents = model::ASSIGNMENT_PARENT_ASSOCIATIONS.each_with_object([]) do |rel, arr|
-          t = rel == :my_enterprise ? MiqEnterprise : target
-          next unless t.respond_to?(rel)
-          arr << t.send(rel)
-        end.flatten.compact
+        parents = self::ASSIGNMENT_PARENT_ASSOCIATIONS.flat_map do |rel|
+          (rel == :my_enterprise ? MiqEnterprise.my_enterprise : target.try(rel)) || []
+        end
         parents << target
       end
 
       tlist =  parents.collect { |p| "#{p.class.base_model.name.underscore}/id/#{p.id}" } # Assigned directly to parents
       tlist += options[:tag_list] if options[:tag_list]                        # Assigned to target (passed in)
 
-      if options[:associations_preloaded]
-        # Collect tags directly from association from parent objects if they were already preloaded by the caller
-        tags = parents.collect { |p| p.tags.select { |t| t.name.starts_with?("/managed/") } }.flatten.uniq
-      else
-        # Collect tags from all parent objects in a single query if they were NOT already preloaded by the caller
-        tcond = []; targs = []
-        parents.each do |p|
-          tcond << "(taggings.taggable_type=? AND taggings.taggable_id=?)"
-          # TODO: we may need to change taggings-related code to use base_model too
-          targs << p.class.base_class.name << p.id
-        end
-        cond = ["(#{tcond.join(" OR ")}) AND (name like '/managed/%')", *targs]
-        tags = Tag.where(cond).joins(:taggings)
-      end
-      # Assigned to parent tags
+      individually_assigned_resources = tlist.flat_map { |t| assignments_cached[t] }.uniq
+
+      # look for alert_set running off of tags (not individual tags)
       # TODO: we may need to change taggings-related code to use base_model too
-      parent_ids_by_type = parents.inject({}) { |h, p|  h[p.class.base_class.name] ||= []; h[p.class.base_class.name] << p.id; h }
-      tlist += tags.inject([]) do |arr, tag|
-        tag.taggings.each do |t|
-          # Only collect taggings for parent objects
-          klass = t.taggable_type
-          if parent_ids_by_type[klass] && parent_ids_by_type[klass].include?(t.taggable_id)
-            if klass == "VmOrTemplate"       # right now NO support for tagged templates
-              arr << "vm/tag#{tag.name}"
-            else
-              arr << "#{klass.underscore}/tag#{tag.name}"
-            end
-          end
-        end
-        arr
+      tlist = Tagging.where("tags.name like '/managed/%'")
+                     .where(:taggable => parents)
+                     .references(:tag).includes(:tag).map do |t|
+        klass = t.taggable_type
+        lower_klass = klass == "VmOrTemplate" ? "vm" : klass.underscore
+        "#{lower_klass}/tag#{t.tag.name}"
       end
-
-      result = alist.inject([]) do |arr, a|
-        arr << a[:assigned] if tlist.include?(a[:assigned_to])
-        arr
-      end
-
-      result.uniq
+      tagged_resources = tlist.flat_map { |t| assignments_cached[t] }.uniq
+      (individually_assigned_resources + tagged_resources).uniq
     end
 
     def namespace

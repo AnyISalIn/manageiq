@@ -1,6 +1,10 @@
 describe MiqAeMethod do
+  before do
+    @user = FactoryGirl.create(:user_with_group)
+  end
+
   it "should return editable as false if the parent namespace/class is not editable" do
-    n1 = FactoryGirl.create(:miq_ae_namespace, :name => 'ns1', :priority => 10, :system => true)
+    n1 = FactoryGirl.create(:miq_ae_system_domain, :tenant => @user.current_tenant)
     c1 = FactoryGirl.create(:miq_ae_class, :namespace_id => n1.id, :name => "foo")
     f1 = FactoryGirl.create(:miq_ae_method,
                             :class_id => c1.id,
@@ -8,11 +12,11 @@ describe MiqAeMethod do
                             :scope    => "instance",
                             :language => "ruby",
                             :location => "inline")
-    expect(f1).not_to be_editable
+    expect(f1.editable?(@user)).to be_falsey
   end
 
   it "should return editable as true if the parent namespace/class is editable" do
-    n1 = FactoryGirl.create(:miq_ae_namespace, :name => 'ns1')
+    n1 = FactoryGirl.create(:miq_ae_domain, :tenant => @user.current_tenant)
     c1 = FactoryGirl.create(:miq_ae_class, :namespace_id => n1.id, :name => "foo")
     f1 = FactoryGirl.create(:miq_ae_method,
                             :class_id => c1.id,
@@ -20,7 +24,7 @@ describe MiqAeMethod do
                             :scope    => "instance",
                             :language => "ruby",
                             :location => "inline")
-    expect(f1).to be_editable
+    expect(f1.editable?(@user)).to be_truthy
   end
 
   context "#copy" do
@@ -41,8 +45,7 @@ describe MiqAeMethod do
                                :language => "ruby",
                                :location => "inline")
 
-      @d2 = FactoryGirl.create(:miq_ae_namespace,
-                               :name => "domain2", :parent_id => nil, :priority => 2, :system => false)
+      @d2 = FactoryGirl.create(:miq_ae_domain, :name => "domain2", :priority => 2)
       @ns2 = FactoryGirl.create(:miq_ae_namespace, :name => "ns2", :parent_id => @d2.id)
     end
 
@@ -113,7 +116,7 @@ describe MiqAeMethod do
   end
 
   it "#domain" do
-    d1 = FactoryGirl.create(:miq_ae_domain, :name => 'dom1', :priority => 10, :system => true)
+    d1 = FactoryGirl.create(:miq_ae_system_domain, :name => 'dom1', :priority => 10)
     n1 = FactoryGirl.create(:miq_ae_namespace, :name => 'ns1', :parent_id => d1.id)
     c1 = FactoryGirl.create(:miq_ae_class, :namespace_id => n1.id, :name => "foo")
     m1 = FactoryGirl.create(:miq_ae_method,

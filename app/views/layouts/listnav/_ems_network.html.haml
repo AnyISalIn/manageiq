@@ -5,8 +5,7 @@
 
     = miq_accordion_panel(_("Properties"), false, "ems_prop") do
       %ul.nav.nav-pills.nav-stacked
-        = li_link(:if => true,
-          :text       =>_('Summary'),
+        = li_link(:text =>_('Summary'),
           :record_id  => @record.id,
           :display    => 'main',
           :title      => _("Show Summary"))
@@ -18,7 +17,7 @@
 
     = miq_accordion_panel(_("Relationships"), false, "ems_rel") do
       %ul.nav.nav-pills.nav-stacked
-        - if role_allows(:feature => "security_group_show_list")
+        - if role_allows?(:feature => "security_group_show_list")
           = li_link(:count => @record.number_of(:security_groups),
             :record_id     => @record.id,
             :display       => 'security_groups',

@@ -25,7 +25,8 @@ class ApplicationHelper::Toolbar::VmCloudsCenter < ApplicationHelper::Toolbar::B
           :url_parms => "main_div",
           :confirm   => N_("Perform SmartState Analysis on the selected items?"),
           :enabled   => false,
-          :onwhen    => "1+"),
+          :onwhen    => "1+",
+          :klass     => ApplicationHelper::Button::VmInstanceTemplateScan),
         button(
           :instance_compare,
           'product product-compare fa-lg',
@@ -55,10 +56,10 @@ class ApplicationHelper::Toolbar::VmCloudsCenter < ApplicationHelper::Toolbar::B
         button(
           :instance_delete,
           'pficon pficon-delete fa-lg',
-          t = N_('Remove selected items from the VMDB'),
+          t = N_('Remove selected items'),
           t,
           :url_parms => "main_div",
-          :confirm   => N_("Warning: The selected items and ALL of their components will be permanently removed from the Virtual Management Database.  Are you sure you want to remove the selected items?"),
+          :confirm   => N_("Warning: The selected items and ALL of their components will be permanently removed!"),
           :enabled   => false,
           :onwhen    => "1+"),
         separator,
@@ -130,7 +131,8 @@ class ApplicationHelper::Toolbar::VmCloudsCenter < ApplicationHelper::Toolbar::B
           'pficon pficon-add-circle-o fa-lg',
           N_('Request to Provision Instances'),
           N_('Provision Instances'),
-          :url_parms => "main_div"),
+          :url_parms => "main_div",
+          :klass     => ApplicationHelper::Button::InstanceMiqRequestNew),
         button(
           :instance_retire,
           'fa fa-clock-o fa-lg',
@@ -266,7 +268,8 @@ class ApplicationHelper::Toolbar::VmCloudsCenter < ApplicationHelper::Toolbar::B
           :url_parms => "main_div",
           :confirm   => N_("Hard Reboot the Guest OS on the selected items?"),
           :enabled   => false,
-          :onwhen    => "1+"),
+          :onwhen    => "1+",
+          :klass     => ApplicationHelper::Button::InstanceReset),
         button(
           :instance_terminate,
           nil,

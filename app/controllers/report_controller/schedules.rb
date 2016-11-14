@@ -60,7 +60,7 @@ module ReportController::Schedules
     @schedule.towhat = "MiqReport"
     if @sb[:tree_typ] == "reports"
       exp                   = {}
-      exp["="]              = {"field" => "MiqReport.id", "value" => @sb[:miq_report_id]}
+      exp["="]              = {"field" => "MiqReport-id", "value" => @sb[:miq_report_id]}
       @_params.delete :id   # incase add schedule button was pressed from report show screen.
       @schedule.filter      = MiqExpression.new(exp)
       miq_report            = MiqReport.find(@sb[:miq_report_id])
@@ -101,10 +101,7 @@ module ReportController::Schedules
     scheds = find_checked_items
     if scheds.empty? && params[:id].nil?
       add_flash(_("No Report Schedules were selected to be Run now"), :error)
-      render :update do |page|
-        page << javascript_prologue
-        page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-      end
+      javascript_flash
     elsif params[:id]
       if MiqSchedule.exists?(from_cid(params[:id]))
         scheds.push(from_cid(params[:id]))
@@ -148,10 +145,7 @@ module ReportController::Schedules
     if scheds.empty?
       add_flash(msg1 % {:schedules => "#{ui_lookup(:model => "MiqReport")} #{ui_lookup(:models => "MiqSchedule")}"},
                 :error)
-      render :update do |page|
-        page << javascript_prologue
-        page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-      end
+      javascript_flash
     end
     schedule_enable_disable(scheds, enable) unless scheds.empty?
     add_flash(msg2 % {:schedules => "#{ui_lookup(:model => "MiqReport")} #{ui_lookup(:models => "MiqSchedule")}"},
@@ -181,14 +175,11 @@ module ReportController::Schedules
       if params[:filter_typ]
         @edit[:new][:subfilter] = nil
         @edit[:new][:repfilter] = @reps = nil
-        page.replace("form_filter_div", :partial => "schedule_form_filter")
       elsif params[:subfilter_typ]
         @edit[:new][:repfilter] = nil
-        page.replace("form_filter_div", :partial => "schedule_form_filter")
       end
-
+      page.replace("form_filter_div", :partial => "schedule_form_filter")
       javascript_for_timer_type(params[:timer_typ]).each { |js| page << js }
-
       if params[:time_zone]
         page << "ManageIQ.calendar.calDateFrom = new Date(#{(Time.zone.now - 1.month).in_time_zone(@edit[:tz]).strftime("%Y,%m,%d")});"
         page << "miqBuildCalendar();"
@@ -205,6 +196,15 @@ module ReportController::Schedules
                                   :record     => @schedule})
         page.replace("schedule_email_options_div", :partial => "schedule_email_options")
       end
+
+      # when timer_typ set to hourly set starting date to current day otherwise it's the day after
+      if params[:timer_typ] == 'Hourly'
+        @edit[:new][:timer].start_date = Time.zone.now.strftime("%m/%d/%Y")
+      else
+        @edit[:new][:timer].start_date = (Time.zone.now + 1.day).strftime("%m/%d/%Y")
+      end
+      page << "$('#miq_date_1').val('#{@edit[:new][:timer].start_date}');"
+
       changed = (@edit[:new] != @edit[:current])
       if changed != session[:changed]
         session[:changed] = changed
@@ -227,7 +227,7 @@ module ReportController::Schedules
       @schedule = nil
       @edit = session[:edit] = nil  # clean out the saved info
       @in_a_form = false
-      @sb[:active_accord] = :schedules
+
       replace_right_cell
     when "save", "add"
       id = params[:id] ? params[:id] : "new"
@@ -249,11 +249,11 @@ module ReportController::Schedules
         # ensure we land in the right accordion with the right tree and
         # with the listing opened even when entering 'add' from the reports
         # menu
-        @sb[:active_tree]   = :schedules_tree
-        @sb[:active_accord] = :schedules
-        # FIXME: change to x_active_node after 5.2
-        @sb[:trees][@sb[:active_tree]][:active_node] = 'root'
+
+        self.x_active_tree   = "schedules_tree"
+        self.x_active_accord = "schedules"
         self.x_node = "msc-#{to_cid(schedule.id)}"
+        @_params[:accord] = "schedules"
         replace_right_cell(:replace_trees => [:schedules])
       else
         schedule.errors.each do |field, msg|
@@ -261,10 +261,7 @@ module ReportController::Schedules
         end
         @changed = session[:changed] = (@edit[:new] != @edit[:current])
         drop_breadcrumb(:name => "Edit Schedule", :url => "/miq_schedule/edit")
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
       end
     when "reset", nil # Reset or first time in
       add_flash(_("All changes have been reset"), :warning) if params[:button] == "reset"
@@ -486,7 +483,7 @@ module ReportController::Schedules
 
     unless !@edit[:new][:repfilter] || @edit[:new][:repfilter] == ""
       record = MiqReport.find(@edit[:new][:repfilter].to_i)
-      exp["="] = {"field" => "MiqReport.id", "value" => record.id} if record
+      exp["="] = {"field" => "MiqReport-id", "value" => record.id} if record
       schedule.filter = MiqExpression.new(exp)
     end
   end

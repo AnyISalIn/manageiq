@@ -121,34 +121,23 @@ module MiqAeMethodService
           method = options[:method] || method_name
           ret = object_send(method, *params)
           return options[:override_return] if options.key?(:override_return)
-          reflection = @object.class.reflection_with_virtual(method)
-          if reflection && reflection.collection?
-            wrap_results(ret.to_a)
-          else
-            wrap_results(ret)
-          end
+          wrap_results(ret)
         end
       end
     end
     private_class_method :expose
 
     def self.wrap_results(results)
-      ret = nil
       ar_method do
-        if results.nil?
-          ret = nil
-        elsif results.kind_of?(Array)
-          ret = results.collect { |r| wrap_results(r) }
-        elsif results.kind_of?(ActiveRecord::Relation)
-          ret = results.collect { |r| wrap_results(r) }
+        if results.kind_of?(Array) || results.kind_of?(ActiveRecord::Relation)
+          results.collect { |r| wrap_results(r) }
         elsif results.kind_of?(ActiveRecord::Base)
           klass = MiqAeMethodService.const_get("MiqAeService#{results.class.name.gsub(/::/, '_')}")
-          ret = klass.new(results)
+          klass.new(results)
         else
-          ret = results
+          results
         end
       end
-      ret
     end
 
     def wrap_results(results)
@@ -230,15 +219,18 @@ module MiqAeMethodService
     end
 
     def tagged_with?(category, name)
+      verify_taggable_model
       object_send(:is_tagged_with?, name.to_s, :ns => "/managed/#{category}")
     end
 
     def tags(category = nil)
+      verify_taggable_model
       ns = category.nil? ? "/managed" : "/managed/#{category}"
       object_send(:tag_list, :ns => ns).split
     end
 
     def tag_assign(tag)
+      verify_taggable_model
       ar_method do
         Classification.classify_by_tag(@object, "/managed/#{tag}")
         true
@@ -246,11 +238,25 @@ module MiqAeMethodService
     end
 
     def tag_unassign(tag)
+      verify_taggable_model
       ar_method do
         Classification.unclassify_by_tag(@object, "/managed/#{tag}")
         true
       end
     end
+
+    def taggable?
+      self.class.taggable?
+    end
+
+    def self.taggable?
+      model.respond_to?(:tags)
+    end
+
+    def verify_taggable_model
+      raise MiqAeException::UntaggableModel, "Model #{self.class} doesn't support tagging" unless taggable?
+    end
+    private :verify_taggable_model
 
     def reload
       object_send(:reload)
@@ -260,7 +266,7 @@ module MiqAeMethodService
     def object_send(name, *params)
       ar_method do
         begin
-          @object.send(name, *params)
+          @object.public_send(name, *params)
         rescue Exception => err
           $miq_ae_logger.error("The following error occurred during instance method <#{name}> for AR object <#{@object.inspect}>")
           raise

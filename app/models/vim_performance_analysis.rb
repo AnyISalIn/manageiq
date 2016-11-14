@@ -65,7 +65,6 @@ module VimPerformanceAnalysis
         includes = topts[:compute_type].to_sym == :Host ? {:hardware => {}, :vms => {:hardware => {}}} : nil
         search_options = {
           :class            => topts[:compute_type].to_s,
-          :results_format   => :objects,
           :include_for_find => includes,
           :userid           => @options[:userid],
           :miq_group_id     => @options[:miq_group_id],
@@ -274,7 +273,7 @@ module VimPerformanceAnalysis
       options = @options
 
       if VimPerformanceAnalysis.needs_perf_data?(options[:vm_options])
-        perf_cols = [:cpu, :vcpus, :memory, :storage].collect { |t| options.fetch(:vm_options, t, :metric) }.compact
+        perf_cols = [:cpu, :vcpus, :memory, :storage].collect { |t| options.fetch_path(:vm_options, t, :metric) }.compact
       end
 
       vm_perf = VimPerformanceAnalysis.get_daily_perf(@vm, options[:range], options[:ext_options], perf_cols)
@@ -527,7 +526,7 @@ module VimPerformanceAnalysis
         result[key][c] ||= 0
         counts[key][c] ||= 0
 
-        Metric::Aggregation.aggregate_for_column(c, nil, result[key], counts[key], p.send(c), :average)
+        Metric::Aggregation::Aggregate.column(c, nil, result[key], counts[key], p.send(c), :average)
       end
     end
 
@@ -544,7 +543,7 @@ module VimPerformanceAnalysis
       ts, v = k
       cols.each do |c|
         next unless v[c].kind_of?(Float)
-        Metric::Aggregation.process_for_column(c, nil, v, counts[k], true, :average)
+        Metric::Aggregation::Process.column(c, nil, v, counts[k], true, :average)
       end
 
       recs.push(perf_klass.new(v))

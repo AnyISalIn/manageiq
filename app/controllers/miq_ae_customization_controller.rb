@@ -35,18 +35,12 @@ class MiqAeCustomizationController < ApplicationController
   }.freeze
 
   def x_button
-    @sb[:action] = action = params[:pressed]
-
-    unless AE_CUSTOM_X_BUTTON_ALLOWED_ACTIONS.key?(action)
-      raise ActionController::RoutingError, _('invalid button action')
-    end
-
-    send(AE_CUSTOM_X_BUTTON_ALLOWED_ACTIONS[action])
+    generic_x_button(AE_CUSTOM_X_BUTTON_ALLOWED_ACTIONS)
   end
 
   def upload_import_file
     if params[:upload].nil? || params[:upload][:file].blank?
-      add_flash(_("Use the browse button to locate an import file"), :warning)
+      add_flash(_("Use the Choose file button to locate an import file"), :warning)
     else
       begin
         import_file = dialog_import_service.store_for_import(params[:upload][:file].read)
@@ -67,6 +61,13 @@ class MiqAeCustomizationController < ApplicationController
 
   def import_service_dialogs
     if params[:commit] == _('Commit')
+      if params[:dialogs_to_import].blank?
+        javascript_flash(:spinner_off => true,
+                         :text => _("At least one Service Dialog must be selected."),
+                         :severity => :error)
+        return
+      end
+
       import_file_upload = ImportFileUpload.find_by(:id => params[:import_file_upload_id])
 
       if import_file_upload
@@ -147,7 +148,7 @@ class MiqAeCustomizationController < ApplicationController
       render :update do |page|
         page << javascript_prologue
         page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        page << "miqDynatreeActivateNodeSilently('#{x_active_tree}', '#{x_node}');"
+        page << "miqTreeActivateNodeSilently('#{x_active_tree}', '#{x_node}');"
         page << "miqSparkle(false);"
       end
     end
@@ -229,7 +230,7 @@ class MiqAeCustomizationController < ApplicationController
     setup_dialog_sample_buttons(nodetype, presenter)
     set_miq_record_id(presenter)
 
-    render :js => presenter.to_html
+    render :json => presenter.for_render
   end
 
   def dialog_edit_tree_active?
@@ -395,7 +396,7 @@ class MiqAeCustomizationController < ApplicationController
 
     # Replace right side with based on selected tree node type
     presenter.update(:main_div, render_proc[:partial => "shared/buttons/ab_list"])
-    presenter[:lock_unlock_trees][:ab_tree] = !!@edit
+    presenter.lock_tree(:ab_tree, @edit)
   end
 
   def setup_presenter_for_dialog_edit_tree(presenter)
@@ -453,7 +454,7 @@ class MiqAeCustomizationController < ApplicationController
                 else
                   ""
                 end
-        @right_cell_text = _("Editing %{model} \"%{name}\"") % {:name => @dialog.description.gsub(/'/, "\\'"), :model => "#{title} #{ui_lookup(:model => "MiqDialog")}"}
+        @right_cell_text = _("Editing %{model} \"%{name}\"") % {:name => @dialog.description, :model => "#{title} #{ui_lookup(:model => "MiqDialog")}"}
       end
 
       presenter.reset_one_trans
@@ -486,4 +487,6 @@ class MiqAeCustomizationController < ApplicationController
 
     super(typ)
   end
+
+  menu_section :aut
 end

@@ -1,15 +1,14 @@
 class TreeBuilderVandt < TreeBuilder
+  include TreeBuilderArchived
+
   def tree_init_options(_tree_name)
-    {:leaf => 'VmOrTemplate'}
+    {:leaf => 'ManageIQ::Providers::InfraManager::VmOrTemplate'}
   end
 
   def set_locals_for_render
     locals = super
-    locals.merge!(
-      :id_prefix         => "vt_",
-      :no_getitem_alerts => true,
-      :autoload          => true
-    )
+    locals.merge!(:autoload => true,
+                  :allow_reselect => TreeBuilder.hide_vms)
   end
 
   def root_options
@@ -17,31 +16,11 @@ class TreeBuilderVandt < TreeBuilder
   end
 
   def x_get_tree_roots(count_only, options)
-    objects = rbac_filtered_objects(EmsInfra.order("lower(name)"), :match_via_descendants => VmOrTemplate)
+    objects = count_only_or_objects_filtered(count_only, EmsInfra, "name", :match_via_descendants => VmOrTemplate)
+    objects.collect! { |o| TreeBuilderVmsAndTemplates.new(o, options.dup).tree } unless count_only
+    root_nodes = count_only_or_objects(count_only, x_get_tree_arch_orph_nodes("VMs and Templates"))
 
-    if count_only
-      objects.length + 2
-    else
-      objects = objects.to_a
-      objects.collect! { |o| TreeBuilderVmsAndTemplates.new(o, options.dup).tree }
-      objects + [
-        {:id => "arch", :text => _("<Archived>"), :image => "currentstate-archived", :tip => _("Archived VMs and Templates")},
-        {:id => "orph", :text => _("<Orphaned>"), :image => "currentstate-orphaned", :tip => _("Orphaned VMs and Templates")}
-      ]
-    end
-  end
-
-  # Handle custom tree nodes (object is a Hash)
-  def x_get_tree_custom_kids(object, count_only, _options)
-    objects = case object[:id]
-              when "orph" # Orphaned
-                rbac_filtered_objects(VmInfra.all_orphaned) +
-                rbac_filtered_objects(TemplateInfra.all_orphaned)
-              when "arch" # Archived
-                rbac_filtered_objects(VmInfra.all_archived) +
-                rbac_filtered_objects(TemplateInfra.all_archived)
-              end
-    count_only_or_objects(count_only, objects, "name")
+    objects + root_nodes
   end
 
   def x_get_child_nodes(id)

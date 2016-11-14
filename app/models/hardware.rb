@@ -1,4 +1,5 @@
 class Hardware < ApplicationRecord
+  include VirtualTotalMixin
   belongs_to  :vm_or_template
   belongs_to  :vm,            :foreign_key => :vm_or_template_id
   belongs_to  :miq_template,  :foreign_key => :vm_or_template_id
@@ -12,8 +13,6 @@ class Hardware < ApplicationRecord
   has_many    :floppies, -> { where("device_type = 'floppy'").order(:location) }, :class_name => "Disk", :foreign_key => :hardware_id
   has_many    :cdroms, -> { where("device_type LIKE '%cdrom%'").order(:location) }, :class_name => "Disk", :foreign_key => :hardware_id
 
-  has_many    :hard_disk_storages, -> { distinct }, :through => :hard_disks, :source => :storage
-
   has_many    :partitions, :dependent => :destroy
   has_many    :volumes, :dependent => :destroy
 
@@ -25,12 +24,8 @@ class Hardware < ApplicationRecord
   virtual_column :ipaddresses,   :type => :string_set, :uses => :networks
   virtual_column :hostnames,     :type => :string_set, :uses => :networks
   virtual_column :mac_addresses, :type => :string_set, :uses => :nics
-
-  include DeprecationMixin
-  deprecate_attribute :cores_per_socket, :cpu_cores_per_socket
-  deprecate_attribute :logical_cpus, :cpu_total_cores
-  deprecate_attribute :numvcpus, :cpu_sockets
-  deprecate_attribute :memory_cpu, :memory_mb
+  virtual_aggregate :used_disk_storage,      :disks, :sum, :used_disk_storage
+  virtual_aggregate :allocated_disk_storage, :disks, :sum, :size
 
   def ipaddresses
     @ipaddresses ||= networks.collect(&:ipaddress).compact.uniq
@@ -74,7 +69,7 @@ class Hardware < ApplicationRecord
       begin
         parent.hardware.send("m_#{e.name}", parent, e, deletes) if parent.hardware.respond_to?("m_#{e.name}")
       rescue => err
-        _log.warn "#{err}"
+        _log.warn err.to_s
       end
     end
 
@@ -88,9 +83,16 @@ class Hardware < ApplicationRecord
   end
 
   def aggregate_cpu_speed
-    return nil if cpu_total_cores.blank? || cpu_speed.blank?
-    (cpu_total_cores * cpu_speed)
+    if has_attribute?("aggregate_cpu_speed")
+      self["aggregate_cpu_speed"]
+    elsif try(:cpu_total_cores) && try(:cpu_speed)
+      cpu_total_cores * cpu_speed
+    end
   end
+
+  virtual_attribute :aggregate_cpu_speed, :integer, :arel => (lambda do |t|
+    t.grouping(t[:cpu_total_cores] * t[:cpu_speed])
+  end)
 
   def v_pct_free_disk_space
     return nil if disk_free_space.nil? || disk_capacity.nil? || disk_capacity.zero?
@@ -98,7 +100,7 @@ class Hardware < ApplicationRecord
   end
   # resulting sql: "(cast(disk_free_space as float) / (disk_capacity * 100))"
   virtual_attribute :v_pct_free_disk_space, :float, :arel => (lambda do |t|
-    Arel::Nodes::Grouping.new(Arel::Nodes::Division.new(
+    t.grouping(Arel::Nodes::Division.new(
       Arel::Nodes::NamedFunction.new("CAST", [t[:disk_free_space].as("float")]),
       t[:disk_capacity]) * 100)
   end)
@@ -110,24 +112,28 @@ class Hardware < ApplicationRecord
   # resulting sql: "(cast(disk_free_space as float) / (disk_capacity * -100) + 100)"
   # to work with arel better, put the 100 at the end
   virtual_attribute :v_pct_used_disk_space, :float, :arel => (lambda do |t|
-    Arel::Nodes::Grouping.new(Arel::Nodes::Division.new(
+    t.grouping(Arel::Nodes::Division.new(
       Arel::Nodes::NamedFunction.new("CAST", [t[:disk_free_space].as("float")]),
       t[:disk_capacity]) * -100 + 100)
   end)
 
-  def allocated_disk_storage
-    if disks.loaded?
-      disks.blank? ? nil : disks.inject(0) { |t, d| t + d.size.to_i }
-    else
-      disks.sum('coalesce(size, 0)')
+  def connect_lans(lans)
+    return if lans.blank?
+    nics.each do |n|
+      # TODO: Use a different field here
+      #   model is temporarily being used here to transfer the name of the
+      #   lan to which this nic is connected.  If model ends up being an
+      #   otherwise used field, this will need to change
+      n.lan = lans.find { |l| l.name == n.model }
+      n.model = nil
+      n.save
     end
   end
 
-  def used_disk_storage
-    if disks.loaded?
-      disks.blank? ? nil : disks.inject(0) { |t, d| t + (d.size_on_disk || d.size).to_i }
-    else
-      disks.sum('coalesce(size_on_disk, size, 0)')
+  def disconnect_lans
+    nics.each do |n|
+      n.lan = nil
+      n.save
     end
   end
 

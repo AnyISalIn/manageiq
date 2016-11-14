@@ -15,10 +15,15 @@ class ManageIQ::Providers::Openstack::InfraManager < ::EmsInfra
 
   include ManageIQ::Providers::Openstack::ManagerMixin
   include HasManyOrchestrationStackMixin
-  include HasManyCloudNetworksMixin
+  include HasNetworkManagerMixin
 
   before_save :ensure_parent_provider
   before_destroy :destroy_parent_provider
+  before_validation :ensure_managers
+
+  def ensure_network_manager
+    build_network_manager(:type => 'ManageIQ::Providers::Openstack::NetworkManager') unless network_manager
+  end
 
   def cloud_tenants
     CloudTenant.where(:ems_id => provider.try(:cloud_ems).try(:collect, &:id).try(:uniq))
@@ -26,6 +31,10 @@ class ManageIQ::Providers::Openstack::InfraManager < ::EmsInfra
 
   def availability_zones
     AvailabilityZone.where(:ems_id => provider.try(:cloud_ems).try(:collect, &:id).try(:uniq))
+  end
+
+  def host_aggregates
+    HostAggregate.where(:ems_id => provider.try(:cloud_ems).try(:collect, &:id).try(:uniq))
   end
 
   def ensure_parent_provider
@@ -112,4 +121,39 @@ class ManageIQ::Providers::Openstack::InfraManager < ::EmsInfra
          .all? { |h| h.verify_credentials('ssh_keypair') }
   end
   private :verify_ssh_keypair_credentials
+
+  def workflow_service
+    openstack_handle.detect_workflow_service
+  end
+
+  def register_and_configure_nodes(nodes_json)
+    connection = openstack_handle.detect_workflow_service
+    workflow = "tripleo.baremetal.v1.register_or_update"
+    input = { :nodes_json => nodes_json }
+    response = connection.create_execution(workflow, input)
+    state = response.body["state"]
+    workflow_execution_id = response.body["id"]
+
+    while state == "RUNNING"
+      sleep 5
+      response = connection.get_execution(workflow_execution_id)
+      state = response.body["state"]
+    end
+
+    EmsRefresh.queue_refresh(@infra) if state == "SUCCESS"
+
+    # Configures boot image for all manageable nodes.
+    # It would be preferred to only configure the nodes that were just added, but
+    # we don't know the uuids from the response. The uuids are available in Zaqar.
+    # Once we add support for reading Zaqar, we can change this to be more
+    # selective.
+    connection.create_execution("tripleo.baremetal.v1.configure_manageable_nodes")
+
+    [state, response.body.to_s]
+  end
+
+  # unsupported Host operations, validate is called in hosts_center view
+  def validate_shutdown
+    {:available => false,   :message => nil}
+  end
 end

@@ -19,7 +19,9 @@ module Metric::Common
     serialize :assoc_ids
     serialize :min_max   # TODO: Move this to MetricRollup
 
-    virtual_column :v_derived_storage_used, :type => :float
+    virtual_column :v_derived_storage_used, :type => :float, :arel => (lambda do |t|
+      t.grouping(t[:derived_storage_total] - t[:derived_storage_free])
+    end)
 
     [
       :cpu_ready_delta_summation,
@@ -42,21 +44,6 @@ module Metric::Common
     virtual_column :v_derived_cpu_reserved_pct,     :type => :float
     virtual_column :v_derived_memory_reserved_pct,  :type => :float
     virtual_column :v_derived_cpu_total_cores_used, :type => :float
-
-    virtual_column :v_derived_logical_cpus_used, :type => :float # Deprecated
-  end
-
-  def v_find_min_max(vcol)
-    interval, mode = vcol.to_s.split("_")[1..2]
-    col = vcol.to_s.split("_")[3..-1].join("_")
-
-    return nil unless interval == "daily" && capture_interval == 1.day
-
-    cond = ["resource_type = ? and resource_id = ? and capture_interval_name = 'hourly' and timestamp >= ? and timestamp < ?",
-            resource_type, resource_id, timestamp.to_date.to_s,  (timestamp + 1.day).to_date.to_s]
-    direction = mode == "min" ? "ASC" : "DESC"
-    rec = MetricRollup.where(cond).order("#{col} #{direction}").first
-    rec.nil? ? nil : rec.send(col)
   end
 
   def v_derived_storage_used
@@ -65,20 +52,20 @@ module Metric::Common
   end
 
   def min_max_v_derived_storage_used(mode)
-    cond = ["resource_type = ? and resource_id = ? and capture_interval_name = 'hourly' and timestamp >= ? and timestamp < ?",
-            resource_type, resource_id, timestamp.to_date.to_s, (timestamp + 1.day).to_date.to_s]
-    meth = mode == :min ? :first : :last
-    recs = MetricRollup.where(cond)
-    rec = recs.sort { |a, b| (a.v_derived_storage_used && b.v_derived_storage_used) ? (a.v_derived_storage_used <=> b.v_derived_storage_used) : (a.v_derived_storage_used ? 1 : -1) }.send(meth)
-    rec.nil? ? nil : rec.v_derived_storage_used
+    recs = MetricRollup.where(:resource_type => resource_type, :resource_id => resource_id)
+                       .where(:capture_interval_name => 'hourly')
+                       .where('timestamp >= ? and timestamp < ?', # This picks only the first midnight
+                              timestamp.to_date, (timestamp + 1.day).to_date)
+                       .where.not(:derived_storage_total => nil, :derived_storage_free => nil)
+    recs.send(mode, MetricRollup.arel_attribute(:v_derived_storage_used))
   end
 
   def min_v_derived_storage_used
-    @min_v_derived_storage_used ||= min_max_v_derived_storage_used(:min)
+    @min_v_derived_storage_used ||= min_max_v_derived_storage_used(:minimum)
   end
 
   def max_v_derived_storage_used
-    @max_v_derived_storage_used ||= min_max_v_derived_storage_used(:max)
+    @max_v_derived_storage_used ||= min_max_v_derived_storage_used(:maximum)
   end
 
   CHILD_ROLLUP_INTERVAL = {
@@ -145,8 +132,6 @@ module Metric::Common
     return nil if cpu_usage_rate_average.nil? || derived_vm_numvcpus.nil? || derived_vm_numvcpus == 0
     (cpu_usage_rate_average * derived_vm_numvcpus) / 100.0
   end
-  alias_method :v_derived_logical_cpus_used, :v_derived_cpu_total_cores_used
-  Vmdb::Deprecation.deprecate_methods(self, :v_derived_logical_cpus_used => :v_derived_cpu_total_cores_used)
 
   # Applies the given time profile to this metric record
   # unless record already refer to some time profile (which were used for aggregation)

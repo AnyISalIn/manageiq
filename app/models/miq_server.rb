@@ -51,19 +51,16 @@ class MiqServer < ApplicationRecord
   end
 
   def self.atStartup
-    configuration  = VMDB::Config.new("vmdb")
-    starting_roles = configuration.config.fetch_path(:server, :role)
+    starting_roles = ::Settings.server.role
 
     # Change the database role to database_operations
-    roles = configuration.config.fetch_path(:server, :role)
+    roles = starting_roles.dup
     if roles.gsub!(/\bdatabase\b/, 'database_operations')
-      configuration.config.store_path(:server, :role, roles)
+      MiqServer.my_server.set_config(:server => {:role => roles})
     end
 
-    roles = configuration.config.fetch_path(:server, :role)
-    configuration.save
-
     # Roles Changed!
+    roles = ::Settings.server.role
     if roles != starting_roles
       # tell the server to pick up the role change
       server = MiqServer.my_server
@@ -118,7 +115,7 @@ class MiqServer < ApplicationRecord
     MiqEvent.raise_evm_event(self, "evm_server_start")
 
     msg = "Server starting in #{self.class.startup_mode} mode."
-    _log.info("#{msg}")
+    _log.info(msg)
     puts "** #{msg}"
 
     starting_server_record
@@ -171,7 +168,7 @@ class MiqServer < ApplicationRecord
       _log.info("Creating Default MiqServer with guid=[#{my_guid}], zone=[#{Zone.default_zone.name}]")
       create!(:guid => my_guid, :zone => Zone.default_zone)
       my_server_clear_cache
-      Vmdb::Settings.init # Re-initialize the Settings now that we have a server record
+      ::Settings.reload! # Reload the Settings now that we have a server record
       _log.info("Creating Default MiqServer... Complete")
     end
     my_server
@@ -185,8 +182,6 @@ class MiqServer < ApplicationRecord
     setup_data_directory
     check_migrations_up_to_date
     Vmdb::Settings.activate
-
-    config = VMDB::Config.new("vmdb")
 
     server = my_server(true)
     server_hash = {}
@@ -248,7 +243,7 @@ class MiqServer < ApplicationRecord
 
     EvmDatabase.seed_last
 
-    start_memcached(config)
+    start_memcached
     prep_apache_proxying
     server.start
     server.monitor_loop
@@ -265,7 +260,7 @@ class MiqServer < ApplicationRecord
     unless self.is_deleteable?
       msg = @error_message
       @error_message = nil
-      _log.error("#{msg}")
+      _log.error(msg)
       raise _(msg)
     end
   end
@@ -354,7 +349,7 @@ class MiqServer < ApplicationRecord
     # A SystemExit would be caught below, so we need to explicitly rescue/raise.
     raise
   rescue Exception => err
-    _log.error("#{err.message}")
+    _log.error(err.message)
     _log.log_backtrace(err)
 
     begin
@@ -506,7 +501,7 @@ class MiqServer < ApplicationRecord
 
   def logon_status
     return :ready if self.started?
-    started_on < (Time.now.utc - get_config("vmdb").config[:server][:startup_timeout]) ? :timed_out_starting : status.to_sym
+    started_on < (Time.now.utc - ::Settings.server.startup_timeout) ? :timed_out_starting : status.to_sym
   end
 
   def logon_status_details
@@ -537,7 +532,7 @@ class MiqServer < ApplicationRecord
   end
 
   def zone_description
-    zone ? zone.description : nil
+    zone.try(:description)
   end
 
   def self.my_roles(force_reload = false)
@@ -602,10 +597,14 @@ class MiqServer < ApplicationRecord
   end
 
   def server_timezone
-    get_config("vmdb").config.fetch_path(:server, :timezone) || "UTC"
+    ::Settings.server.timezone || "UTC"
   end
 
   def tenant_identity
     User.super_admin
+  end
+
+  def miq_region
+    ::MiqRegion.my_region
   end
 end # class MiqServer

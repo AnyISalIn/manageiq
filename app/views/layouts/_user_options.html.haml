@@ -2,13 +2,13 @@
   %li.dropdown
     %a{:href => "#", :class => "dropdown-toggle nav-item-iconic", :id => "dropdownMenu2", "data-toggle" => "dropdown", "aria-haspopup" => "true"}
       %span.fa.pficon-user
-      %p.navbar__user-name
+      %p.navbar__user-name{"data-userid" => current_user.userid, :id => "username_display"}
         = "#{current_user.name} | #{appliance_name}"
       %span.caret
     %ul.dropdown-menu
       %li.disabled
         %a{:href => "#"}
-          = _('Server: %s') % appliance_name
+          = _('Server: %{appliance_name}') % {:appliance_name => appliance_name}
 
       - if current_user.miq_groups.length > 1
         %li.dropdown-submenu.pull-left

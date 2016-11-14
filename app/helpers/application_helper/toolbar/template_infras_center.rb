@@ -54,10 +54,10 @@ class ApplicationHelper::Toolbar::TemplateInfrasCenter < ApplicationHelper::Tool
         button(
           :miq_template_delete,
           'pficon pficon-delete fa-lg',
-          N_('Remove selected Templates from the VMDB'),
-          N_('Remove Templates from the VMDB'),
+          N_('Remove selected Templates'),
+          N_('Remove Templates'),
           :url_parms => "main_div",
-          :confirm   => N_("Warning: The selected Templates and ALL of their components will be permanently removed from the Virtual Management Database.  Are you sure you want to remove the selected Templates?"),
+          :confirm   => N_("Warning: The selected Templates and ALL of their components will be permanently removed!"),
           :enabled   => false,
           :onwhen    => "1+"),
       ]
@@ -116,6 +116,14 @@ class ApplicationHelper::Toolbar::TemplateInfrasCenter < ApplicationHelper::Tool
       t,
       :items => [
         button(
+          :miq_template_miq_request_new,
+          'pficon pficon-add-circle-o fa-lg',
+          N_('Select a single Template to Provision VMs'),
+          N_('Provision VMs using selected Template'),
+          :url_parms => "main_div",
+          :enabled   => false,
+          :onwhen    => "1"),
+        button(
           :miq_template_clone,
           'product product-clone fa-lg',
           N_('Clone this Template'),
@@ -125,5 +133,5 @@ class ApplicationHelper::Toolbar::TemplateInfrasCenter < ApplicationHelper::Tool
           :onwhen    => "1"),
       ]
     ),
-  ])
+ ])
 end

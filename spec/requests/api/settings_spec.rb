@@ -1,8 +1,8 @@
 #
 # REST API Request Tests - /api/settings
 #
-describe ApiController do
-  let(:api_settings) { Api::Settings.collections[:settings][:categories] }
+describe "Settings API" do
+  let(:api_settings) { Api::ApiConfig.collections[:settings][:categories] }
 
   context "Settings Queries" do
     it "tests queries of all exposed settings" do
@@ -28,7 +28,7 @@ describe ApiController do
       category = api_settings.first
       run_get settings_url(category)
 
-      expect(response_hash[category]).to eq(Settings[category].to_hash.stringify_keys)
+      expect(response.parsed_body[category]).to eq(Settings[category].to_hash.stringify_keys)
     end
 
     it "rejects query for an invalid setting category " do

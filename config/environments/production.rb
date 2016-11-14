@@ -1,6 +1,8 @@
 Vmdb::Application.configure do
   # Settings specified here will take precedence over those in config/application.rb
 
+  config.eager_load_paths = []
+
   # Code is not reloaded between requests
   config.cache_classes = true
   config.eager_load = false
@@ -9,8 +11,9 @@ Vmdb::Application.configure do
   config.consider_all_requests_local       = false
   config.action_controller.perform_caching = true
 
-  # Disable Rails's static asset server (Apache or nginx will already do this)
-  config.public_file_server.enabled = false
+  # Disable serving static files from the `/public` folder by default since
+  # Apache or NGINX already handles this.
+  config.public_file_server.enabled = ENV['RAILS_SERVE_STATIC_FILES'].present?
 
   # Compress JavaScripts and CSS
   config.assets.compress = true
@@ -65,9 +68,6 @@ Vmdb::Application.configure do
   # with SQLite, MySQL, and PostgreSQL)
   # config.active_record.auto_explain_threshold_in_seconds = 0.5
 
-  # Raise exceptions in transactional callbacks
-  config.active_record.raise_in_transactional_callbacks = true
-
   # Customize any additional options below...
 
   # Do not include all helpers for all views
@@ -75,6 +75,12 @@ Vmdb::Application.configure do
 
   config.action_controller.allow_forgery_protection = true
 
-  config.assets.js_compressor = :uglifier
+  config.assets.js_compressor = Uglifier.new(
+    :compress => {
+      :unused      => false,
+      :keep_fargs  => true,
+      :keep_fnames => true
+    }
+  )
   config.assets.css_compressor = :sass
 end

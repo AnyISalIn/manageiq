@@ -106,6 +106,7 @@ module MiqAeServiceSpec
           Category
           Datacenter
           ManageIQ::Providers::BaseManager
+          ManageIQ::Providers::PhysicalInfraManager
           ManageIQ::Providers::Kubernetes::ContainerManager::Scanning::Job
           VmServer
           VmSynchronize
@@ -133,6 +134,105 @@ module MiqAeServiceSpec
         end
 
         expect(failed_models).to eq([])
+      end
+    end
+  end
+
+  describe MiqAeService do
+    context "#prepend_namespace=" do
+      let(:options) { {} }
+      let(:workspace) { double("MiqAeEngine::MiqAeWorkspaceRuntime", :root => options) }
+      let(:miq_ae_service) { MiqAeService.new(workspace) }
+      let(:ns) { "fred" }
+
+      it "set namespace" do
+        allow(workspace).to receive(:persist_state_hash).and_return({})
+        expect(workspace).to receive(:prepend_namespace=).with(ns)
+
+        miq_ae_service.prepend_namespace = ns
+      end
+    end
+    context "create notifications" do
+      before { NotificationType.seed }
+
+      let(:options) { {} }
+      let(:workspace) do
+        double("MiqAeEngine::MiqAeWorkspaceRuntime", :root               => options,
+                                                     :ae_user            => user,
+                                                     :persist_state_hash => {})
+      end
+      let(:miq_ae_service) { MiqAeService.new(workspace) }
+      let(:user) { FactoryGirl.create(:user_with_group) }
+      let(:vm) { FactoryGirl.create(:vm) }
+      let(:msg_text) { 'mary had a little lamb' }
+
+      context "#create_notification!" do
+        it "invalid type" do
+          expect { miq_ae_service.create_notification!(:type => :invalid_type, :subject => vm) }
+            .to raise_error(ArgumentError, "Invalid notification type specified")
+        end
+
+        it "invalid subject" do
+          expect { miq_ae_service.create_notification!(:type => :vm_provisioned, :subject => 'fred') }
+            .to raise_error(ArgumentError, "Subject must be a valid Active Record object")
+        end
+
+        it "default type of automate_user_info" do
+          result = miq_ae_service.create_notification!(:message => msg_text)
+          expect(result).to be_kind_of(MiqAeMethodService::MiqAeServiceNotification)
+        end
+
+        it "type of automate_user_info" do
+          result = miq_ae_service.create_notification!(:level => 'success', :audience => 'user', :message => 'test')
+          expect(result).to be_kind_of(MiqAeMethodService::MiqAeServiceNotification)
+        end
+
+        it "type of automate_tenant_info" do
+          expect(user).to receive(:tenant).and_return(Tenant.root_tenant)
+          result = miq_ae_service.create_notification!(:level => 'success', :audience => 'tenant', :message => 'test')
+          expect(result).to be_kind_of(MiqAeMethodService::MiqAeServiceNotification)
+        end
+
+        it "type of automate_global_info" do
+          result = miq_ae_service.create_notification!(:level => 'success', :audience => 'global', :message => 'test')
+          expect(result).to be_kind_of(MiqAeMethodService::MiqAeServiceNotification)
+        end
+      end
+
+      context "#create_notification" do
+        it "invalid type" do
+          expect { miq_ae_service.create_notification(:type => :invalid_type, :subject => vm) }
+            .not_to raise_error
+        end
+
+        it "invalid subject" do
+          expect { miq_ae_service.create_notification(:type => :vm_provisioned, :subject => 'fred') }
+            .not_to raise_error
+        end
+
+        it "default type of automate_user_info" do
+          result = miq_ae_service.create_notification(:message => msg_text)
+          expect(result).to be_kind_of(MiqAeMethodService::MiqAeServiceNotification)
+          ui_representation = result.object_send(:to_h)
+          expect(ui_representation).to include(:text     => '%{message}',
+                                               :bindings => a_hash_including(:message=>{:text=> msg_text}))
+        end
+
+        it "type of automate_user_info" do
+          result = miq_ae_service.create_notification(:level => 'success', :audience => 'user', :message => 'test')
+          expect(result).to be_kind_of(MiqAeMethodService::MiqAeServiceNotification)
+        end
+
+        it "type of automate_tenant_info" do
+          expect(user).to receive(:tenant).and_return(Tenant.root_tenant)
+          result = miq_ae_service.create_notification(:level => 'success', :audience => 'tenant', :message => 'test')
+          expect(result).to be_kind_of(MiqAeMethodService::MiqAeServiceNotification)
+        end
+
+        it "type of automate_global_info" do
+          result = miq_ae_service.create_notification(:level => 'success', :audience => 'global', :message => 'test')
+          expect(result).to be_kind_of(MiqAeMethodService::MiqAeServiceNotification)
+        end
       end
     end
   end

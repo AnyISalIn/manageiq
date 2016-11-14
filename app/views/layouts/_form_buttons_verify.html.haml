@@ -9,7 +9,7 @@
   - id = record_id ? record_id : nil
 
 - if session[:host_items].present?
-  - verify_title_on  = _("Validate the credentials by logging into the selected %s") % title_for_host
+  - verify_title_on  = _("Validate the credentials by logging into the selected %{host}") % {:host => title_for_host}
 - else
   - verify_title_on ||= _("Validate the credentials by logging into the Server")
 
@@ -39,5 +39,5 @@
 
 %div{:id => "#{valtype}_validate_buttons_off", :style => ("display:none" if @edit[statuskey])}
   = button_tag(_("Validate"),
-               :class    => "btn btn-primary btn-disabled btn-xs pull-right",
+               :class    => "btn btn-primary disabled btn-xs pull-right",
                :disabled => true)

@@ -15,6 +15,12 @@ FactoryGirl.define do
           :parent  => :ext_management_system do
   end
 
+  factory :ems_physical_infra,
+          :aliases => ["manageiq/providers/physical_infra_manager"],
+          :class   => "ManageIQ::Providers::PhysicalInfraManager",
+          :parent  => :ext_management_system do
+  end
+
   factory :ems_cloud,
           :aliases => ["manageiq/providers/cloud_manager"],
           :class   => "ManageIQ::Providers::CloudManager",
@@ -24,6 +30,24 @@ FactoryGirl.define do
   factory :ems_network,
           :aliases => ["manageiq/providers/network_manager"],
           :class   => "ManageIQ::Providers::NetworkManager",
+          :parent  => :ext_management_system do
+  end
+
+  factory :ems_storage,
+          :aliases => ["manageiq/providers/storage_manager"],
+          :class   => "ManageIQ::Providers::StorageManager",
+          :parent  => :ext_management_system do
+  end
+
+  factory :ems_cinder,
+          :aliases => ["manageiq/providers/storage_manager/cinder_manager"],
+          :class   => "ManageIQ::Providers::StorageManager::CinderManager",
+          :parent  => :ext_management_system do
+  end
+
+  factory :ems_swift,
+          :aliases => ["manageiq/providers/storage_manager/swift_manager"],
+          :class   => "ManageIQ::Providers::StorageManager::SwiftManager",
           :parent  => :ext_management_system do
   end
 
@@ -92,6 +116,13 @@ FactoryGirl.define do
     end
   end
 
+  factory :ems_redhat_with_metrics_authentication,
+          :parent => :ems_redhat do
+    after(:create) do |x|
+      x.authentications << FactoryGirl.create(:authentication_redhat_metric)
+    end
+  end
+
   factory :ems_openstack_infra,
           :aliases => ["manageiq/providers/openstack/infra_manager"],
           :class   => "ManageIQ::Providers::Openstack::InfraManager",
@@ -123,6 +154,18 @@ FactoryGirl.define do
     end
   end
 
+  factory :ems_vmware_cloud,
+          :aliases => ["manageiq/providers/vmware/cloud_manager"],
+          :class   => "ManageIQ::Providers::Vmware::CloudManager",
+          :parent  => :ems_cloud do
+  end
+
+  factory :ems_vmware_cloud_network,
+          :aliases => ["manageiq/providers/vmware/network_manager"],
+          :class   => "ManageIQ::Providers::Vmware::NetworkManager",
+          :parent  => :ems_cloud do
+  end
+
   # Leaf classes for ems_cloud
 
   factory :ems_amazon,
@@ -146,6 +189,34 @@ FactoryGirl.define do
     end
   end
 
+  factory :ems_amazon_with_cloud_networks,
+          :parent => :ems_amazon do
+    after(:create) do |x|
+      2.times { x.cloud_networks << FactoryGirl.create(:cloud_network_amazon) }
+    end
+  end
+
+  factory :ems_azure,
+          :aliases => ["manageiq/providers/azure/cloud_manager"],
+          :class   => "ManageIQ::Providers::Azure::CloudManager",
+          :parent  => :ems_cloud do
+  end
+
+  factory :ems_azure_network,
+          :aliases => ["manageiq/providers/azure/network_manager"],
+          :class   => "ManageIQ::Providers::Azure::NetworkManager",
+          :parent  => :ems_network do
+  end
+
+  factory :ems_azure_with_authentication,
+          :parent => :ems_azure do
+    azure_tenant_id "ABCDEFGHIJABCDEFGHIJ0123456789AB"
+    subscription "0123456789ABCDEFGHIJABCDEFGHIJKL"
+    after :create do |x|
+      x.authentications << FactoryGirl.create(:authentication)
+    end
+  end
+
   factory :ems_openstack,
           :aliases => ["manageiq/providers/openstack/cloud_manager"],
           :class   => "ManageIQ::Providers::Openstack::CloudManager",
@@ -163,6 +234,12 @@ FactoryGirl.define do
   factory :ems_openstack_network,
           :aliases => ["manageiq/providers/openstack/network_manager"],
           :class   => "ManageIQ::Providers::Openstack::NetworkManager",
+          :parent  => :ems_network do
+  end
+
+  factory :ems_nuage_network,
+          :aliases => ["manageiq/providers/nuage/network_manager"],
+          :class   => "ManageIQ::Providers::Nuage::NetworkManager",
           :parent  => :ems_network do
   end
 
@@ -209,21 +286,9 @@ FactoryGirl.define do
           :parent  => :ems_container do
   end
 
-  factory :ems_atomic,
-          :aliases => ["manageiq/providers/atomic/container_manager"],
-          :class   => "ManageIQ::Providers::Atomic::ContainerManager",
-          :parent  => :ems_container do
-  end
-
   factory :ems_openshift_enterprise,
           :aliases => ["manageiq/providers/openshift_enterprise/container_manager"],
           :class   => "ManageIQ::Providers::OpenshiftEnterprise::ContainerManager",
-          :parent  => :ems_container do
-  end
-
-  factory :ems_atomic_enterprise,
-          :aliases => ["manageiq/providers/atomic_enterprise/container_manager"],
-          :class   => "ManageIQ::Providers::AtomicEnterprise::ContainerManager",
           :parent  => :ems_container do
   end
 
@@ -250,41 +315,12 @@ FactoryGirl.define do
     end
   end
 
-  factory :configuration_manager_foreman_with_authentication,
-          :parent => :configuration_manager_foreman do
-    after :create do |x|
-      x.authentications << FactoryGirl.create(:authentication)
-    end
-  end
-
   # Leaf classes for provisioning_manager
 
   factory :provisioning_manager_foreman,
           :aliases => ["manageiq/providers/foreman/provisioning_manager"],
           :class   => "ManageIQ::Providers::Foreman::ProvisioningManager",
           :parent  => :provisioning_manager do
-  end
-
-  factory :provisioning_manager_foreman_with_authentication,
-          :parent => :provisioning_manager_foreman do
-    after :create do |x|
-      x.authentications << FactoryGirl.create(:authentication)
-    end
-  end
-
-  factory :ems_azure,
-          :aliases => ["manageiq/providers/azure/cloud_manager"],
-          :class   => "ManageIQ::Providers::Azure::CloudManager",
-          :parent  => :ems_cloud do
-  end
-
-  factory :ems_azure_with_authentication,
-          :parent => :ems_azure do
-    azure_tenant_id "ABCDEFGHIJABCDEFGHIJ0123456789AB"
-    subscription "0123456789ABCDEFGHIJABCDEFGHIJKL"
-    after :create do |x|
-      x.authentications << FactoryGirl.create(:authentication)
-    end
   end
 
   # Leaf classes for middleware_manager

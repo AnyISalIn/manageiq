@@ -26,9 +26,14 @@ class Zone < ApplicationRecord
 
   include Metric::CiMixin
   include AggregationMixin
+  include ConfigurationManagementMixin
 
   def active_miq_servers
     MiqServer.active_miq_servers.where(:zone_id => id)
+  end
+
+  def servers_for_settings_reload
+    miq_servers.where(:status => "started")
   end
 
   def find_master_server
@@ -150,6 +155,10 @@ class Zone < ApplicationRecord
 
   def middleware_servers
     ems_middlewares.flat_map(&:middleware_servers)
+  end
+
+  def ems_configproviders
+    ext_management_systems.select { |e| e.kind_of? ManageIQ::Providers::ConfigurationManager }
   end
 
   def ems_clouds

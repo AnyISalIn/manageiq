@@ -4,19 +4,19 @@ class SecurityGroup < ApplicationRecord
 
   acts_as_miq_taggable
 
-  # TODO(lsmola) NetworkManager, once all providers use network manager rename this to
-  # "ManageIQ::Providers::NetworkManager"
-  belongs_to :ext_management_system, :foreign_key => :ems_id, :class_name => "ManageIQ::Providers::BaseManager"
+  belongs_to :ext_management_system, :foreign_key => :ems_id, :class_name => "ManageIQ::Providers::NetworkManager"
   belongs_to :cloud_network
   belongs_to :cloud_tenant
   belongs_to :orchestration_stack
   belongs_to :network_group
   has_many   :firewall_rules, :as => :resource, :dependent => :destroy
 
-  has_and_belongs_to_many :vms
-  has_and_belongs_to_many :network_ports
+  has_many :network_port_security_groups
+  has_many :network_ports, :through => :network_port_security_groups
+  # TODO(lsmola) we should be able to remove table security_groups_vms, if it's unused now. Can't be backported
+  has_many :vms, -> { distinct }, :through => :network_ports, :source => :device, :source_type => 'VmOrTemplate'
 
-  virtual_total :total_vms, :vms, :arel => nil
+  virtual_total :total_vms, :vms, :uses => :vms
 
   def self.non_cloud_network
     where(:cloud_network_id => nil)

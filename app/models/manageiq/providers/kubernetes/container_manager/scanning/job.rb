@@ -10,23 +10,29 @@ class ManageIQ::Providers::Kubernetes::ContainerManager::Scanning::Job < Job
   POD_POLL_INTERVAL = 10
   IMAGES_GUEST_OS = 'Linux'
   INSPECTOR_HEALTH_PATH = '/healthz'
-  ERRCODE_POD_NOTFOUND = 404
+  ERRCODE_NOTFOUND = 404
   IMAGE_INSPECTOR_SA = 'inspector-admin'
   INSPECTOR_ADMIN_SECRET_PATH = '/var/run/secrets/kubernetes.io/inspector-admin-secret-'
+  ATTRIBUTE_SECTION = 'cluster_settings'
+  PROXY_ENV_VARIABLES = %w(no_proxy http_proxy https_proxy)
 
   def load_transitions
     self.state ||= 'initializing'
     {
       :initializing => {'initializing'     => 'waiting_to_start'},
       :start        => {'waiting_to_start' => 'pod_create'},
-      :pod_wait     => {'pod_create'       => 'waiting_to_scan'},
+      :pod_wait     => {'pod_create'       => 'waiting_to_scan',
+                        'waiting_to_scan'  => 'waiting_to_scan'},
       :analyze      => {'waiting_to_scan'  => 'scanning'},
       :data         => {'scanning'      => 'synchronizing',
                         'synchronizing' => 'synchronizing'},
       :cleanup      => {'synchronizing'    => 'pod_delete'},
       :abort_job    => {'*'                => 'aborting'},
+      :cancel_job   => {'*'                => 'canceling'},
+      :cancel       => {'*'                => 'canceling'},
       :finish       => {'pod_delete' => 'finished',
-                        'aborting'   => 'finished'},
+                        'aborting'   => 'finished',
+                        'canceling'  => 'finished'},
     }
   end
 
@@ -54,15 +60,23 @@ class ManageIQ::Providers::Kubernetes::ContainerManager::Scanning::Job < Job
       :pod_namespace   => namespace
     ))
 
-    pod = pod_definition
-    _log.info("creating pod #{pod_full_name} to analyze docker image " \
-              "#{options[:docker_image_id]}: #{pod.to_json}")
+    _log.info("Getting inspector-admin secret for pod [#{pod_full_name}]")
+    begin
+      inspector_admin_secret_name = inspector_admin_secret
+    rescue SocketError, KubeException => e
+      msg = "getting inspector-admin secret failed"
+      _log.error("#{msg}: [#{e}]")
+      return queue_signal(:abort_job, msg, "error")
+    end
 
+    pod = pod_definition(inspector_admin_secret_name)
+
+    _log.info("Creating pod [#{pod_full_name}] to analyze docker image [#{options[:docker_image_id]}] [#{pod.to_json}]")
     begin
       kubernetes_client.create_pod(pod)
     rescue SocketError, KubeException => e
-      msg = "pod creation for #{pod_full_name} failed: #{e}"
-      _log.info(msg)
+      msg = "pod creation for [#{pod_full_name}] failed"
+      _log.error("#{msg}: [#{e}]")
       return queue_signal(:abort_job, msg, "error")
     end
 
@@ -80,30 +94,23 @@ class ManageIQ::Providers::Kubernetes::ContainerManager::Scanning::Job < Job
     }
 
     # TODO: move this to a more appropriate place (lib)
-    loop do
-      response = pod_health_poll(client, health_url, http_options)
+    response = pod_health_poll(client, health_url, http_options)
 
-      case response
-      when Net::HTTPOK
-        _log.info("pod #{pod_full_name} is ready and accessible")
-        break
-      when Net::HTTPServiceUnavailable
-        # TODO: check that the pod wasn't terminated (exit code)
-        # continue: pod is still not up and running
-      else
-        msg = "unknown access error to pod #{pod_full_name}: #{response}"
-        _log.info(msg)
-        return queue_signal(:abort_job, msg, "error")
-      end
-
-      # TODO: for recovery purposes it would be better if this
-      # method was short-lived instead of waiting for the pod to be
-      # available
+    case response
+    when Net::HTTPOK
+      _log.info("pod #{pod_full_name} is ready and accessible")
+      queue_signal(:analyze)
+    when Net::HTTPServiceUnavailable
+      # TODO: check that the pod wasn't terminated (exit code)
+      # continue: pod is still not up and running
       _log.info("pod #{pod_full_name} is not available")
-      sleep(POD_POLL_INTERVAL)
+      queue_signal(:pod_wait,
+                   :deliver_on => POD_POLL_INTERVAL.seconds.from_now.utc)
+    else
+      msg = "unknown access error to pod #{pod_full_name}: #{response}"
+      _log.info(msg)
+      queue_signal(:abort_job, msg, "error")
     end
-
-    queue_signal(:analyze)
   end
 
   def analyze
@@ -177,7 +184,7 @@ class ManageIQ::Providers::Kubernetes::ContainerManager::Scanning::Job < Job
     begin
       pod = client.get_pod(options[:pod_name], options[:pod_namespace])
     rescue KubeException => e
-      if e.error_code == ERRCODE_POD_NOTFOUND
+      if e.error_code == ERRCODE_NOTFOUND
         _log.info("pod #{pod_full_name} not found, skipping delete")
         return
       end
@@ -201,25 +208,41 @@ class ManageIQ::Providers::Kubernetes::ContainerManager::Scanning::Job < Job
         # TODO: handle the cleanup at a later time
       end
     end
-    set_status('image analysis completed successfully', 'ok')
-
   ensure
-    args.empty? ? queue_signal(:finish) : process_abort(*args)
+    case self.state
+    when 'aborting' then process_abort(*args)
+    when 'canceling' then process_cancel(*args)
+    else queue_signal(:finish, 'image analysis completed successfully', 'ok')
+    end
   end
 
-  def finish(*_args)
+  def finish(*args)
     # exactly like job.dispatch_finish except for storage bits
     _log.info "Dispatch Status is 'finished'"
     update(:dispatch_status => "finished")
+    process_finished(*args)
   end
 
   alias_method :abort_job, :cleanup
 
-  private
-
-  def target_entity
-    target_class.constantize.find_by_id(target_id)
+  def cancel(*_args)
+    _log.info "Job Canceling"
+    if self.state != "canceling" # ensure change of states
+      signal :cancel
+    else
+      unqueue_all_signals
+      queue_signal(:cancel_job)
+    end
   end
+  alias_method :cancel_job, :cleanup
+
+  def queue_callback(state, msg, _)
+    if state == "timeout" && self.state != "aborting"
+      queue_signal(:abort_job, "Job Timeout: #{msg}", "error")
+    end
+  end
+
+  private
 
   def ext_management_system
     @ext_management_system ||= ExtManagementSystem.find(options[:ems_id])
@@ -235,14 +258,14 @@ class ManageIQ::Providers::Kubernetes::ContainerManager::Scanning::Job < Job
     ImageInspectorClient::Client.new(
       pod_proxy_url(kubeclient, ''),
       'v1',
-      :ssl_options  => kubeclient.ssl_options,
-      :auth_options => kubeclient.auth_options
+      :ssl_options    => kubeclient.ssl_options,
+      :auth_options   => kubeclient.auth_options,
+      :http_proxy_uri => kubeclient.http_proxy_uri
     )
   end
 
-  def queue_signal(*args)
-    MiqQueue.put_unless_exists(
-      :args        => args,
+  def queue_options
+    {
       :class_name  => "Job",
       :instance_id => id,
       :method_name => "signal",
@@ -250,7 +273,23 @@ class ManageIQ::Providers::Kubernetes::ContainerManager::Scanning::Job < Job
       :role        => "smartstate",
       :task_id     => guid,
       :zone        => zone
-    )
+    }
+  end
+
+  def unqueue_all_signals
+    MiqQueue.unqueue(queue_options)
+  end
+
+  def queue_signal(*args, deliver_on: nil)
+    MiqQueue.put_unless_exists(**queue_options, :args => args, :deliver_on => deliver_on) do |_msg, find_options|
+      find_options.merge(
+        :miq_callback => {
+          :class_name  => self.class.to_s,
+          :instance_id => id,
+          :method_name => :queue_callback
+        }
+      )
+    end
   end
 
   def pod_health_poll(client, health_url, http_opts)
@@ -281,13 +320,13 @@ class ManageIQ::Providers::Kubernetes::ContainerManager::Scanning::Job < Job
       # TODO: support multiple imagePullSecrets. This depends on image-inspector support
       return inspector_sa.try(:imagePullSecrets).to_a[0].try(:name)
     rescue KubeException => e
-      raise e unless e.error_code == 404
+      raise e unless e.error_code == ERRCODE_NOTFOUND
       _log.warn("Service Account #{IMAGE_INSPECTOR_SA} does not exist.")
     end
     return nil
   end
 
-  def pod_definition
+  def pod_definition(inspector_admin_secret_name)
     pod_def = {
       :apiVersion => "v1",
       :kind       => "Pod",
@@ -326,7 +365,8 @@ class ManageIQ::Providers::Kubernetes::ContainerManager::Scanning::Job < Job
                 :mountPath => DOCKER_SOCKET,
                 :name      => "docker-socket"
               }
-            ]
+            ],
+            :env             => inspector_proxy_env_variables
           }
         ],
         :volumes       => [
@@ -338,10 +378,8 @@ class ManageIQ::Providers::Kubernetes::ContainerManager::Scanning::Job < Job
       }
     }
 
-    inspector_admin_secret_name = inspector_admin_secret
     add_secret_to_pod_def(pod_def, inspector_admin_secret_name) unless inspector_admin_secret_name.blank?
-
-    Kubeclient::Pod.new(pod_def)
+    Kubeclient::Resource.new(pod_def)
   end
 
   def add_secret_to_pod_def(pod_def, inspector_admin_secret_name)
@@ -358,5 +396,14 @@ class ManageIQ::Providers::Kubernetes::ContainerManager::Scanning::Job < Job
 
   def inspector_image
     'docker.io/openshift/image-inspector:2.0'
+  end
+
+  def inspector_proxy_env_variables
+    settings = ext_management_system.custom_attributes
+    settings.where(:section => ATTRIBUTE_SECTION,
+                   :name    => PROXY_ENV_VARIABLES).each_with_object([]) do |att, env|
+      env << {:name  => att.name.upcase,
+              :value => att.value} unless att.value.blank?
+    end
   end
 end

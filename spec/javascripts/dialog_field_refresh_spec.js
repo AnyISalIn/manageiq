@@ -31,7 +31,7 @@ describe('dialogFieldRefresh', function() {
 
     context('when the refreshed values do not contain a checked value', function() {
       beforeEach(function() {
-        data = {values: {refreshed_values: [["test", "test"], ["not test", "not test"]], checked_value: null}};
+        data = {values: {refreshed_values: [["test", "test"], ["not test", "not test"]], checked_value: null, visible: false}};
       });
 
       it('selects the first option', function() {
@@ -73,39 +73,309 @@ describe('dialogFieldRefresh', function() {
     });
   });
 
-  describe('#refreshDropDownList', function() {
+  describe('#setVisible', function() {
     beforeEach(function() {
-      spyOn(dialogFieldRefresh, 'addOptionsToDropDownList');
+      var html = "";
+      html += '<input id="text-test" title="bogus title" type="text" />';
+      setFixtures(html);
+    });
 
-      spyOn($.fn, 'selectpicker');
-      spyOn($, 'post').and.callFake(function() {
-        var d = $.Deferred();
-        d.resolve({values: {checked_value: 'selectedTest'}});
-        return d.promise();
+    context('when visible is true', function() {
+      it('shows the element', function() {
+        dialogFieldRefresh.setVisible($('#text-test'), true);
+        expect($('#text-test').is(":visible")).toBe(true);
       });
     });
 
-    it('calls addOptionsToDropDownList', function() {
-      dialogFieldRefresh.refreshDropDownList('abc', 123, 'test');
-      expect(dialogFieldRefresh.addOptionsToDropDownList).toHaveBeenCalledWith(
-        {values: {checked_value: 'selectedTest'}},
-        123
+    context('when visible is false', function() {
+      it('hides the element', function() {
+        dialogFieldRefresh.setVisible($('#text-test'), false);
+        expect($('#text-test').is(":visible")).toBe(false);
+      });
+    });
+  });
+
+  describe('#refreshCheckbox', function() {
+    var loadedDoneFunction;
+
+    beforeEach(function() {
+      spyOn(dialogFieldRefresh, 'setReadOnly');
+      spyOn(dialogFieldRefresh, 'setVisible');
+      spyOn($.fn, 'prop');
+
+      spyOn(dialogFieldRefresh, 'sendRefreshRequest').and.callFake(function(_url, _data, doneFunction) {
+        loadedDoneFunction = doneFunction;
+      });
+    });
+
+    it('calls sendRefreshRequest', function() {
+      dialogFieldRefresh.refreshCheckbox('abc', 123);
+      expect(dialogFieldRefresh.sendRefreshRequest).toHaveBeenCalledWith(
+        'dynamic_checkbox_refresh',
+        {name: 'abc'},
+        loadedDoneFunction
       );
     });
 
-    it('ensures the select picker is refreshed', function() {
-      dialogFieldRefresh.refreshDropDownList('abc', 123, 'test');
-      expect($.fn.selectpicker).toHaveBeenCalledWith('refresh');
+    describe('#refreshCheckbox doneFunction', function() {
+      beforeEach(function() {
+        var data = {responseText: JSON.stringify({values: {checked: true, read_only: true, visible: false}})};
+        loadedDoneFunction(data);
+      });
+
+      it('sets the checked prop to the checked value', function() {
+        expect($.fn.prop).toHaveBeenCalledWith('checked', true);
+      });
+
+      it('uses the correct selector', function() {
+        expect($.fn.prop.calls.mostRecent().object.selector).toEqual('.dynamic-checkbox-123');
+      });
+
+      it('sets the read only property', function() {
+        expect(dialogFieldRefresh.setReadOnly).toHaveBeenCalledWith(
+          jasmine.objectContaining({selector: '.dynamic-checkbox-123'}),
+          true
+        );
+      });
+      it('sets the visible property', function() {
+        expect(dialogFieldRefresh.setVisible).toHaveBeenCalledWith(
+          jasmine.objectContaining({selector: '#field_123_tr'}),
+          false
+        );
+      });
+    });
+  });
+
+  describe('#refreshDateTime', function() {
+    var loadedDoneFunction;
+
+    beforeEach(function() {
+      spyOn(dialogFieldRefresh, 'setReadOnly');
+      spyOn(dialogFieldRefresh, 'setVisible');
+      spyOn($.fn, 'val');
+
+      spyOn(dialogFieldRefresh, 'sendRefreshRequest').and.callFake(function(_url, _data, doneFunction) {
+        loadedDoneFunction = doneFunction;
+      });
     });
 
-    it('sets the value in the select picker', function() {
-      dialogFieldRefresh.refreshDropDownList('abc', 123, 'test');
-      expect($.fn.selectpicker).toHaveBeenCalledWith('val', 'selectedTest');
+    it('calls sendRefreshRequest', function() {
+      dialogFieldRefresh.refreshDateTime('abc', 123);
+      expect(dialogFieldRefresh.sendRefreshRequest).toHaveBeenCalledWith(
+        'dynamic_date_refresh',
+        {name: 'abc'},
+        loadedDoneFunction
+      );
     });
 
-    it('uses the correct selector', function() {
+    describe('#refreshDateTime doneFunction', function() {
+      beforeEach(function() {
+        var data = {responseText: JSON.stringify({values: {date: 'today', hour: '12', min: '34', read_only: true, visible: false}})};
+        loadedDoneFunction(data);
+      });
+
+      it('sets the date val to the response data date', function() {
+        expect($.fn.val).toHaveBeenCalledWith('today');
+      });
+
+      it('uses the correct selector', function() {
+        expect($.fn.val.calls.first().object.selector).toEqual('.dynamic-date-123');
+      });
+
+      it('sets the hours val to the response data hour', function() {
+        expect($.fn.val).toHaveBeenCalledWith('12');
+      });
+
+      it('uses the correct selector', function() {
+        expect($.fn.val.calls.all()[1].object.selector).toEqual('.dynamic-date-hour-123');
+      });
+
+      it('sets the mins val to the response data min', function() {
+        expect($.fn.val).toHaveBeenCalledWith('34');
+      });
+
+      it('uses the correct selector', function() {
+        expect($.fn.val.calls.mostRecent().object.selector).toEqual('.dynamic-date-min-123');
+      });
+
+      it('sets the read only property', function() {
+        expect(dialogFieldRefresh.setReadOnly).toHaveBeenCalledWith(
+          jasmine.objectContaining({selector: '.dynamic-date-123'}),
+          true
+        );
+      });
+      it('sets the visible property', function() {
+        expect(dialogFieldRefresh.setVisible).toHaveBeenCalledWith(
+          jasmine.objectContaining({selector: '#field_123_tr'}),
+          false
+        );
+      });
+    });
+  });
+
+  describe('#refreshTextBox', function() {
+    var loadedDoneFunction;
+
+    beforeEach(function() {
+      spyOn(dialogFieldRefresh, 'setReadOnly');
+      spyOn(dialogFieldRefresh, 'setVisible');
+      spyOn($.fn, 'val');
+
+      spyOn(dialogFieldRefresh, 'sendRefreshRequest').and.callFake(function(_url, _data, doneFunction) {
+        loadedDoneFunction = doneFunction;
+      });
+    });
+
+    it('calls sendRefreshRequest', function() {
+      dialogFieldRefresh.refreshTextBox('abc', 123);
+      expect(dialogFieldRefresh.sendRefreshRequest).toHaveBeenCalledWith(
+        'dynamic_text_box_refresh',
+        {name: 'abc'},
+        loadedDoneFunction
+      );
+    });
+
+    describe('#refreshTextBox doneFunction', function() {
+      beforeEach(function() {
+        var data = {responseText: JSON.stringify({values: {text: 'text', read_only: true, visible: false}})};
+        loadedDoneFunction(data);
+      });
+
+      it('sets the value of the text box with the text data', function() {
+        expect($.fn.val).toHaveBeenCalledWith('text');
+      });
+
+      it('uses the correct selector', function() {
+        expect($.fn.val.calls.mostRecent().object.selector).toEqual('.dynamic-text-box-123');
+      });
+
+      it('sets the read only property', function() {
+        expect(dialogFieldRefresh.setReadOnly).toHaveBeenCalledWith(
+          jasmine.objectContaining({selector: '.dynamic-text-box-123'}),
+          true
+        );
+      });
+      it('sets the visible property', function() {
+        expect(dialogFieldRefresh.setVisible).toHaveBeenCalledWith(
+          jasmine.objectContaining({selector: '#field_123_tr'}),
+          false
+        );
+      });
+    });
+  });
+
+  describe('#refreshTextAreaBox', function() {
+    var loadedDoneFunction;
+
+    beforeEach(function() {
+      spyOn(dialogFieldRefresh, 'setReadOnly');
+      spyOn(dialogFieldRefresh, 'setVisible');
+      spyOn($.fn, 'val');
+
+      spyOn(dialogFieldRefresh, 'sendRefreshRequest').and.callFake(function(_url, _data, doneFunction) {
+        loadedDoneFunction = doneFunction;
+      });
+    });
+
+    it('calls sendRefreshRequest', function() {
+      dialogFieldRefresh.refreshTextAreaBox('abc', 123);
+      expect(dialogFieldRefresh.sendRefreshRequest).toHaveBeenCalledWith(
+        'dynamic_text_box_refresh',
+        {name: 'abc'},
+        loadedDoneFunction
+      );
+    });
+
+    describe('#refreshTextAreaBox doneFunction', function() {
+      beforeEach(function() {
+        var data = {responseText: JSON.stringify({values: {text: 'text', read_only: true, visible: false}})};
+        loadedDoneFunction(data);
+      });
+
+      it('sets the value of the text box with the text data', function() {
+        expect($.fn.val).toHaveBeenCalledWith('text');
+      });
+
+      it('uses the correct selector', function() {
+        expect($.fn.val.calls.mostRecent().object.selector).toEqual('.dynamic-text-area-123');
+      });
+
+      it('sets the read only property', function() {
+        expect(dialogFieldRefresh.setReadOnly).toHaveBeenCalledWith(
+          jasmine.objectContaining({selector: '.dynamic-text-area-123'}),
+          true
+        );
+      });
+      it('sets the visible property', function() {
+        expect(dialogFieldRefresh.setVisible).toHaveBeenCalledWith(
+          jasmine.objectContaining({selector: '#field_123_tr'}),
+          false
+        );
+      });
+    });
+  });
+
+  describe('#refreshDropDownList', function() {
+    var loadedDoneFunction;
+
+    beforeEach(function() {
+      spyOn(dialogFieldRefresh, 'addOptionsToDropDownList');
+      spyOn(dialogFieldRefresh, 'setReadOnly');
+      spyOn(dialogFieldRefresh, 'setVisible');
+      spyOn($.fn, 'selectpicker');
+
+      spyOn(dialogFieldRefresh, 'sendRefreshRequest').and.callFake(function(_url, _data, doneFunction) {
+        loadedDoneFunction = doneFunction;
+      });
+    });
+
+    it('calls sendRefreshRequest', function() {
       dialogFieldRefresh.refreshDropDownList('abc', 123, 'test');
-      expect($.fn.selectpicker.calls.mostRecent().object.selector).toEqual('#abc');
+      expect(dialogFieldRefresh.sendRefreshRequest).toHaveBeenCalledWith(
+        'dynamic_radio_button_refresh',
+        {name: 'abc', checked_value: 'test'},
+        loadedDoneFunction
+      );
+    });
+
+    describe('#refreshDropDownList doneFunction', function() {
+      beforeEach(function() {
+        var data = {responseText: JSON.stringify({values: {checked_value: 'selectedTest', read_only: true, visible: false}})};
+        loadedDoneFunction(data);
+      });
+
+      it('adds the options to the dropdown list', function() {
+        expect(dialogFieldRefresh.addOptionsToDropDownList).toHaveBeenCalledWith(
+          {values: {checked_value: 'selectedTest', read_only: true, visible: false}},
+          123
+        );
+      });
+
+      it('sets the read only property', function() {
+        expect(dialogFieldRefresh.setReadOnly).toHaveBeenCalledWith(
+          jasmine.objectContaining({selector: '#abc'}),
+          true
+        );
+      });
+     it('sets the visible property', function() {
+        expect(dialogFieldRefresh.setVisible).toHaveBeenCalledWith(
+          jasmine.objectContaining({selector: '#field_' + 123 + "_tr"}),
+          false
+        );
+      });
+
+      it('ensures the select picker is refreshed', function() {
+        expect($.fn.selectpicker).toHaveBeenCalledWith('refresh');
+      });
+
+      it('sets the value in the select picker', function() {
+        expect($.fn.selectpicker).toHaveBeenCalledWith('val', 'selectedTest');
+      });
+
+
+      it('uses the correct selector', function() {
+        expect($.fn.selectpicker.calls.mostRecent().object.selector).toEqual('#abc');
+      });
     });
   });
 

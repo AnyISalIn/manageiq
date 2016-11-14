@@ -6,14 +6,14 @@
      :button => "verify",
      :id     => id},
     :class                 => "btn btn-primary btn-xs",
-    :alt                   => _("Validate the LDAP Settings by binding with the %s") % title_for_host,
+    :alt                   => _("Validate the LDAP Settings by binding with the %{host}") % {:host => title_for_host},
     "data-miq_sparkle_on"  => true,
     "data-miq_sparkle_off" => true,
     :remote                => true,
     "data-method"          => :post,
-    :title                 => _("Validate the LDAP Settings by binding with the %s") % title_for_host)
+    :title                 => _("Validate the LDAP Settings by binding with the %{host}") % {:host => title_for_host})
 
 = hidden_div_if(! validate_disabled, :id => "verify_button_off") do
   = button_tag(_("Validate"),
-    :class => "btn btn-primary btn-xs btn-disabled",
+    :class => "btn btn-primary btn-xs disabled",
     :title => _("LDAP Hostname and Port fields are needed to perform verification of LDAP Settings"))

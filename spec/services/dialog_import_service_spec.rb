@@ -351,5 +351,95 @@ describe DialogImportService do
         end
       end
     end
+
+    describe '#build_dialog_tabs' do
+      let(:dialog_tabs) do
+        {
+          'dialog_tabs' => [
+            {
+              'label'         => 'new dialog tab',
+              'dialog_groups' => [
+                {
+                  'label'         => 'group label',
+                  'dialog_fields' => [
+                    {
+                      'name'  => 'field name',
+                      'label' => 'field label'
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      end
+
+      it 'creates a new dialog_tab' do
+        expect do
+          DialogImportService.new.build_dialog_tabs(dialog_tabs)
+        end.to change(DialogTab, :count).by(1)
+      end
+    end
+
+    describe '#build_dialog_groups' do
+      let(:dialog_groups) do
+        {
+          'dialog_groups' => [
+            {
+              'label'         => 'new group',
+              'dialog_fields' => [
+                {
+                  'name'  => 'field name',
+                  'label' => 'field label'
+                }
+              ]
+            }
+          ]
+        }
+      end
+
+      it 'creates a new dialog_group' do
+        expect do
+          DialogImportService.new.build_dialog_groups(dialog_groups)
+        end.to change(DialogGroup, :count).by(1)
+      end
+    end
+
+    describe '#build_dialog_fields' do
+      let(:dialog_fields) do
+        {
+          'dialog_fields' => [
+            {'name' => 'field name', 'label' => 'field label'}
+          ]
+        }
+      end
+
+      it 'creates a new dialog_field' do
+        expect do
+          DialogImportService.new.build_dialog_fields(dialog_fields)
+        end.to change(DialogField, :count).by(1)
+      end
+    end
+  end
+
+  context '#import' do
+    include_context "DialogImportService dialog setup"
+    before do
+      allow(dialog_import_validator).to receive(:determine_dialog_validity).with(dialogs.first).and_return(true)
+    end
+
+    it 'creates a new dialog with valid input' do
+      expect do
+        dialog_import_service.import(dialogs.first)
+      end.to change(Dialog, :count).by(1)
+    end
+
+    it 'will raise record invalid for invalid dialog' do
+      dialog_import_service.import(dialogs.first)
+
+      expect do
+        dialog_import_service.import(dialogs.first)
+      end.to raise_error(ActiveRecord::RecordInvalid, 'Validation failed: Label has already been taken')
+    end
   end
 end

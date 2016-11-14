@@ -15,10 +15,10 @@ class ApplicationHelper::Toolbar::ServiceCenter < ApplicationHelper::Toolbar::Ba
         button(
           :service_delete,
           'pficon pficon-delete fa-lg',
-          N_('Remove this Service from the VMDB'),
-          N_('Remove Service from the VMDB'),
+          N_('Remove this Service'),
+          N_('Remove Service'),
           :url_parms => "main_div",
-          :confirm   => N_("Warning: This Service and ALL of their components will be permanently removed from the Virtual Management Database.  Are you sure you want to remove this Service?")),
+          :confirm   => N_("Warning: This Service and ALL of their components will be permanently removed!")),
         separator,
         button(
           :service_ownership,
@@ -30,7 +30,9 @@ class ApplicationHelper::Toolbar::ServiceCenter < ApplicationHelper::Toolbar::Ba
           :service_reconfigure,
           'pficon pficon-edit fa-lg',
           N_('Reconfigure the options of this Service'),
-          N_('Reconfigure this Service')),
+          N_('Reconfigure this Service'),
+          :klass => ApplicationHelper::Button::GenericFeatureButton,
+          :options => {:feature => :reconfigure}),
       ]
     ),
   ])

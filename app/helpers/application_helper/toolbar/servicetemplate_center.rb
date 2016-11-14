@@ -5,18 +5,21 @@ class ApplicationHelper::Toolbar::ServicetemplateCenter < ApplicationHelper::Too
       'fa fa-cog fa-lg',
       t = N_('Configuration'),
       t,
-      :onwhen => "1+",
       :items  => [
         button(
           :ab_group_new,
           'pficon pficon-add-circle-o fa-lg',
           t = N_('Add a new Button Group'),
-          t),
+          t,
+          :klass => ApplicationHelper::Button::CatalogItemButton,
+        ),
         button(
           :ab_button_new,
           'pficon pficon-add-circle-o fa-lg',
           t = N_('Add a new Button'),
-          t),
+          t,
+          :klass => ApplicationHelper::Button::CatalogItemButton,
+        ),
         button(
           :catalogitem_edit,
           'pficon pficon-edit fa-lg',
@@ -26,10 +29,10 @@ class ApplicationHelper::Toolbar::ServicetemplateCenter < ApplicationHelper::Too
         button(
           :catalogitem_delete,
           'pficon pficon-delete fa-lg',
-          N_('Remove this Item from the VMDB'),
-          N_('Remove Item from the VMDB'),
+          N_('Remove this Catalog Item'),
+          N_('Remove Catalog Item'),
           :url_parms => "main_div",
-          :confirm   => N_("Warning: This Catalog Items and ALL of their components will be permanently removed from the Virtual Management Database.  Are you sure you want to remove this Catalog Item?")),
+          :confirm   => N_("Warning: This Catalog Items and ALL of their components will be permanently removed!")),
       ]
     ),
   ])

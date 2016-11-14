@@ -4,6 +4,8 @@ class Storage < ApplicationRecord
   has_many :vms,               :foreign_key => :storage_id
   has_many :host_storages
   has_many :hosts,             :through => :host_storages
+  has_many :storage_profile_storages,   :dependent  => :destroy
+  has_many :storage_profiles,           :through    => :storage_profile_storages
   has_and_belongs_to_many :all_vms_and_templates, :class_name => "VmOrTemplate", :join_table => :storages_vms_and_templates, :association_foreign_key => :vm_or_template_id
   has_and_belongs_to_many :all_miq_templates,     :class_name => "MiqTemplate",  :join_table => :storages_vms_and_templates, :association_foreign_key => :vm_or_template_id
   has_and_belongs_to_many :all_vms,               :class_name => "Vm",           :join_table => :storages_vms_and_templates, :association_foreign_key => :vm_or_template_id
@@ -44,6 +46,8 @@ class Storage < ApplicationRecord
   include StorageMixin
   include AsyncDeleteMixin
   include AvailabilityMixin
+  include SupportsFeatureMixin
+  include TenantIdentityMixin
 
   virtual_column :v_used_space,                   :type => :integer
   virtual_column :v_used_space_percent_of_total,  :type => :integer
@@ -66,7 +70,13 @@ class Storage < ApplicationRecord
   virtual_column :total_unmanaged_vms,            :type => :integer  # uses is handled via class method that aggregates
   virtual_column :count_of_vmdk_disk_files,       :type => :integer
 
-  SUPPORTED_STORAGE_TYPES = %w( VMFS NFS FCP ISCSI GLUSTERFS )
+  SUPPORTED_STORAGE_TYPES = %w( VMFS NFS NFS41 FCP ISCSI GLUSTERFS )
+
+  supports :smartstate_analysis do
+    if ext_management_systems.blank? || !ext_management_system.class.supports_smartstate_analysis?
+      unsupported_reason_add(:smartstate_analysis, _("Smartstate Analysis cannot be performed on selected Datastore"))
+    end
+  end
 
   def to_s
     name
@@ -262,7 +272,7 @@ class Storage < ApplicationRecord
     end
 
     if scan_complete?(miq_task)
-      _log.info "#{scan_complete_message(miq_task)}"
+      _log.info scan_complete_message(miq_task).to_s
       return
     end
 
@@ -530,7 +540,7 @@ class Storage < ApplicationRecord
     hosts = active_hosts_with_authentication_status_ok_in_zone(MiqServer.my_zone)
     if hosts.empty?
       message = "There are no active Hosts with valid credentials connected to Storage: [#{name}] in Zone: [#{MiqServer.my_zone}]."
-      _log.warn "#{message}"
+      _log.warn message
       raise MiqException::MiqUnreachableStorage,
             _("There are no active Hosts with valid credentials connected to Storage: [%{name}] in Zone: [%{zone}].") %
               {:name => name, :zone => MiqServer.my_zone}
@@ -847,6 +857,12 @@ class Storage < ApplicationRecord
       Benchmark.realtime_block(:process_perfs_tag) { VimPerformanceTagValue.build_from_performance_record(perf) }
 
       update_attribute(:last_perf_capture_on, hour)
+
+      # We don't rollup realtime to Storage, so we need to manually create bottlenecks
+      # when we capture hourly storage.
+      # See: https://github.com/ManageIQ/manageiq/blob/96753f2473391e586d0a563fad9cf7153deab671/app/models/metric/ci_mixin/rollup.rb#L102
+      Benchmark.realtime_block(:process_bottleneck) { BottleneckEvent.generate_future_events(self) } if interval_name == 'hourly'
+
       perf_rollup_to_parents(interval_name, hour)
     end
 
@@ -864,19 +880,13 @@ class Storage < ApplicationRecord
   end
 
   def self.batch_operation_supported?(operation, ids)
-    Storage.where(:id => ids).all? { |s| s.public_send("validate_#{operation}")[:available] }
-  end
-
-  def validate_smartstate_analysis
-    if ext_management_systems.blank? || !ext_management_system.kind_of?(ManageIQ::Providers::Vmware::InfraManager)
-      {:available => false, :message => "Smartstate Analysis cannot be performed on selected Datastore"}
-    else
-      {:available => true, :message => nil}
+    Storage.where(:id => ids).all? do |s|
+      if s.respond_to?("supports_#{operation}?")
+        s.public_send("supports_#{operation}?")
+      else
+        s.public_send("validate_#{operation}")[:available]
+      end
     end
-  end
-
-  def tenant_identity
-    ext_management_system.tenant_identity
   end
 
   # @param [String, Storage] store_type upcased version of the storage type

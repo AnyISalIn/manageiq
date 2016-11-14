@@ -1,6 +1,8 @@
 # This model wraps a pglogical stored proc (pglogical.show_subscription_status)
 # This is exposed to us through the PostgreSQLAdapter#pglogical object's #subscriptions method
 # This model then exposes select values returned from that method
+require 'pg/dsn_parser'
+
 class PglogicalSubscription < ActsAsArModel
   set_columns_hash(
     :id                   => :string,
@@ -45,7 +47,7 @@ class PglogicalSubscription < ActsAsArModel
     subscription_list.each do |s|
       begin
         s.save!
-      rescue StandardError => e
+      rescue => e
         errors << "Failed to save subscription to #{s.host}: #{e.message}"
       end
     end
@@ -58,8 +60,12 @@ class PglogicalSubscription < ActsAsArModel
 
   def delete
     pglogical.subscription_drop(id, true)
+    MiqRegion.find_by_region(provider_region).remove_auth_key
     MiqRegion.destroy_region(connection, provider_region)
-    pglogical.node_drop(MiqPglogical.local_node_name, true) if self.class.count == 0
+    if self.class.count == 0
+      pglogical.node_drop(MiqPglogical.local_node_name, true)
+      pglogical.disable
+    end
   end
 
   def self.delete_all
@@ -84,6 +90,16 @@ class PglogicalSubscription < ActsAsArModel
     self.class.pglogical(refresh)
   end
 
+  def validate(new_connection_params = {})
+    find_password
+    connection_hash = attributes.merge(new_connection_params.delete_blanks)
+    MiqRegionRemote.validate_connection_settings(connection_hash['host'],
+                                                 connection_hash['port'],
+                                                 connection_hash['user'],
+                                                 connection_hash['password'],
+                                                 connection_hash['dbname'])
+  end
+
   # translate the output from the pglogical stored proc to our object columns
   def self.subscription_to_columns(sub)
     cols = sub.symbolize_keys
@@ -103,7 +119,7 @@ class PglogicalSubscription < ActsAsArModel
   private_class_method :subscription_to_columns
 
   def self.dsn_attributes(dsn)
-    attrs = connection.class.parse_dsn(dsn)
+    attrs = PG::DSNParser.parse(dsn)
     attrs.select! { |k, _v| [:dbname, :host, :user, :port].include?(k) }
     port = attrs.delete(:port)
     attrs[:port] = port.to_i unless port.blank?
@@ -146,10 +162,14 @@ class PglogicalSubscription < ActsAsArModel
 
   private
 
-  def new_subscription_name
+  def remote_region_number
     MiqRegionRemote.with_remote_connection(host, port || 5432, user, decrypted_password, dbname, "postgresql") do |_conn|
-      "region_#{MiqRegionRemote.region_number_from_sequence}_subscription"
+      return MiqRegionRemote.region_number_from_sequence
     end
+  end
+
+  def new_subscription_name
+    "region_#{remote_region_number}_subscription"
   end
 
   def ensure_node_created
@@ -179,12 +199,13 @@ class PglogicalSubscription < ActsAsArModel
   # sets this instance's password field to the one in the subscription dsn in the database
   def find_password
     s = pglogical.subscription_show_status(id).symbolize_keys
-    dsn_hash = connection.class.parse_dsn(s.delete(:provider_dsn))
+    dsn_hash = PG::DSNParser.parse(s.delete(:provider_dsn))
     self.password = dsn_hash[:password]
   end
 
   def create_subscription
     ensure_node_created
+    MiqRegion.destroy_region(connection, remote_region_number)
     pglogical.subscription_create(new_subscription_name, dsn, [MiqPglogical::REPLICATION_SET_NAME],
                                   false).check
     self

@@ -1,4 +1,4 @@
-class ApplicationHelper::Button::HistoryItem < ApplicationHelper::Button::Basic
+class ApplicationHelper::Button::HistoryItem < ApplicationHelper::Button::ButtonWithoutRbacCheck
   def calculate_properties
     super
     if @view_context.x_tree_history.length > history_item_id
@@ -14,7 +14,7 @@ class ApplicationHelper::Button::HistoryItem < ApplicationHelper::Button::Basic
     @history_item_id
   end
 
-  def skip?
-    !@view_context.x_tree_history[history_item_id] && history_item_id != 1
+  def visible?
+    @view_context.x_tree_history[history_item_id] || history_item_id == 1
   end
 end

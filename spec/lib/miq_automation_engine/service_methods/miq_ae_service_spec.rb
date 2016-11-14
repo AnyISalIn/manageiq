@@ -23,7 +23,7 @@ module MiqAeServiceSpec
                      {:name => 'var2', :type => 'attribute',
                                :priority => 3}
                     ]
-      MiqAutomateHelper.create_dummy_method(identifiers, fields)
+      Spec::Support::MiqAutomateHelper.create_dummy_method(identifiers, fields)
     end
 
     def create_inaccessible_domain
@@ -39,10 +39,10 @@ module MiqAeServiceSpec
 
     def assert_readonly_instance(automate_method_script)
       dom_obj = MiqAeDomain.find_by_name(@domain)
-      dom_obj.update_attributes!(:system => true)
+      dom_obj.lock_contents!
       @ae_method.update_attributes(:data => automate_method_script)
       result = invoke_ae.root(@ae_result_key)
-      dom_obj.update_attributes!(:system => false)
+      dom_obj.unlock_contents!
       expect(result).to be_falsey
     end
 

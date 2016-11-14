@@ -1,14 +1,15 @@
-$:.push("#{File.dirname(__FILE__)}")
+$:.push(File.dirname(__FILE__))
 require 'evm_application'
+require 'evm_rake_helper'
 
 namespace :evm do
   desc "Start the ManageIQ EVM Application"
-  task :start => ["db:verify_local", :environment] do
+  task :start => :environment do
     EvmApplication.start
   end
 
   desc "Restart the ManageIQ EVM Application"
-  task :restart => ["db:verify_local", :environment] do
+  task :restart => :environment do
     EvmApplication.stop
     EvmApplication.start
   end
@@ -26,6 +27,12 @@ namespace :evm do
   desc "Report Status of the ManageIQ EVM Application"
   task :status => :environment do
     EvmApplication.status
+  end
+
+  desc "Write a remote region id to this server's REGION file"
+  task :join_region => :environment do
+    configured_region = ApplicationRecord.region_number_from_sequence.to_i
+    EvmApplication.set_region_file(Rails.root.join("REGION"), configured_region)
   end
 
   # update_start can be called in an environment where the database configuration is
@@ -60,5 +67,16 @@ namespace :evm do
       Rake::Task["environment"].invoke
       DescendantLoader.instance.class_inheritance_relationships
     end
+  end
+
+  # Example usage:
+  #  bin/rake evm:raise_server_event -- --event db_failover_executed
+  desc 'Raise evm event'
+  task :raise_server_event => :environment do
+    require 'trollop'
+    opts = Trollop.options(EvmRakeHelper.extract_command_options) do
+      opt :event, "Server Event", :type => :string, :required => true
+    end
+    EvmDatabase.raise_server_event(opts[:event])
   end
 end

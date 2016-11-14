@@ -6,6 +6,7 @@ module ManageIQ::Providers
     include ManageIQ::Providers::Openstack::RefreshParserCommon::HelperMethods
     include ManageIQ::Providers::Openstack::RefreshParserCommon::Images
     include ManageIQ::Providers::Openstack::RefreshParserCommon::Objects
+    include ManageIQ::Providers::Openstack::RefreshParserCommon::Flavors
     include ManageIQ::Providers::Openstack::RefreshParserCommon::OrchestrationStacks
 
     def self.ems_inv_to_hashes(ems, options = nil)
@@ -54,9 +55,10 @@ module ManageIQ::Providers
 
       $fog_log.info("#{log_header}...")
       # The order of the below methods does matter, because there are inner dependencies of the data!
+      get_tenants
       get_flavors
       get_availability_zones
-      get_tenants
+      get_host_aggregates
       get_quotas
       get_key_pairs
       load_orchestration_stacks
@@ -65,15 +67,11 @@ module ManageIQ::Providers
       # get_hosts
       get_images
       get_servers
-      get_volumes
-      get_snapshots
-      get_object_store
       get_cloud_services
 
       $fog_log.info("#{log_header}...Complete")
 
       link_vm_genealogy
-      link_storage_associations
       filter_unused_disabled_flavors
 
       @data
@@ -96,15 +94,15 @@ module ManageIQ::Providers
     end
 
     def availability_zones_compute
-      @availability_zones_compute ||= safe_list { @connection.availability_zones }
+      @availability_zones_compute ||= safe_list { @connection.availability_zones.summary }
     end
 
     def availability_zones_volume
-      @availability_zones_volume ||= safe_list { @volume_service.availability_zones }
+      @availability_zones_volume ||= safe_list { @volume_service.availability_zones.summary }
     end
 
     def availability_zones
-      @availability_zones ||= availability_zones_compute + availability_zones_volume
+      @availability_zones ||= (availability_zones_compute + availability_zones_volume).uniq(&:zoneName)
     end
 
     def volumes
@@ -113,20 +111,15 @@ module ManageIQ::Providers
       @volumes ||= @volume_service.handled_list(:volumes)
     end
 
-    def get_flavors
-      flavors = @connection.handled_list(:flavors)
-      process_collection(flavors, :flavors) { |flavor| parse_flavor(flavor) }
-    end
-
-    def get_private_flavor(id)
-      private_flavor = safe_get { @connection.flavors.get(id) }
-      process_collection([private_flavor], :flavors) { |flavor| parse_flavor(flavor) } if private_flavor
-    end
-
     def get_availability_zones
       azs = availability_zones
       azs << nil # force the null availability zone for openstack
       process_collection(azs, :availability_zones) { |az| parse_availability_zone(az) }
+    end
+
+    def get_host_aggregates
+      host_aggregates = safe_list { @connection.aggregates.all }
+      process_collection(host_aggregates, :host_aggregates) { |ha| parse_host_aggregate(ha) }
     end
 
     def get_tenants
@@ -146,17 +139,6 @@ module ManageIQ::Providers
     def get_key_pairs
       kps = @connection.handled_list(:key_pairs)
       process_collection(kps, :key_pairs) { |kp| parse_key_pair(kp) }
-    end
-
-    def get_volumes
-      process_collection(volumes, :cloud_volumes) { |volume| parse_volume(volume) }
-    end
-
-    def get_snapshots
-      return unless @volume_service.name == :cinder
-      process_collection(@volume_service.handled_list(:list_snapshots_detailed,
-                                                      :__request_body_index => "snapshots"),
-                         :cloud_volume_snapshots) { |snap| parse_snapshot(snap) }
     end
 
     def get_servers
@@ -197,31 +179,6 @@ module ManageIQ::Providers
       end if @data[:cloud_volumes]
     end
 
-    def parse_flavor(flavor)
-      uid = flavor.id
-
-      new_result = {
-        :type                 => "ManageIQ::Providers::Openstack::CloudManager::Flavor",
-        :ems_ref              => uid,
-        :name                 => flavor.name,
-        :enabled              => !flavor.disabled,
-        :cpus                 => flavor.vcpus,
-        :memory               => flavor.ram.megabytes,
-        :root_disk_size       => flavor.disk.to_i.gigabytes,
-        :swap_disk_size       => flavor.swap.to_i.megabytes,
-        :ephemeral_disk_size  => flavor.ephemeral.nil? ? nil : flavor.ephemeral.to_i.gigabytes,
-        :ephemeral_disk_count => if flavor.ephemeral.nil?
-                                   nil
-                                 elsif flavor.ephemeral.to_i > 0
-                                   1
-                                 else
-                                   0
-                                 end
-      }
-
-      return uid, new_result
-    end
-
     def parse_availability_zone(az)
       if az.nil?
         uid        = "null_az"
@@ -230,13 +187,31 @@ module ManageIQ::Providers
           :ems_ref => uid
         }
       else
-        uid = name = az.zoneName
+        name = uid = az.zoneName
         new_result = {
           :type    => "ManageIQ::Providers::Openstack::CloudManager::AvailabilityZone",
           :ems_ref => uid,
           :name    => name
         }
       end
+      return uid, new_result
+    end
+
+    def parse_host_aggregate(ha)
+      uid = ha.id
+      infra_ems = @ems.provider.try(:infra_ems)
+      ems_hosts = infra_ems.try(:hosts)
+      hosts = ha.hosts.map do |fog_host|
+        ems_hosts.try(:find) { |h| h.hypervisor_hostname == fog_host.split('.').first }
+      end
+
+      new_result = {
+        :type     => "ManageIQ::Providers::Openstack::CloudManager::HostAggregate",
+        :ems_ref  => uid.to_s,
+        :name     => ha.name,
+        :metadata => ha.metadata,
+        :hosts    => hosts.compact
+      }
 
       return uid, new_result
     end
@@ -250,6 +225,7 @@ module ManageIQ::Providers
         :description => tenant.description,
         :enabled     => tenant.enabled,
         :ems_ref     => uid,
+        :parent_id   => tenant.try(:parent_id)
       }
 
       return uid, new_result
@@ -299,88 +275,6 @@ module ManageIQ::Providers
 
     def self.miq_template_type
       "ManageIQ::Providers::Openstack::CloudManager::Template"
-    end
-
-    def parse_volume(volume)
-      log_header = "MIQ(#{self.class.name}.#{__method__})"
-
-      uid = volume.id
-      new_result = {
-        :ems_ref           => uid,
-        :type              => "ManageIQ::Providers::Openstack::CloudManager::CloudVolume",
-        :name              => volume_name(volume),
-        :status            => volume.status,
-        :bootable          => volume.attributes['bootable'],
-        :creation_time     => volume.created_at,
-        :description       => volume_description(volume),
-        :volume_type       => volume.volume_type,
-        :snapshot_uid      => volume.snapshot_id,
-        :size              => volume.size.to_i.gigabytes,
-        :tenant            => @data_index.fetch_path(:cloud_tenants, volume.tenant_id),
-        :availability_zone => @data_index.fetch_path(:availability_zones, volume.availability_zone || "null_az"),
-      }
-
-      volume.attachments.each do |a|
-        if a['device'].blank?
-          $fog_log.warn "#{log_header}: Volume: #{uid}, is missing a mountpoint, skipping the volume processing"
-          $fog_log.warn "#{log_header}:   EMS: #{@ems.name}, Instance: #{a['server_id']}"
-          next
-        end
-
-        dev = File.basename(a['device'])
-        disks = @data_index.fetch_path(:vms, a['server_id'], :hardware, :disks)
-
-        unless disks
-          $fog_log.warn "#{log_header}: Volume: #{uid}, attached to instance not visible in the scope of this EMS"
-          $fog_log.warn "#{log_header}:   EMS: #{@ems.name}, Instance: #{a['server_id']}"
-          next
-        end
-
-        if (disk = disks.detect { |d| d[:location] == dev })
-          disk[:size] = new_result[:size]
-        else
-          disk = add_instance_disk(disks, new_result[:size], dev, "OpenStack Volume")
-        end
-
-        if disk
-          disk[:backing]      = new_result
-          disk[:backing_type] = 'CloudVolume'
-        end
-      end
-
-      return uid, new_result
-    end
-
-    def volume_name(volume)
-      # Cinder v1
-      return volume.display_name if volume.respond_to?(:display_name)
-      # Cinder v2
-      return volume.name
-    end
-
-    def volume_description(volume)
-      # Cinder v1
-      return volume.display_description if volume.respond_to?(:display_description)
-      # Cinder v2
-      return volume.description
-    end
-
-    def parse_snapshot(snap)
-      uid = snap['id']
-      new_result = {
-        :ems_ref       => uid,
-        :type          => "ManageIQ::Providers::Openstack::CloudManager::CloudVolumeSnapshot",
-        # Supporting both Cinder v1 and Cinder v2
-        :name          => snap['display_name'] || snap['name'],
-        :status        => snap['status'],
-        :creation_time => snap['created_at'],
-        # Supporting both Cinder v1 and Cinder v2
-        :description   => snap['display_description'] || snap['description'],
-        :size          => snap['size'].to_i.gigabytes,
-        :tenant        => @data_index.fetch_path(:cloud_tenants, snap['os-extended-snapshot-attributes:project_id']),
-        :volume        => @data_index.fetch_path(:cloud_volumes, snap['volume_id'])
-      }
-      return uid, new_result
     end
 
     def parse_server(server, parent_hosts = nil)
@@ -438,11 +332,10 @@ module ManageIQ::Providers
         :host                => parent_host,
         :ems_cluster         => parent_cluster,
         :flavor              => flavor,
-        :availability_zone   => @data_index.fetch_path(:availability_zones, server.availability_zone.blank? ? "null_az" : server.availability_zone),
+        :availability_zone   => @data_index.fetch_path(
+          :availability_zones, server.availability_zone.blank? ? "null_az" : server.availability_zone
+        ),
         :key_pairs           => [@data_index.fetch_path(:key_pairs, server.key_name)].compact,
-        # TODO(lsmola) moving this under has_many :security_groups, :through => :network_port will require changing
-        # saving code and refresh of all providers
-        :security_groups     => server.security_groups.collect { |sg| child_manager_fetch_path(:security_groups, sg.id) }.compact,
         :cloud_tenant        => @data_index.fetch_path(:cloud_tenants, server.tenant_id),
         :orchestration_stack => @data_index.fetch_path(:orchestration_stacks, @resource_to_stack[uid])
       }
@@ -541,7 +434,7 @@ module ManageIQ::Providers
         :executable_name            => service.binary,
         :hostname                   => service.host,
         :status                     => service.state,
-        :scheduling_disabled        => service.status == 'disabled' ? true : false,
+        :scheduling_disabled        => service.status == 'disabled',
         :scheduling_disabled_reason => service.disabled_reason,
         :host                       => host,
         :system_service             => system_service,

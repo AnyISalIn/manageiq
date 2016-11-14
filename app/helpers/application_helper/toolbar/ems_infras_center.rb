@@ -40,10 +40,10 @@ class ApplicationHelper::Toolbar::EmsInfrasCenter < ApplicationHelper::Toolbar::
         button(
           :ems_infra_delete,
           'pficon pficon-delete fa-lg',
-          N_('Remove selected Infrastructure Providers from the VMDB'),
-          N_('Remove Infrastructure Providers from the VMDB'),
+          N_('Remove selected Infrastructure Providers'),
+          N_('Remove Infrastructure Providers'),
           :url_parms => "main_div",
-          :confirm   => N_("Warning: The selected Infrastructure Providers and ALL of their components will be permanently removed from the Virtual Management Database.  Are you sure you want to remove the selected Infrastructure Providers?"),
+          :confirm   => N_("Warning: The selected Infrastructure Providers and ALL of their components will be permanently removed!"),
           :enabled   => false,
           :onwhen    => "1+"),
       ]
@@ -71,6 +71,26 @@ class ApplicationHelper::Toolbar::EmsInfrasCenter < ApplicationHelper::Toolbar::
           'pficon pficon-edit fa-lg',
           N_('Edit Tags for the selected Infrastructure Providers'),
           N_('Edit Tags'),
+          :url_parms => "main_div",
+          :enabled   => false,
+          :onwhen    => "1+"),
+      ]
+    ),
+  ])
+  button_group('ems_infra_authentication', [
+    select(
+      :ems_infra_authentication_choice,
+      'fa fa-lock fa-lg',
+      t = N_('Authentication'),
+      t,
+      :enabled => false,
+      :onwhen  => "1+",
+      :items   => [
+        button(
+          :ems_infra_recheck_auth_status,
+          'fa fa-search fa-lg',
+          N_('Re-check Authentication Status for the selected Infrastructure Providers'),
+          N_('Re-check Authentication Status'),
           :url_parms => "main_div",
           :enabled   => false,
           :onwhen    => "1+"),

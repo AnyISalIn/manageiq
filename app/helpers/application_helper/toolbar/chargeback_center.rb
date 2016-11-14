@@ -12,12 +12,14 @@ class ApplicationHelper::Toolbar::ChargebackCenter < ApplicationHelper::Toolbar:
           'fa fa-file-text-o fa-lg',
           N_('Download this report in text format'),
           N_('Download as Text'),
+          :klass => ApplicationHelper::Button::ChargebackDownload,
           :url => "/render_txt"),
         button(
           :chargeback_download_csv,
           'fa fa-file-text-o fa-lg',
           N_('Download this report in CSV format'),
           N_('Download as CSV'),
+          :klass => ApplicationHelper::Button::ChargebackDownload,
           :url => "/render_csv"),
         button(
           :chargeback_download_pdf,
@@ -57,6 +59,7 @@ class ApplicationHelper::Toolbar::ChargebackCenter < ApplicationHelper::Toolbar:
           'fa fa-files-o fa-lg',
           t = N_('Copy this Chargeback Rate'),
           t,
+          :klass     => ApplicationHelper::Button::ChargebackRates,
           :url_parms => "main_div"),
         button(
           :chargeback_rates_delete,
@@ -64,7 +67,7 @@ class ApplicationHelper::Toolbar::ChargebackCenter < ApplicationHelper::Toolbar:
           N_('Remove this Chargeback Rate from the VMDB'),
           N_('Remove from the VMDB'),
           :url_parms => "main_div",
-          :confirm   => N_("Warning: This Chargeback Rate will be permanently removed from the Virtual Management Database. Are you sure you want to remove this Chargeback Rate?"),
+          :confirm   => N_("Warning: This Chargeback Rate will be permanently removed!"),
           :klass     => ApplicationHelper::Button::ChargebackRateRemove),
       ]
     ),

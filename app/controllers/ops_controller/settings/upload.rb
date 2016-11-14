@@ -14,10 +14,9 @@ module OpsController::Settings::Upload
   end
 
   def upload_logos(typ)
-    fld = typ == "custom" ? "upload" : "login"
-    if params["#{fld}".to_sym] && params["#{fld}".to_sym][:logo] &&
-       params["#{fld}".to_sym][:logo].respond_to?(:read)
-      if params["#{fld}".to_sym][:logo].original_filename.split(".").last.downcase != "png"
+    fld = typ == 'custom' ? params[:upload] : params[:login]
+    if fld && fld[:logo] && fld[:logo].respond_to?(:read)
+      if fld[:logo].original_filename.split(".").last.downcase != "png"
         msg = if typ == "custom"
                 _("Custom logo image must be a .png file")
               else
@@ -25,16 +24,16 @@ module OpsController::Settings::Upload
               end
         err = true
       else
-        File.open(typ == "custom" ? @@logo_file : @@login_logo_file, "wb") { |f| f.write(params["#{fld}".to_sym][:logo].read) }
+        File.open(typ == "custom" ? @@logo_file : @@login_logo_file, "wb") { |f| f.write(fld[:logo].read) }
         msg = if typ == "custom"
-                _('Custom Logo file "%{name}" uploaded') % {:name => params[fld.to_sym][:logo].original_filename}
+                _('Custom Logo file "%{name}" uploaded') % {:name => fld[:logo].original_filename}
               else
-                _('Custom login file "%{name}" uploaded') % {:name => params[fld.to_sym][:logo].original_filename}
+                _('Custom login file "%{name}" uploaded') % {:name => fld[:logo].original_filename}
               end
         err = false
       end
     else
-      msg = _("Use the Browse button to locate .png image file")
+      msg = _("Use the Choose file button to locate .png image file")
       err = true
     end
     redirect_to :action => 'explorer', :flash_msg => msg, :flash_error => err, :no_refresh => true
@@ -74,7 +73,7 @@ module OpsController::Settings::Upload
             imp = AssetTagImport.upload('VmOrTemplate', params[:upload][:file])
           end
         end
-      rescue StandardError => bang
+      rescue => bang
         msg = _("Error during 'upload': %{message}") % {:message => bang.message}
         err = true
       else
@@ -87,19 +86,17 @@ module OpsController::Settings::Upload
           msg = _("No valid import records were found, please upload another file")
           err = true
         else
-          msg = _("Press the Apply button to import the good records into the CFME database")
+          msg = _("Press the Apply button to import the good records into the %{product} database") % {:product => I18n.t('product.name')}
           err = false
           @sb[:good] = imp.stats[:good]
           @sb[:imports] = imp
         end
       end
     else
-      msg = _("Use the Browse button to locate CSV file")
+      msg = _("Use the Choose file button to locate CSV file")
       err = true
     end
     @sb[:show_button] = (@sb[:good] && @sb[:good] > 0)
     redirect_to :action => 'explorer', :flash_msg => msg, :flash_error => err, :no_refresh => true
   end
-
-  private
 end

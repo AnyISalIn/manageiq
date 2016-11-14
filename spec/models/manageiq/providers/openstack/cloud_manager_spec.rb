@@ -50,6 +50,35 @@ describe ManageIQ::Providers::Openstack::CloudManager do
       expect($log).to receive(:error)
       expect(@ems.event_monitor_available?).to be_falsey
     end
+
+    it "fails uniqueness check for same hostname with same or without domains and regions" do
+      dup_ems = FactoryGirl.build(:ems_openstack_with_authentication)
+      taken_hostname = @ems.endpoints.first.hostname
+      dup_ems.endpoints.first.hostname = taken_hostname
+      expect(dup_ems.valid?).to be_falsey
+    end
+
+    it "passes uniqueness check for same hostname with different domain" do
+      dup_ems = FactoryGirl.build(:ems_openstack_with_authentication, :uid_ems => 'my_domain')
+      taken_hostname = @ems.endpoints.first.hostname
+      dup_ems.endpoints.first.hostname = taken_hostname
+      expect(dup_ems.valid?).to be_truthy
+    end
+
+    it "passes uniqueness check for same hostname with different region" do
+      dup_ems = FactoryGirl.build(:ems_openstack_with_authentication, :provider_region => 'RegionTwo')
+      taken_hostname = @ems.endpoints.first.hostname
+      dup_ems.endpoints.first.hostname = taken_hostname
+      expect(dup_ems.valid?).to be_truthy
+    end
+
+    it "passes uniqueness check for same hostname with different domain and region" do
+      dup_ems = FactoryGirl.build(:ems_openstack_with_authentication,
+                                  :uid_ems => 'my_domain', :provider_region => 'RegionTwo')
+      taken_hostname = @ems.endpoints.first.hostname
+      dup_ems.endpoints.first.hostname = taken_hostname
+      expect(dup_ems.valid?).to be_truthy
+    end
   end
 
   it "event_monitor_options" do
@@ -94,16 +123,5 @@ describe ManageIQ::Providers::Openstack::CloudManager do
       expect(@az.block_storage_disk_capacity).to eq(7)
     end
 
-    it "block storage disk usage" do
-      @cloud.cloud_volumes << FactoryGirl.create(:cloud_volume_openstack, :size => 2, :status => "noterror", :availability_zone => @az)
-      @cloud.cloud_volumes << FactoryGirl.create(:cloud_volume_openstack, :size => 3, :status => "error", :availability_zone => @az)
-
-      expect(@az.block_storage_disk_usage).to eq(2)
-
-      # add valid volume, but not in az
-      @cloud.cloud_volumes << FactoryGirl.create(:cloud_volume_openstack, :size => 5, :status => "noterror")
-
-      expect(@az.block_storage_disk_usage).to eq(2)
-    end
   end
 end

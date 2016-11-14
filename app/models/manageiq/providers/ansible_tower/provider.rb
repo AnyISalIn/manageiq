@@ -38,45 +38,14 @@ class ManageIQ::Providers::AnsibleTower::Provider < ::Provider
   end
 
   def verify_credentials(auth_type = nil, options = {})
-    validity = with_provider_connection(options.merge(:auth_type => auth_type), &:verify_credentials)
-    raise MiqException::MiqInvalidCredentialsError, _("Username or password is not valid") if validity.nil?
-    validity
-  rescue Faraday::ConnectionFailed, Faraday::SSLError => err
-    raise MiqException::MiqUnreachableError, err.message, err.backtrace
-  rescue Faraday::Error::ClientError => err
-    raise MiqException::MiqCommunicationsError, JSON.parse(err.message)['detail']
-  end
-
-  def self.process_tasks(options)
-    raise _("No ids given to process_tasks") if options[:ids].blank?
-    if options[:task] == "refresh_ems"
-      refresh_ems(options[:ids])
-      create_audit_event(options)
-    else
-      options[:userid] ||= "system"
-      unknown_task_exception(options)
-      invoke_tasks_queue(options)
-    end
-  end
-
-  def self.create_audit_event(options)
-    msg = "'%{task}' initiated for %{amount} %{providers}" % {
-      :task      => options[:task],
-      :amount    => options[:ids].length,
-      :providers => Dictionary.gettext('providers',
-                                       :type      => :table,
-                                       :notfound  => :titleize,
-                                       :plural    => options[:ids].length > 1,
-                                       :translate => false)}
-    AuditEvent.success(:event        => options[:task],
-                       :target_class => base_class.name,
-                       :userid       => options[:userid],
-                       :message      => msg)
-  end
-
-  def self.unknown_task_exception(options)
-    unless instance_methods.collect(&:to_s).include?(options[:task])
-      raise _("Unknown task, %{options}") % {:options => options[:task]}
+    require 'ansible_tower_client'
+    begin
+      with_provider_connection(options.merge(:auth_type => auth_type)) { |c| c.api.verify_credentials } ||
+        raise(MiqException::MiqInvalidCredentialsError, _("Username or password is not valid"))
+    rescue Faraday::ConnectionFailed, Faraday::SSLError => err
+      raise MiqException::MiqUnreachableError, err.message, err.backtrace
+    rescue AnsibleTowerClient::ConnectionError => err
+      raise MiqException::MiqCommunicationsError, err.message
     end
   end
 

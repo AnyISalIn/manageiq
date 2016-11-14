@@ -9,7 +9,8 @@ class ApplicationHelper::Toolbar::DiagnosticsServerCenter < ApplicationHelper::T
       :refresh_workers,
       'fa fa-repeat fa-lg',
       N_('Reload current workers display'),
-      nil),
+      nil,
+      :klass => ApplicationHelper::Button::RefreshWorkers),
     button(
       :refresh_audit_log,
       'fa fa-repeat fa-lg',
@@ -36,21 +37,21 @@ class ApplicationHelper::Toolbar::DiagnosticsServerCenter < ApplicationHelper::T
       :refresh_production_log,
       'fa fa-repeat fa-lg',
       proc do
-        _('Reload the %{log_type} Log Display') % {:log_type => @sb[:rails_log]}
+        _('Reload the %{log_type} Log Display') % {:log_type => _(@sb[:rails_log])}
       end,
       nil),
     button(
       :fetch_production_log,
       'fa fa-download fa-lg',
       proc do
-        _('Download the Entire %{log_type} Log File') % {:log_type => @sb[:rails_log]}
+        _('Download the Entire %{log_type} Log File') % {:log_type => _(@sb[:rails_log])}
       end,
       nil,
       :url => "/fetch_production_log"),
   ])
   button_group('ldap_domain_vmdb', [
     select(
-      :support_vmdb_choice,
+      :server_collect_logs_choice,
       'fa fa-filter fa-lg',
       N_('Collect Logs'),
       N_('Collect'),
@@ -77,7 +78,7 @@ class ApplicationHelper::Toolbar::DiagnosticsServerCenter < ApplicationHelper::T
       N_('Edit the Log Depot settings for the selected Server'),
       N_('Edit')),
     select(
-      :support_vmdb_choice,
+      :restart_vmdb_choice,
       'fa fa-cog fa-lg',
       t = N_('Configuration'),
       t,

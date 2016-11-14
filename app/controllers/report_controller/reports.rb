@@ -13,7 +13,7 @@ module ReportController::Reports
     nodes = x_node.split('-')
     get_all_reps(nodes[4])
     @sb[:selected_rep_id] = from_cid(nodes[3].split('_').last)
-    if role_allows(:feature => "miq_report_widget_editor")
+    if role_allows?(:feature => "miq_report_widget_editor")
       # all widgets for this report
       get_all_widgets("report", from_cid(nodes[3].split('_').last))
     end
@@ -84,24 +84,17 @@ module ReportController::Reports
     rpt = MiqReport.find(params[:id])
 
     if rpt.miq_widgets.exists?
-      add_flash(_("Report cannot be deleted if it's being used by one or more Widgets"), :error)
-      render :update do |page|
-        page << javascript_prologue
-        page.replace("flash_msg_div_report_list", :partial => "layouts/flash_msg", :locals => {:div_num => "_report_list"})
-      end
+      render_flash(_("Report cannot be deleted if it's being used by one or more Widgets"), :error)
     else
       begin
         raise StandardError, "Default %{model} \"%{name}\" cannot be deleted" % {:model => ui_lookup(:model => "MiqReport"), :name => rpt.name} if rpt.rpt_type == "Default"
         rpt_name = rpt.name
         audit = {:event => "report_record_delete", :message => "[#{rpt_name}] Record deleted", :target_id => rpt.id, :target_class => "MiqReport", :userid => session[:userid]}
         rpt.destroy
-      rescue StandardError => bang
+      rescue => bang
         add_flash(_("%{model} \"%{name}\": Error during 'miq_report_delete': %{message}") %
                     {:model => ui_lookup(:model => "MiqReport"), :name => rpt_name, :message =>  bang.message}, :error)
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div_report_list", :partial => "layouts/flash_msg", :locals => {:div_num => "_report_list"})
-        end
+        javascript_flash
         return
       else
         AuditEvent.success(audit)
@@ -128,18 +121,19 @@ module ReportController::Reports
   end
 
   def sample_timeline
-    tl_xml = MiqXml.load("<data/>")
-    tl_event(tl_xml, format_timezone(Time.now, "UTC", nil), "Now", "red")
-    tl_event(tl_xml, format_timezone(Time.now - 5.seconds, "UTC", nil), "5 Seconds Ago")
-    tl_event(tl_xml, format_timezone(Time.now - 1.minute, "UTC", nil), "1 Minute Ago")
-    tl_event(tl_xml, format_timezone(Time.now - 5.minutes, "UTC", nil), "5 Minutes Ago")
-    tl_event(tl_xml, format_timezone(Time.now - 1.hour, "UTC", nil), "1 Hour Ago")
-    tl_event(tl_xml, format_timezone(Time.now - 1.day, "UTC", nil), "Yesterday")
-    tl_event(tl_xml, format_timezone(Time.now - 1.week, "UTC", nil), "Last Week")
-    tl_event(tl_xml, format_timezone(Time.now - 1.month, "UTC", nil), "Last Month")
-    tl_event(tl_xml, format_timezone(Time.now - 3.months, "UTC", nil), "3 Months Ago")
-    tl_event(tl_xml, format_timezone(Time.now - 1.year, "UTC", nil), "Last Year")
-    render :xml => tl_xml.to_s
+    @events_data = []
+    time = Time.zone.now
+    @events_data.push(tl_event(format_timezone(time, "UTC", nil), "Now", "red"))
+    @events_data.push(tl_event(format_timezone(time - 5.seconds, "UTC", nil), "5 Seconds Ago"))
+    @events_data.push(tl_event(format_timezone(time - 1.minute, "UTC", nil), "1 Minute Ago"))
+    @events_data.push(tl_event(format_timezone(time - 5.minutes, "UTC", nil), "5 Minutes Ago"))
+    @events_data.push(tl_event(format_timezone(time - 1.hour, "UTC", nil), "1 Hour Ago"))
+    @events_data.push(tl_event(format_timezone(time - 1.day, "UTC", nil), "Yesterday"))
+    @events_data.push(tl_event(format_timezone(time - 1.week, "UTC", nil), "Last Week"))
+    @events_data.push(tl_event(format_timezone(time - 1.month, "UTC", nil), "Last Month"))
+    @events_data.push(tl_event(format_timezone(time - 3.months, "UTC", nil), "3 Months Ago"))
+    @events_data.push(tl_event(format_timezone(time - 1.year, "UTC", nil), "Last Year"))
+    [{:data => [@events_data]}].to_json
   end
 
   def preview_timeline
@@ -147,7 +141,7 @@ module ReportController::Reports
     session[:edit][:tl_xml] = nil
   end
 
-  # Send ZiYa graph XML stream to the client
+  # generate preview chart when editing report
   def preview_chart
     render Charting.render_format => session[:edit][:zgraph_xml]
     session[:edit][:zgraph_xml] = nil
@@ -165,7 +159,7 @@ module ReportController::Reports
       @force_no_grid_xml   = true
       @gtl_type            = "list"
       @ajax_paging_buttons = true
-      @no_checkboxes = !role_allows(:feature => "miq_report_saved_reports_admin", :any => true)
+      @no_checkboxes = !role_allows?(:feature => "miq_report_saved_reports_admin", :any => true)
 
       if params[:ppsetting]                                             # User selected new per page value
         @items_per_page = params[:ppsetting].to_i                       # Set the new per page value
@@ -203,209 +197,17 @@ module ReportController::Reports
 
   private
 
-  def tl_event(tl, tl_time, tl_text, tl_color = nil)
-    event = tl.root.add_element("event",
-                                "start" => tl_time,
-                                #                                       "end" => Time.now,
-                                #                                       "isDuration" => "true",
-                                "title" => tl_text,
-                                #         "icon"=>"/images/16/16-event-vm_snapshot.png",
-                                "icon"  => ActionController::Base.helpers.image_path("16/blue-circle.png"),
-                                #         "image"=>"/images/64/64-snapshot.png",
-                                "color" => tl_color
-                               # "image"=>"/images/64/64-vendor-#{vm.vendor.downcase}.png"
-                               )
-    event.text = tl_text
-  end
-
-  # Check for valid report configuration in @edit[:new]
-  def valid_report?(rpt)
-    active_tab = "edit_1"
-    if @edit[:new][:model] == TREND_MODEL
-      unless @edit[:new][:perf_trend_col]
-        add_flash(_("Trending for is required"), :error)
-      end
-      unless @edit[:new][:perf_limit_col] || @edit[:new][:perf_limit_val]
-        add_flash(_("Trend Target Limit must be configured"), :error)
-      end
-      if @edit[:new][:perf_limit_val] && !is_numeric?(@edit[:new][:perf_limit_val])
-        add_flash(_("Trend Target Limit must be numeric"), :error)
-      end
-    else
-      if @edit[:new][:fields].length == 0
-        add_flash(_("At least one Field must be selected"), :error)
-      end
-    end
-
-    if Chargeback.db_is_chargeback?(@edit[:new][:model])
-      unless @edit[:new][:cb_show_typ]
-        add_flash(_("Show Costs by must be selected"), :error)
-        active_tab = "edit_3"
-      else
-        if @edit[:new][:cb_show_typ] == "owner"
-          unless @edit[:new][:cb_owner_id]
-            add_flash(_("An Owner must be selected"), :error)
-            active_tab = "edit_3"
-          end
-        elsif @edit[:new][:cb_show_typ] == "tenant" && !@edit[:new][:cb_tenant_id]
-          add_flash(_("A Tenant Category must be selected"), :error)
-          active_tab = "edit_3"
-        elsif @edit[:new][:cb_show_typ] == "tag"
-          unless @edit[:new][:cb_tag_cat]
-            add_flash(_("A Tag Category must be selected"), :error)
-            active_tab = "edit_3"
-          else
-            unless @edit[:new][:cb_tag_value]
-              add_flash(_("A Tag must be selected"), :error)
-              active_tab = "edit_3"
-            end
-          end
-        elsif @edit[:new][:cb_show_typ] == "entity"
-          unless @edit[:new][:cb_entity_id]
-            add_flash(_("A specific #{ui_lookup(:model => @edit[:new][:cb_model])} or all must be selected"), :error)
-            active_tab = "edit_3"
-          end
-        end
-      end
-    end
-
-    # Validate column styles
-    unless rpt.col_options.blank? || @edit[:new][:field_order].nil?
-      @edit[:new][:field_order].each do |f| # Go thru all of the cols in order
-        col = f.last.split(".").last.split("-").last
-        if val = rpt.col_options[col] # Skip if no options for this col
-          next unless val.key?(:style)  # Skip if no style options
-          val[:style].each_with_index do |s, s_idx| # Go through all of the configured ifs
-            if s[:value]
-              if e = MiqExpression.atom_error(rpt.col_to_expression_col(col.split("__").first), # See if the value is in error
-                                              s[:operator],
-                                              s[:value])
-                msg = case s_idx + 1
-                      when 1
-                        add_flash(_("Styling for '%{item}', first value is in error: %{message}") %
-                                    {:item => f.first, :message => e.message}, :error)
-                      when 2
-                        add_flash(_("Styling for '%{item}', second value is in error: %{message}") %
-                                    {:item => f.first, :message => e.message}, :error)
-                      when 3
-                        add_flash(_("Styling for '%{item}', third value is in error: %{message}") %
-                                    {:item => f.first, :message => e.message}, :error)
-                      end
-                active_tab = "edit_9"
-              end
-            end
-          end
-        end
-      end
-    end
-
-    unless rpt.valid? # Check the model for errors
-      rpt.errors.each do |field, msg|
-        add_flash("#{field.to_s.capitalize} #{msg}", :error)
-      end
-    end
-    @sb[:miq_tab] = active_tab if flash_errors?
-    @flash_array.nil?
-  end
-
-  # Check if chargeback field is valid
-  def valid_chargeback_fields
-    is_valid = false
-    # There are valid show typ fields
-    if %w(owner tenant tag entity).include?(@edit[:new][:cb_show_typ])
-      is_valid = case @edit[:new][:cb_show_typ]
-                 when "owner" then @edit[:new][:cb_owner_id]
-                 when "tenant" then @edit[:new][:cb_tenant_id]
-                 when "tag" then @edit[:new][:cb_tag_cat] && @edit[:new][:cb_tag_value]
-                 when "entity" then @edit[:new][:cb_entity_id] && @edit[:new][:cb_provider_id]
-                 end
-    end
-    is_valid
-  end
-  # Check for tab switch error conditions
-  def check_tabs
-    @sb[:miq_tab] = params[:tab]
-    active_tab = "edit_1"
-    case @sb[:miq_tab].split("_")[1]
-    when "8"
-      if @edit[:new][:fields].length == 0
-        add_flash(_("Consolidation tab is not available until at least 1 field has been selected"), :error)
-      end
-    when "2"
-      if @edit[:new][:fields].length == 0
-        add_flash(_("Formatting tab is not available until at least 1 field has been selected"), :error)
-      end
-    when "3"
-      if @edit[:new][:model] == TREND_MODEL
-        unless @edit[:new][:perf_trend_col]
-          add_flash(_("Filter tab is not available until Trending for field has been selected"), :error)
-        end
-        unless @edit[:new][:perf_limit_col] || @edit[:new][:perf_limit_val]
-          add_flash(_("Filter tab is not available until Trending Target Limit has been configured"), :error)
-        end
-        if @edit[:new][:perf_limit_val] && !is_numeric?(@edit[:new][:perf_limit_val])
-          add_flash(_("%s must be numeric") % "Trend Target Limit", :error)
-        end
-      else
-        if @edit[:new][:fields].length == 0
-          add_flash(_("Filter tab is not available until at least 1 field has been selected"), :error)
-        end
-      end
-    when "4"
-      if @edit[:new][:fields].length == 0
-        add_flash(_("Summary tab is not available until at least 1 field has been selected"), :error)
-      end
-    when "5"
-      if @edit[:new][:fields].length == 0
-        add_flash(_("Charts tab is not available until at least 1 field has been selected"), :error)
-      elsif @edit[:new][:sortby1].blank? || @edit[:new][:sortby1] == NOTHING_STRING
-        add_flash(_("Charts tab is not available unless a sort field has been selected"), :error)
-        active_tab = "edit_4"
-      end
-    when "6"
-      if @edit[:new][:fields].length == 0
-        add_flash(_("Timeline tab is not available until at least 1 field has been selected"), :error)
-      else
-        found = false
-        @edit[:new][:fields].each do |field|
-          if MiqReport.get_col_type(field[1]) == :datetime
-            found = true
-            break
-          end
-        end
-        unless found
-          add_flash(_("Timeline tab is not available unless at least 1 time field has been selected"), :error)
-        end
-      end
-    when "7"
-      if @edit[:new][:model] == TREND_MODEL
-        unless @edit[:new][:perf_trend_col]
-          add_flash(_("Preview tab is not available until Trending for field has been selected"), :error)
-        end
-        unless @edit[:new][:perf_limit_col] || @edit[:new][:perf_limit_val]
-          add_flash(_("Preview tab is not available until Trend Target Limit has been configured"), :error)
-        end
-        if @edit[:new][:perf_limit_val] && !is_numeric?(@edit[:new][:perf_limit_val])
-          add_flash(_("Trend Target Limit: Value must be numeric"), :error)
-        end
-      else
-        if @edit[:new][:fields].length == 0
-          add_flash(_("Preview tab is not available until at least 1 field has been selected"), :error)
-        elsif Chargeback.db_is_chargeback?(@edit[:new][:model]) && !valid_chargeback_fields
-          add_flash(_("Preview tab is not available until Chargeback Filters has been configured"), :error)
-          active_tab = "edit_3"
-        end
-      end
-    when "9"
-      if @edit[:new][:fields].length == 0
-        add_flash(_("Styling tab is not available until at least 1 field has been selected"), :error)
-      end
-    end
-    @sb[:miq_tab] = active_tab if flash_errors?
+  def tl_event(tl_time, tl_text, tl_color = nil)
+    {"start"       => tl_time,
+     "title"       => tl_text,
+     "description" => tl_text,
+     "icon"        => ActionController::Base.helpers.image_path("16/blue-circle.png"),
+     "color"       => tl_color
+    }
   end
 
   def menu_repname_update(old_name, new_name)
-    all_roles = MiqGroup.non_tenant_groups
+    all_roles = MiqGroup.non_tenant_groups_in_my_region
     all_roles.each do |role|
       rec = MiqGroup.find_by_description(role.name)
       menu = rec.settings[:report_menus] if rec.settings

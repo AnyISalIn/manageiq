@@ -8,9 +8,9 @@ function load_c3_charts() {
       if (data != null) {
         load_c3_chart(data.xml, chart_id);
 
-
         chart_id += "_2";
         if (typeof (data.xml2) !== "undefined") {
+          data.xml2.miq.flat_chart = true;
           load_c3_chart(data.xml2, chart_id, 100);
         }
       }
@@ -25,14 +25,15 @@ function load_c3_chart(data, chart_id, height) {
   var generate_args = chartData(data.miqChart, data, { bindto: "#" + chart_id, size: {height: height}})
 
   generate_args.data.onclick = function (data, _i) {
-    var seriesIndex = data.id - 1;
-    var pointIndex = data.x;
+    var seriesIndex = _.findIndex(generate_args.data.columns, function(col) { return col[0] == data.id; }) - 1
+    var pointIndex = data.index;
+    var value = data.value;
 
-    var parts = chart_id.split('_'); //miq_chart_candu_2
+    var parts = chart_id.split('_'); // miq_chart_candu_2
     var chart_set   = parts[2];
     var chart_index = parts[3];
 
-    miqBuildChartMenuEx(pointIndex, seriesIndex, null, 'CAT', data.name, chart_set, chart_index);
+    miqBuildChartMenuEx(pointIndex, seriesIndex, value, data.name, data.id, chart_set, chart_index);
 
     // This is to allow the bootstrap pop-up to be manually fired from the chart's click event
     // and have it closed by clicking outside of the pop-up menu.

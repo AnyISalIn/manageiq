@@ -1,4 +1,5 @@
 class Container < ApplicationRecord
+  include SupportsFeatureMixin
   include NewWithTypeStiMixin
 
   has_one    :container_group, :through => :container_definition
@@ -6,6 +7,7 @@ class Container < ApplicationRecord
   has_one    :container_node, :through => :container_group
   has_one    :container_replicator, :through => :container_group
   has_one    :container_project, :through => :container_group
+  has_one    :old_container_project, :through => :container_group
   belongs_to :container_definition
   belongs_to :container_image
   has_one    :container_image_registry, :through => :container_image

@@ -68,12 +68,8 @@ module MiqReport::Generator
 
     @table2class[table] ||= begin
       case table.to_sym
-      # when :users, :groups
-      #   "Account"
       when :ports, :nics, :storage_adapters
         "GuestDevice"
-      # when :system_services, :win32_services, :kernel_drivers, :filesystem_drivers, :linux_initprocesses, :host_services
-      #   "SystemService"
       when :"<compare>"
         self.class.name
       else
@@ -89,7 +85,7 @@ module MiqReport::Generator
     if klass.nil?
       klass = db_class
       result = {}
-      cols.each { |c| result.merge!(c.to_sym => {}) if klass.virtual_attribute?(c) } if cols
+      cols.each { |c| result.merge!(c.to_sym => {}) if klass.virtual_attribute?(c) || klass == LiveMetric } if cols
     end
 
     if includes.kind_of?(Hash)
@@ -188,6 +184,8 @@ module MiqReport::Generator
 
     includes = get_include_for_find(include)
 
+    load_custom_attributes
+
     time_profile.tz ||= tz if time_profile # Default time zone in profile to report time zone
     ext_options = {:tz => tz, :time_profile => time_profile}
     # TODO: these columns need to be converted to real SQL columns
@@ -278,7 +276,7 @@ module MiqReport::Generator
           :filter           => conditions,
           :include_for_find => includes,
           :where_clause     => where_clause,
-          :results_format   => :objects,
+          :skip_count       => true,
         )
       )
       results = Metric::Helper.remove_duplicate_timestamps(results)
@@ -350,6 +348,8 @@ module MiqReport::Generator
     klass = db.respond_to?(:constantize) ? db.constantize : db
     data = data.to_a
     objs = data[0] && data[0].kind_of?(Integer) ? klass.where(:id => data) : data.compact
+
+    remove_loading_relations_for_virtual_custom_attributes
 
     # Add resource columns to performance reports cols and col_order arrays for widget click thru support
     if klass.to_s.ends_with?("Performance")

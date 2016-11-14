@@ -13,7 +13,7 @@ RSpec.describe "reports API" do
         reports_url(report_2.id)
       ]
     )
-    expect_result_to_match_hash(response_hash, "count" => 2, "name" => "reports")
+    expect_result_to_match_hash(response.parsed_body, "count" => 2, "name" => "reports")
     expect(response).to have_http_status(:ok)
   end
 
@@ -24,7 +24,7 @@ RSpec.describe "reports API" do
     run_get reports_url(report.id)
 
     expect_result_to_match_hash(
-      response_hash,
+      response.parsed_body,
       "href"  => reports_url(report.id),
       "id"    => report.id,
       "name"  => report.name,
@@ -46,7 +46,7 @@ RSpec.describe "reports API" do
         "#{reports_url(report.id)}/results/#{report_result.to_param}"
       ]
     )
-    expect(response_hash["resources"]).not_to be_any { |resource| resource.key?("result_set") }
+    expect(response.parsed_body["resources"]).not_to be_any { |resource| resource.key?("result_set") }
     expect(response).to have_http_status(:ok)
   end
 
@@ -63,7 +63,7 @@ RSpec.describe "reports API" do
     api_basic_authorize
     run_get "#{reports_url(report.id)}/results/#{report_result.to_param}"
 
-    expect_result_to_match_hash(response_hash, "result_set" => [{"foo" => "bar"}, {"foo" => "baz"}])
+    expect_result_to_match_hash(response.parsed_body, "result_set" => [{"foo" => "bar"}, {"foo" => "baz"}])
     expect(response).to have_http_status(:ok)
   end
 
@@ -77,7 +77,7 @@ RSpec.describe "reports API" do
     expect_result_resources_to_include_hrefs(
       "resources",
       [
-        "#{results_url(result.id)}"
+        results_url(result.id).to_s
       ]
     )
     expect(response).to have_http_status(:ok)
@@ -96,7 +96,7 @@ RSpec.describe "reports API" do
     api_basic_authorize action_identifier(:results, :read, :resource_actions, :get)
     run_get results_url(report_result.id)
 
-    expect_result_to_match_hash(response_hash, "result_set" => [{"foo" => "bar"}, {"foo" => "baz"}])
+    expect_result_to_match_hash(response.parsed_body, "result_set" => [{"foo" => "bar"}, {"foo" => "baz"}])
     expect(response).to have_http_status(:ok)
   end
 
@@ -104,7 +104,7 @@ RSpec.describe "reports API" do
     report = FactoryGirl.create(:miq_report)
 
     exp = {}
-    exp["="] = {"field" => "MiqReport.id", "value" => report.id}
+    exp["="] = {"field" => "MiqReport-id", "value" => report.id}
     exp = MiqExpression.new(exp)
 
     schedule_1 = FactoryGirl.create(:miq_schedule, :filter => exp)
@@ -127,7 +127,7 @@ RSpec.describe "reports API" do
     report = FactoryGirl.create(:miq_report)
 
     exp = {}
-    exp["="] = {"field" => "MiqReport.id", "value" => report.id}
+    exp["="] = {"field" => "MiqReport-id", "value" => report.id}
     exp = MiqExpression.new(exp)
 
     schedule = FactoryGirl.create(:miq_schedule, :name => 'unit_test', :filter => exp)
@@ -136,7 +136,7 @@ RSpec.describe "reports API" do
     run_get "/api/reports/#{report.id}/schedules/#{schedule.id}"
 
     expect_result_to_match_hash(
-      response_hash,
+      response.parsed_body,
       "href" => "/api/reports/#{report.id}/schedules/#{schedule.id}",
       "id"   => schedule.id,
       "name" => 'unit_test'
@@ -151,7 +151,7 @@ RSpec.describe "reports API" do
     api_basic_authorize
     run_get "#{reports_url(report.id)}/results/#{report_result.id}"
 
-    expect_result_to_match_hash(response_hash, "result_set" => [])
+    expect_result_to_match_hash(response.parsed_body, "result_set" => [])
     expect(response).to have_http_status(:ok)
   end
 
@@ -161,7 +161,7 @@ RSpec.describe "reports API" do
 
       expect do
         api_basic_authorize action_identifier(:reports, :run)
-        run_post "#{reports_url(report.id)}", :action => "run"
+        run_post reports_url(report.id).to_s, :action => "run"
       end.to change(MiqReportResult, :count).by(1)
       expect_single_action_result(
         :href    => reports_url(report.id),
@@ -209,7 +209,7 @@ RSpec.describe "reports API" do
         run_post reports_url, gen_request(:import, :report => serialized_report, :options => options)
       end.to change(MiqReport, :count).by(1)
       expect_result_to_match_hash(
-        response_hash["results"].first["result"],
+        response.parsed_body["results"].first["result"],
         "name"      => "Test Report",
         "title"     => "Test Report",
         "rpt_group" => "Custom",
@@ -219,7 +219,7 @@ RSpec.describe "reports API" do
         "col_order" => %w(foo bar baz),
       )
       expect_result_to_match_hash(
-        response_hash["results"].first,
+        response.parsed_body["results"].first,
         "message" => "Imported Report: [Test Report]",
         "success" => true
       )
@@ -268,7 +268,7 @@ RSpec.describe "reports API" do
 
       expect do
         api_basic_authorize
-        run_post "#{reports_url(report.id)}", :action => "run"
+        run_post reports_url(report.id).to_s, :action => "run"
       end.not_to change(MiqReportResult, :count)
       expect(response).to have_http_status(:forbidden)
     end

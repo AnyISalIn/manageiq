@@ -25,7 +25,8 @@ class ApplicationHelper::Toolbar::VmInfrasCenter < ApplicationHelper::Toolbar::B
           :url_parms => "main_div",
           :confirm   => N_("Perform SmartState Analysis on the selected items?"),
           :enabled   => false,
-          :onwhen    => "1+"),
+          :onwhen    => "1+",
+          :klass     => ApplicationHelper::Button::BasicImage),
         button(
           :vm_collect_running_processes,
           'fa fa-eyedropper fa-lg',
@@ -63,10 +64,10 @@ class ApplicationHelper::Toolbar::VmInfrasCenter < ApplicationHelper::Toolbar::B
         button(
           :vm_delete,
           'pficon pficon-delete fa-lg',
-          t = N_('Remove selected items from the VMDB'),
+          t = N_('Remove selected items'),
           t,
           :url_parms => "main_div",
-          :confirm   => N_("Warning: The selected items and ALL of their components will be permanently removed from the Virtual Management Database.  Are you sure you want to remove the selected items?"),
+          :confirm   => N_("Warning: The selected items and ALL of their components will be permanently removed!"),
           :enabled   => false,
           :onwhen    => "1+"),
         separator,
@@ -146,7 +147,8 @@ class ApplicationHelper::Toolbar::VmInfrasCenter < ApplicationHelper::Toolbar::B
           'pficon pficon-add-circle-o fa-lg',
           N_('Request to Provision VMs'),
           N_('Provision VMs'),
-          :url_parms => "main_div"),
+          :url_parms => "main_div",
+          :klass     => ApplicationHelper::Button::VmMiqRequestNew),
         button(
           :vm_clone,
           'product product-clone fa-lg',
@@ -154,7 +156,8 @@ class ApplicationHelper::Toolbar::VmInfrasCenter < ApplicationHelper::Toolbar::B
           N_('Clone selected item'),
           :url_parms => "main_div",
           :enabled   => false,
-          :onwhen    => "1"),
+          :onwhen    => "1",
+          :klass     => ApplicationHelper::Button::BasicImage),
         button(
           :vm_publish,
           'pficon pficon-export',
@@ -162,7 +165,8 @@ class ApplicationHelper::Toolbar::VmInfrasCenter < ApplicationHelper::Toolbar::B
           t,
           :url_parms => "main_div",
           :enabled   => false,
-          :onwhen    => "1"),
+          :onwhen    => "1",
+          :klass     => ApplicationHelper::Button::BasicImage),
         button(
           :vm_migrate,
           'product product-migrate fa-lg',
@@ -170,7 +174,8 @@ class ApplicationHelper::Toolbar::VmInfrasCenter < ApplicationHelper::Toolbar::B
           N_('Migrate selected items'),
           :url_parms => "main_div",
           :enabled   => false,
-          :onwhen    => "1+"),
+          :onwhen    => "1+",
+          :klass     => ApplicationHelper::Button::BasicImage),
         button(
           :vm_retire,
           'fa fa-clock-o fa-lg',
@@ -178,7 +183,8 @@ class ApplicationHelper::Toolbar::VmInfrasCenter < ApplicationHelper::Toolbar::B
           N_('Set Retirement Dates'),
           :url_parms => "main_div",
           :enabled   => false,
-          :onwhen    => "1+"),
+          :onwhen    => "1+",
+          :klass     => ApplicationHelper::Button::BasicImage),
         button(
           :vm_retire_now,
           'fa fa-clock-o fa-lg',
@@ -187,7 +193,8 @@ class ApplicationHelper::Toolbar::VmInfrasCenter < ApplicationHelper::Toolbar::B
           :url_parms => "main_div",
           :confirm   => N_("Retire the selected items?"),
           :enabled   => false,
-          :onwhen    => "1+"),
+          :onwhen    => "1+",
+          :klass     => ApplicationHelper::Button::BasicImage),
       ]
     ),
   ])

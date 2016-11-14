@@ -41,26 +41,25 @@ class VmInfraController < ApplicationController
   end
 
   def set_elements_and_redirect_unauthorized_user
-    @nodetype, id = params[:id].split("_").last.split("-")
+    @nodetype, id = parse_nodetype_and_id(params[:id])
     prefix = prefix_by_nodetype(@nodetype)
 
     # Position in tree that matches selected record
-    if role_allows(:feature => "vandt_accord")
+    if role_allows?(:feature => "vandt_accord")
       set_active_elements_authorized_user('vandt_tree', 'vandt', true, VmOrTemplate, id)
-    elsif role_allows(:feature => "#{prefix}_filter_accord")
+    elsif role_allows?(:feature => "#{prefix}_filter_accord")
       set_active_elements_authorized_user("#{prefix}_filter_tree", "#{prefix}_filter", false, nil, id)
     else
-      if (prefix == "vms" && role_allows(:feature => "vms_instances_filter_accord")) ||
-         (prefix == "templates" && role_allows(:feature => "templates_images_filter_accord"))
+      if (prefix == "vms" && role_allows?(:feature => "vms_instances_filter_accord")) ||
+         (prefix == "templates" && role_allows?(:feature => "templates_images_filter_accord"))
         redirect_to(:controller => 'vm_or_template', :action => "explorer", :id => params[:id])
       else
         redirect_to(:controller => 'dashboard', :action => "auth_error")
       end
       return true
     end
-    nodetype, id = params[:id].split("-")
-    self.x_node = "#{nodetype}-#{to_cid(id)}"
-    get_node_info(x_node)
+
+    resolve_node_info(params[:id])
   end
 
   def tagging_explorer_controller?
@@ -70,4 +69,6 @@ class VmInfraController < ApplicationController
   def skip_breadcrumb?
     breadcrumb_prohibited_for_action?
   end
+
+  menu_section :inf
 end

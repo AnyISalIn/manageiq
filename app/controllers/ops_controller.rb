@@ -90,13 +90,7 @@ class OpsController < ApplicationController
 
   # handle buttons pressed on the center buttons toolbar
   def x_button
-    @sb[:action] = action = params[:pressed]
-
-    unless OPS_X_BUTTON_ALLOWED_ACTIONS.key?(action)
-      raise ActionController::RoutingError, _('invalid button action')
-    end
-
-    send(OPS_X_BUTTON_ALLOWED_ACTIONS[action])
+    generic_x_button(OPS_X_BUTTON_ALLOWED_ACTIONS)
   end
 
   def explorer
@@ -116,7 +110,7 @@ class OpsController < ApplicationController
     @breadcrumbs = []
     build_accordions_and_trees
 
-    @sb[:rails_log] = $rails_log.filename.to_s.include?("production.log") ? "Production" : "Development"
+    @sb[:rails_log] = $rails_log.filename.to_s.include?("production.log") ? N_("Production") : N_("Development")
 
     if !params[:no_refresh]
       @sb[:good] = nil
@@ -167,12 +161,12 @@ class OpsController < ApplicationController
       @scan = @edit[:scan]
       case params[:tab].split("_")[0]
       when "new"
-        redirect_to(:action => "ap_new", :tab => params[:tab], :id => "#{@scan.id || "new"}")
+        redirect_to(:action => "ap_new", :tab => params[:tab], :id => (@scan.id || "new").to_s)
       when "edit"
-        redirect_to(:action => "ap_edit", :tab => params[:tab], :id => "#{@scan.id || "new"}")
+        redirect_to(:action => "ap_edit", :tab => params[:tab], :id => (@scan.id || "new").to_s)
       else
         @sb[:miq_tab] = "new#{params[:tab]}"
-        redirect_to(:action => "ap_edit", :tab => "edit#{params[:tab]}", :id => "#{@scan.id || "new"}")
+        redirect_to(:action => "ap_edit", :tab => "edit#{params[:tab]}", :id => (@scan.id || "new").to_s)
       end
     else
       @sb[:active_tab] = params[:tab_id] || new_tab_id
@@ -387,7 +381,10 @@ class OpsController < ApplicationController
         end
       elsif @sb[:active_tab] == "settings_co_categories" && @in_a_form
         action_url = "category_edit"
-        record_id = @category && @category.id ? @category.id : nil
+        record_id = @category.try(:id)
+      elsif @sb[:active_tab] == "settings_label_tag_mapping" && @in_a_form
+        action_url = "label_tag_mapping_edit"
+        record_id = @lt_map.try(:id)
       elsif @sb[:active_tab] == 'settings_rhn_edit'
         locals[:no_cancel] = false
         action_url = "settings_update"
@@ -456,7 +453,7 @@ class OpsController < ApplicationController
     existing_node = nil                     # Init var
 
     parent_rec = VmdbTableEvm.find_by_id(@record.vmdb_table_id)
-    parents = [parent_rec, {:id => "#{@record.vmdb_table_id}"}]
+    parents = [parent_rec, {:id => @record.vmdb_table_id.to_s}]
     # Go up thru the parents and find the highest level unopened, mark all as opened along the way
     # Skip if no parents or parent already open
     unless parents.empty? || x_tree[:open_nodes].include?(x_build_node_id(parents.last))
@@ -496,8 +493,8 @@ class OpsController < ApplicationController
     handle_bottom_cell(nodetype, presenter, r, locals)
     x_active_tree_replace_cell(nodetype, presenter, r)
     extra_js_commands(presenter)
-    # Render the JS responses to update the explorer screen
-    render :js => presenter.to_html
+
+    render :json => presenter.for_render
   end
 
   def x_active_tree_replace_cell(nodetype, presenter, r)
@@ -551,6 +548,14 @@ class OpsController < ApplicationController
         @right_cell_text = _("Adding a new Category")
       else
         @right_cell_text = _("Editing %{model} \"%{name}\"") % {:name => @category.description, :model => "Category"}
+      end
+    when "ltme" # label tag mapping edit
+      # when editing/adding label tag mapping in settings tree
+      presenter.update(:settings_label_tag_mapping, r[:partial => "label_tag_mapping_form"])
+      if !@lt_map
+        @right_cell_text = _("Adding a new Mapping")
+      else
+        @right_cell_text = _("Editing tag mapping from label \"%{name}\"") % {:name  => @lt_map.label_name}
       end
     when "sie"        # scanitemset edit
       #  editing/adding scanitem in settings tree
@@ -633,7 +638,8 @@ class OpsController < ApplicationController
       # when editing/adding schedule in settings tree
       presenter.update(:rbac_details, r[:partial => "tenant_form"])
       if !@tenant.id
-        @right_cell_text = _("Adding a new %s") % tenant_type_title_string(params[:tenant_type] == "tenant")
+        @right_cell_text = _("Adding a new %{tenant}") %
+          {:tenant => tenant_type_title_string(params[:tenant_type] == "tenant")}
       else
         model = tenant_type_title_string(@tenant.divisible)
         @right_cell_text = @edit ?
@@ -790,4 +796,6 @@ class OpsController < ApplicationController
   def set_session_data
     session[:tasks_options] = @tasks_options unless @tasks_options.nil?
   end
+
+  menu_section :set
 end

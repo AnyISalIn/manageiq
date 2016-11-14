@@ -45,6 +45,7 @@ module ManageIQ::Providers::Openstack::ManagerMixin
         :ssl_cert_store => OpenSSL::X509::Store.new
       }
       extra_options[:domain_id] = keystone_v3_domain_id
+      extra_options[:region]    = provider_region if provider_region.present?
 
       osh = OpenstackHandle::Handle.new(username, password, address, port, api_version, security_protocol, extra_options)
       osh.connection_options = {:instrumentor => $fog_log}
@@ -119,6 +120,7 @@ module ManageIQ::Providers::Openstack::ManagerMixin
   end
 
   def translate_exception(err)
+    require 'excon'
     case err
     when Excon::Errors::Unauthorized
       MiqException::MiqInvalidCredentialsError.new "Login failed due to a bad username or password."
@@ -134,7 +136,7 @@ module ManageIQ::Providers::Openstack::ManagerMixin
   end
 
   def verify_api_credentials(options = {})
-    options[:service] = "Identity"
+    options[:service] = "Compute"
     with_provider_connection(options) {}
     true
   rescue => err

@@ -17,15 +17,14 @@ class ApplicationHelper::Toolbar::EmsMiddlewareCenter < ApplicationHelper::Toolb
           :ems_middleware_edit,
           'pficon pficon-edit fa-lg',
           t = N_('Edit this Middleware Provider'),
-          t,
-          :url => "/edit"),
+          t),
         button(
           :ems_middleware_delete,
           'pficon pficon-delete fa-lg',
-          t = N_('Remove this Middleware Provider from the VMDB'),
+          t = N_('Remove this Middleware Provider'),
           t,
           :url_parms => "&refresh=y",
-          :confirm   => N_("Warning: This Middleware Provider and ALL of its components will be permanently removed from the Virtual Management Database. Are you sure you want to remove this Middleware Provider?")),
+          :confirm   => N_("Warning: This Middleware Provider and ALL of its components will be permanently removed!")),
       ]
     ),
   ])
@@ -41,7 +40,6 @@ class ApplicationHelper::Toolbar::EmsMiddlewareCenter < ApplicationHelper::Toolb
           'product product-timeline fa-lg',
           N_('Show Timelines for this Middleware Provider'),
           N_('Timelines'),
-          :url       => "/show",
           :url_parms => "?display=timeline"),
       ]
     ),
@@ -58,6 +56,23 @@ class ApplicationHelper::Toolbar::EmsMiddlewareCenter < ApplicationHelper::Toolb
           'pficon pficon-edit fa-lg',
           N_('Edit Tags for this Middleware Provider'),
           N_('Edit Tags')),
+      ]
+    ),
+  ])
+  button_group('ems_middleware_authentication', [
+    select(
+      :ems_middleware_authentication_choice,
+      'fa fa-lock fa-lg',
+      t = N_('Authentication'),
+      t,
+      :items => [
+        button(
+          :ems_middleware_recheck_auth_status,
+          'fa fa-search fa-lg',
+          N_("Re-check Authentication Status for this #{ui_lookup(:table=>'ems_middleware')}"),
+          N_('Re-check Authentication Status'),
+          :klass => ApplicationHelper::Button::GenericFeatureButton,
+          :options => {:feature => :authentication_status}),
       ]
     ),
   ])

@@ -17,6 +17,7 @@
 .tags
 /data/
 /productization
+/providers
 /vmdb/
 BUILD
 ca/root
@@ -54,6 +55,7 @@ bin/*
 # config/
 config/apache
 config/database.yml*
+config/cable.yml
 config/vmdb.yml.db
 
 config/initializers/*.local.rb
@@ -86,7 +88,7 @@ public/test_grid.xml
 public/test_grid-0.xml
 public/upload
 public/pictures/
-public/self_service/
+public/ui/
 
 # public/dhtmlx/
 public/dhtmlx/dhtmlxtoolbar.js.orig
@@ -115,7 +117,7 @@ public/stylesheets/jmaki-standard-no-sidebars.css
 public/stylesheets/jmaki-standard-right-sidebar.css
 
 # spec/
-spec/replication/util/data/darga_migrations
+spec/replication/util/data/euwe_migrations
 
 # tmp/
 tmp/*

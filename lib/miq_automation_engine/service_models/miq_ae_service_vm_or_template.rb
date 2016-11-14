@@ -4,6 +4,8 @@ module MiqAeMethodService
     include MiqAeServiceEmsOperationsMixin
     require_relative "mixins/miq_ae_service_retirement_mixin"
     include MiqAeServiceRetirementMixin
+    require_relative "mixins/miq_ae_service_inflector_mixin"
+    include MiqAeServiceInflectorMixin
 
     expose :ext_management_system, :association => true
     expose :storage,               :association => true
@@ -34,6 +36,9 @@ module MiqAeMethodService
     expose :accounts,              :association => true
     expose :users,                 :association => true
     expose :groups,                :association => true
+    expose :compliances,           :association => true
+    expose :last_compliance,       :association => true
+    expose :ems_events,            :association => true
 
 
     METHODS_WITH_NO_ARGS = %w(start stop suspend unregister collect_running_processes shutdown_guest standby_guest reboot_guest)
@@ -112,7 +117,7 @@ module MiqAeMethodService
     def ems_custom_get(key)
       ar_method do
         c1 = @object.ems_custom_attributes.find_by(:name => key.to_s)
-        c1 ? c1.value : nil
+        c1.try(:value)
       end
     end
 

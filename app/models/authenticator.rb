@@ -106,7 +106,7 @@ module Authenticator
 
           unless identity
             msg = "Authentication failed for userid #{username}, unable to find user object in #{self.class.proper_name}"
-            _log.warn("#{msg}")
+            _log.warn(msg)
             AuditEvent.failure(audit.merge(:message => msg))
             task.error(msg)
             task.state_finished
@@ -117,18 +117,19 @@ module Authenticator
           userid = userid_for(identity, username)
           user   = User.find_by_userid(userid) || User.new(:userid => userid)
           update_user_attributes(user, username, identity)
+          user.miq_groups = matching_groups
 
           if matching_groups.empty?
             msg = "Authentication failed for userid #{user.userid}, unable to match user's group membership to an EVM role"
             AuditEvent.failure(audit.merge(:message => msg))
-            _log.warn("#{msg}")
+            _log.warn(msg)
             task.error(msg)
             task.state_finished
+            user.save! unless user.new_record?
             return nil
           end
 
           user.lastlogon = Time.now.utc
-          user.miq_groups = matching_groups
           user.save!
 
           _log.info("Authorized User: [#{user.userid}]")

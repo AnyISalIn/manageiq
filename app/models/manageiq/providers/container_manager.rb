@@ -1,7 +1,7 @@
-include AvailabilityMixin
-
 module ManageIQ::Providers
   class ContainerManager < BaseManager
+    include AvailabilityMixin
+
     has_many :container_nodes, :foreign_key => :ems_id, :dependent => :destroy
     has_many :container_groups, :foreign_key => :ems_id, :dependent => :destroy
     has_many :container_services, :foreign_key => :ems_id, :dependent => :destroy
@@ -17,6 +17,7 @@ module ManageIQ::Providers
     has_many :container_component_statuses, :foreign_key => :ems_id, :dependent => :destroy
     has_many :container_builds, :foreign_key => :ems_id, :dependent => :destroy
     has_many :container_build_pods, :foreign_key => :ems_id, :dependent => :destroy
+    has_many :container_templates, :foreign_key => :ems_id, :dependent => :destroy
     has_one :container_deployment, :foreign_key => :deployed_ems_id, :inverse_of => :deployed_ems
 
     # required by aggregate_hardware
@@ -28,8 +29,6 @@ module ManageIQ::Providers
     def aggregate_cpu_total_cores(targets = nil)
       aggregate_hardware(:computer_systems, :cpu_total_cores, targets)
     end
-    alias_method :aggregate_logical_cpus, :aggregate_cpu_total_cores
-    Vmdb::Deprecation.deprecate_methods(self, :aggregate_logical_cpus => :aggregate_cpu_total_cores)
 
     def aggregate_memory(targets = nil)
       aggregate_hardware(:computer_systems, :memory_mb, targets)
@@ -45,16 +44,16 @@ module ManageIQ::Providers
       "ManageIQ_Providers_ContainerManager"
     end
 
-    def validate_timeline
-      {:available => true, :message => nil}
-    end
-
     def validate_performance
       {:available => true, :message => nil}
     end
 
     def validate_authentication_status
       {:available => true, :message => nil}
+    end
+
+    def port_show
+      port.to_s
     end
   end
 end

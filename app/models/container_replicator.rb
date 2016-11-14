@@ -1,5 +1,9 @@
 class ContainerReplicator < ApplicationRecord
+  include SupportsFeatureMixin
+  include ComplianceMixin
   include CustomAttributeMixin
+  include MiqPolicyMixin
+  include TenantIdentityMixin
 
   belongs_to  :ext_management_system, :foreign_key => "ems_id"
   has_many :container_groups

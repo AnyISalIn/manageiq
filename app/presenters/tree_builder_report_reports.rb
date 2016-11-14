@@ -16,10 +16,7 @@ class TreeBuilderReportReports < TreeBuilderReportReportsClass
 
   def set_locals_for_render
     locals = super
-    locals.merge!(
-      :id_prefix => 'reports_',
-      :autoload  => true
-    )
+    locals.merge!(:autoload => true)
   end
 
   def root_options
@@ -31,15 +28,15 @@ class TreeBuilderReportReports < TreeBuilderReportReportsClass
     objects = []
     @rpt_menu.each_with_index do |r, i|
       objects.push(
-        :id    => "#{i}",
+        :id    => i.to_s,
         :text  => r[0],
-        :image => "#{@grp_title == r[0] ? 'blue_folder' : 'folder'}",
+        :image => (@grp_title == r[0] ? 'blue_folder' : 'folder'),
         :tip   => r[0]
       )
       # load next level of folders when building the tree
       @tree_state.x_tree(options[:tree])[:open_nodes].push("xx-#{i}")
     end
-    count_only_or_objects(count_only, objects, nil)
+    count_only_or_objects(count_only, objects)
   end
 
   def x_get_tree_custom_kids(object, count_only, _options)
@@ -50,7 +47,7 @@ class TreeBuilderReportReports < TreeBuilderReportReportsClass
         objects.push(
           :id    => "#{nodes.last.split('-').last}-#{i}",
           :text  => r[0],
-          :image => "#{@grp_title == @rpt_menu[nodes.last.to_i][0] ? 'blue_folder' : 'folder'}",
+          :image => (@grp_title == @rpt_menu[nodes.last.to_i][0] ? 'blue_folder' : 'folder'),
           :tip   => r[0]
         )
       end
@@ -63,6 +60,6 @@ class TreeBuilderReportReports < TreeBuilderReportReportsClass
         break if count_only
       end
     end
-    count_only_or_objects(count_only, objects, nil)
+    count_only_or_objects(count_only, objects)
   end
 end

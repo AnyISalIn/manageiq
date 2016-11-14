@@ -1,13 +1,16 @@
-include CompressedIds
-
 describe VmInfraController do
+  include CompressedIds
+
   let(:host_1x1)  { FactoryGirl.create(:host_vmware_esx, :hardware => FactoryGirl.create(:hardware, :cpu1x1, :ram1GB)) }
   let(:host_2x2)  { FactoryGirl.create(:host_vmware_esx, :hardware => FactoryGirl.create(:hardware, :cpu2x2, :ram1GB)) }
   let(:vm_vmware) { FactoryGirl.create(:vm_vmware) }
   before do
-    set_user_privileges
+    stub_user(:features => :all)
 
     session[:settings] = {:views => {:treesize => 20}}
+
+    allow(controller).to receive(:protect_build_tree).and_return(nil)
+    controller.instance_variable_set(:@protect_tree, OpenStruct.new(:name => "name"))
 
     EvmSpecHelper.create_guid_miq_server_zone
   end
@@ -36,8 +39,6 @@ describe VmInfraController do
     expect(response).to redirect_to(:action => 'explorer')
 
     post :explorer
-    node_id = "v-#{vm_vmware.compressed_id}"
-    expect(response.body).to match(/miqDynatreeActivateNodeSilently\('vandt_tree', '#{node_id}'\);/)
 
     expect(response).to render_template('shared/summary/_textual_tags')
     expect(response.body).to match(/VM and Instance &quot;#{vm_vmware.name}&quot;/)
@@ -52,7 +53,6 @@ describe VmInfraController do
     expect(response.status).to eq(200)
     expect(response).to render_template('vm_common/_snapshots_desc')
     expect(response).to render_template('vm_common/_snapshots_tree')
-    expect(assigns(:snaps)).to be_present
   end
 
   it 'can open the right size tab' do
@@ -287,42 +287,42 @@ describe VmInfraController do
     post :x_button, :params => { :pressed => 'vm_guest_shutdown', :id => vm_vmware.id }
     expect(response.status).to eq(200)
 
-    expect(response.body).to include('Shutdown Guest initiated for 1 VM and Instance from the CFME Database')
+    expect(response.body).to include('Shutdown Guest initiated for 1 VM and Instance from the %{product} Database' % {:product => I18n.t('product.name')})
   end
 
   it 'can Restart Guest' do
     post :x_button, :params => { :pressed => 'vm_guest_restart', :id => vm_vmware.id }
     expect(response.status).to eq(200)
 
-    expect(response.body).to include('Restart Guest initiated for 1 VM and Instance from the CFME Database')
+    expect(response.body).to include('Restart Guest initiated for 1 VM and Instance from the %{product} Database' % {:product => I18n.t('product.name')})
   end
 
   it 'can Power On VM' do
     post :x_button, :params => { :pressed => 'vm_start', :id => vm_vmware.id }
     expect(response.status).to eq(200)
 
-    expect(response.body).to include('Start initiated for 1 VM and Instance from the CFME Database')
+    expect(response.body).to include('Start initiated for 1 VM and Instance from the %{product} Database' % {:product => I18n.t('product.name')})
   end
 
   it 'can Power Off VM' do
     post :x_button, :params => { :pressed => 'vm_stop', :id => vm_vmware.id }
     expect(response.status).to eq(200)
 
-    expect(response.body).to include('Stop initiated for 1 VM and Instance from the CFME Database')
+    expect(response.body).to include('Stop initiated for 1 VM and Instance from the %{product} Database' % {:product => I18n.t('product.name')})
   end
 
   it 'can Suspend VM' do
     post :x_button, :params => { :pressed => 'vm_suspend', :id => vm_vmware.id }
     expect(response.status).to eq(200)
 
-    expect(response.body).to include('Suspend initiated for 1 VM and Instance from the CFME Database')
+    expect(response.body).to include('Suspend initiated for 1 VM and Instance from the %{product} Database' % {:product => I18n.t('product.name')})
   end
 
   it 'can Reset VM' do
     post :x_button, :params => { :pressed => 'vm_reset', :id => vm_vmware.id }
     expect(response.status).to eq(200)
 
-    expect(response.body).to include('Reset initiated for 1 VM and Instance from the CFME Database')
+    expect(response.body).to include('Reset initiated for 1 VM and Instance from the %{product} Database' % {:product => I18n.t('product.name')})
   end
 
   it 'can run Utilization' do

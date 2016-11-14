@@ -79,15 +79,12 @@ module ApplicationController::MiqRequestMethods
         @sb[:action] = nil
         replace_right_cell
       else
-        render :update do |page|
-          page << javascript_prologue
-          if @breadcrumbs && (@breadcrumbs.empty? || @breadcrumbs.last[:url] == "/vm/show_list")
-            page.redirect_to :action => "show_list", :controller => "vm"
-          else
-            # had to get id from breadcrumbs url, because there is no params[:id] when cancel is pressed on copy Request screen.
-            url = @breadcrumbs.last[:url].split('/')
-            page.redirect_to :controller => url[1], :action => url[2], :id => url[3]
-          end
+        if @breadcrumbs && (@breadcrumbs.empty? || @breadcrumbs.last[:url] == "/vm/show_list")
+          javascript_redirect :action => "show_list", :controller => "vm"
+        else
+          # had to get id from breadcrumbs url, because there is no params[:id] when cancel is pressed on copy Request screen.
+          url = @breadcrumbs.last[:url].split('/')
+          javascript_redirect :controller => url[1], :action => url[2], :id => url[3]
         end
       end
     elsif params[:button] == "continue"       # Template chosen, start vm provisioning
@@ -104,10 +101,7 @@ module ApplicationController::MiqRequestMethods
         validate_preprov
       end
       if @flash_array
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
       else
         @redirect_controller = "miq_request"
         @refresh_partial = "miq_request/prov_edit"
@@ -117,14 +111,10 @@ module ApplicationController::MiqRequestMethods
           @sb[:action] = "pre_prov"
           replace_right_cell
         else
-          render :update do |page|
-            page << javascript_prologue
-            page.redirect_to :controller     => @redirect_controller,
-                             :action         => "prov_edit",
-                             :src_vm_id      => @src_vm_id,
-                             :org_controller => "vm"
-            page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-          end
+          javascript_redirect :controller     => @redirect_controller,
+                              :action         => "prov_edit",
+                              :src_vm_id      => @src_vm_id,
+                              :org_controller => "vm"
         end
       end
     elsif params[:sort_choice]
@@ -135,13 +125,7 @@ module ApplicationController::MiqRequestMethods
         @edit[:vm_sortdir] = "ASC"
       end
       @edit[:vm_sortcol] = params[:sort_choice]
-      templates = rbac_filtered_objects(@edit[:template_kls].eligible_for_provisioning).sort_by { |a| a.name.downcase }
-      build_vm_grid(templates, @edit[:vm_sortdir], @edit[:vm_sortcol])
-      render :update do |page|
-        page << javascript_prologue
-        page.replace("pre_prov_div", :partial => "miq_request/pre_prov")
-        page << "miqSparkle(false);"
-      end
+      render_updated_templates
     elsif params[:sel_id]
       @edit = session[:edit]
       render :update do |page|
@@ -152,23 +136,44 @@ module ApplicationController::MiqRequestMethods
         page << javascript_for_miq_button_visibility(session[:changed])
         @edit[:src_vm_id] = params[:sel_id].to_i
       end
+    elsif params[:hide_deprecated_templates]
+      @edit = session[:edit]
+      @edit[:hide_deprecated_templates] = params[:hide_deprecated_templates] == "true"
+      render_updated_templates
     else                                                        # First time in, build pre-provision screen
-      @layout = "miq_request_vm"
-      @edit = {}
-      @edit[:explorer] = @explorer
-      @edit[:vm_sortdir] ||= "ASC"
-      @edit[:vm_sortcol] ||= "name"
-      @edit[:prov_type] = "VM Provision"
-      @edit[:template_kls] = get_template_kls
-      templates = rbac_filtered_objects(@edit[:template_kls].eligible_for_provisioning).sort_by { |a| a.name.downcase }
-      build_vm_grid(templates, @edit[:vm_sortdir], @edit[:vm_sortcol])
-      session[:changed] = false                                 # Turn off the submit button
-      @edit[:explorer] = true if @explorer
-      @in_a_form = true
+      set_pre_prov_vars
     end
   end
   alias_method :instance_pre_prov, :pre_prov
   alias_method :vm_pre_prov, :pre_prov
+
+  def render_updated_templates
+    templates = Rbac.filtered(@edit[:template_kls].eligible_for_provisioning).sort_by { |a| a.name.downcase }
+    build_vm_grid(templates, @edit[:vm_sortdir], @edit[:vm_sortcol], build_template_filter)
+    render :update do |page|
+      page << javascript_prologue
+      page.replace("pre_prov_div", :partial => "miq_request/pre_prov")
+      page << "miqSparkle(false);"
+    end
+  end
+
+  def set_pre_prov_vars
+    @layout = "miq_request_vm"
+    @edit = {}
+    @edit[:explorer] = @explorer
+    @edit[:vm_sortdir] ||= "ASC"
+    @edit[:vm_sortcol] ||= "name"
+    @edit[:prov_type] = "VM Provision"
+    @edit[:hide_deprecated_templates] = true
+    unless %w(image_miq_request_new miq_template_miq_request_new).include?(params[:pressed])
+      @edit[:template_kls] = get_template_kls
+      templates = Rbac.filtered(@edit[:template_kls].eligible_for_provisioning).sort_by { |a| a.name.downcase }
+      build_vm_grid(templates, @edit[:vm_sortdir], @edit[:vm_sortcol], build_template_filter)
+    end
+    session[:changed] = false # Turn off the submit button
+    @edit[:explorer] = true if @explorer
+    @in_a_form = true
+  end
 
   def get_template_kls
     # when clone/migrate buttons are pressed from a sub list view,
@@ -392,9 +397,10 @@ module ApplicationController::MiqRequestMethods
     @templates = _build_whatever_grid('template', templates, headers, sort_order, sort_by, integer_fields)
   end
 
-  def build_vm_grid(vms, sort_order = nil, sort_by = nil)
+  def build_vm_grid(vms, sort_order = nil, sort_by = nil, filter_by = nil)
     sort_by ||= "name"
     sort_order ||= "ASC"
+    filter_by ||= ->(_) { true }
 
     headers = {
       "name"                          => _("Name"),
@@ -403,6 +409,7 @@ module ApplicationController::MiqRequestMethods
       "logical_cpus"                  => _("CPUs"),
       "mem_cpu"                       => _("Memory"),
       "allocated_disk_storage"        => _("Disk Size"),
+      "deprecated"                    => _("Deprecated"),
       "ext_management_system.name"    => ui_lookup(:model => 'ExtManagementSystem'),
       "v_total_snapshots"             => _("Snapshots"),
     }
@@ -412,7 +419,9 @@ module ApplicationController::MiqRequestMethods
 
     integer_fields = %w(allocated_disk_storage mem_cpu logical_cpus v_total_snapshots)
 
-    @vms = _build_whatever_grid('vm', vms, headers, sort_order, sort_by, integer_fields)
+    filtered_vms = vms.select { |x| filter_by.call(x) }
+
+    @vms = _build_whatever_grid('vm', filtered_vms, headers, sort_order, sort_by, integer_fields)
   end
 
   def build_host_grid(hosts, sort_order = nil, sort_by = nil)
@@ -451,7 +460,7 @@ module ApplicationController::MiqRequestMethods
     when MiqProvisionVirtWorkflow
       if @edit[:new][:current_tab_key] == :service
         if @edit[:new][:st_prov_type]
-          build_vm_grid(@edit[:wf].get_field(:src_vm_id, :service)[:values], @edit[:vm_sortdir], @edit[:vm_sortcol])
+          build_vm_grid(@edit[:wf].get_field(:src_vm_id, :service)[:values], @edit[:vm_sortdir], @edit[:vm_sortcol], build_template_filter)
         else
           @vm = VmOrTemplate.find_by_id(@edit[:new][:src_vm_id] && @edit[:new][:src_vm_id][0])
         end
@@ -552,7 +561,7 @@ module ApplicationController::MiqRequestMethods
     @edit[:wf].get_dialog_order.each do |d|
       @edit[:wf].get_all_fields(d, false).each do |_f, field|
         unless field[:error].blank?
-          @error_div ||= "#{d}"
+          @error_div ||= d.to_s
           add_flash(field[:error], :error)
         end
       end
@@ -564,7 +573,7 @@ module ApplicationController::MiqRequestMethods
       @edit[:wf].get_all_fields(d, false).each do |_f, field|
         @edit[:wf].validate(@edit[:new])
         unless field[:error].nil?
-          @error_div ||= "#{d}"
+          @error_div ||= d.to_s
           add_flash(field[:error], :error)
         end
       end
@@ -576,13 +585,10 @@ module ApplicationController::MiqRequestMethods
       @sb[:action] = nil
       replace_right_cell
     else
-      render :update do |page|
-        page << javascript_prologue
-        if @breadcrumbs && (@breadcrumbs.empty? || @breadcrumbs.last[:url] == "/vm/show_list")
-          page.redirect_to :action => "show_list", :controller => "vm"
-        else
-          page.redirect_to @breadcrumbs.last[:url]
-        end
+      if @breadcrumbs && (@breadcrumbs.empty? || @breadcrumbs.last[:url] == "/vm/show_list")
+        javascript_redirect :action => "show_list", :controller => "vm"
+      else
+        javascript_redirect @breadcrumbs.last[:url]
       end
     end
   end
@@ -591,7 +597,15 @@ module ApplicationController::MiqRequestMethods
     id = session[:edit][:req_id] || "new"
     return unless load_edit("prov_edit__#{id}", "show_list")
     @edit[:new][:schedule_time] = @edit[:new][:schedule_time].in_time_zone("Etc/UTC") if @edit[:new][:schedule_time]
-    if @edit[:wf].make_request(@edit[:req_id], @edit[:new])
+
+    begin
+      request = @edit[:wf].make_request(@edit[:req_id], @edit[:new])
+    rescue => bang
+      request = false
+      add_flash(bang.message, :error)
+    end
+
+    if request
       @breadcrumbs.pop if @breadcrumbs
       typ = @edit[:org_controller]
       case typ
@@ -605,14 +619,11 @@ module ApplicationController::MiqRequestMethods
       flash = @edit[:req_id].nil? ? _("%{typ} Request was Submitted, you will be notified when your %{title} are ready") % {:typ => @edit[:prov_type], :title => title} : _("%{typ} Request was re-submitted, you will be notified when your %{title} are ready") % {:typ => @edit[:prov_type], :title => title}
       @explorer = @edit[:explorer] ? @edit[:explorer] : false
       @sb[:action] = @edit = session[:edit] =  nil                                                # Clear out session[:edit]
-      if role_allows(:feature => "miq_request_show_list", :any => true)
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to :controller => 'miq_request',
-                           :action     => 'show_list',
-                           :flash_msg  => flash,
-                           :typ        => typ
-        end
+      if role_allows?(:feature => "miq_request_show_list", :any => true)
+        javascript_redirect :controller => 'miq_request',
+                            :action     => 'show_list',
+                            :flash_msg  => flash,
+                            :typ        => typ
       else
         add_flash(flash)
         prov_request_cancel_submit_response
@@ -737,7 +748,7 @@ module ApplicationController::MiqRequestMethods
         end
         begin
           @edit[:wf].refresh_field_values(@edit[:new])
-        rescue StandardError => bang
+        rescue => bang
           add_flash(bang.message, :error)
           @edit[:new][f.to_sym] = val                                             # Save value
           return false                                                            # No need to refresh dialog divs
@@ -758,8 +769,8 @@ module ApplicationController::MiqRequestMethods
     if @options[:schedule_time]
       @options[:schedule_time] = format_timezone(@options[:schedule_time], Time.zone, "raw")
       @options[:start_date] = "#{@options[:schedule_time].month}/#{@options[:schedule_time].day}/#{@options[:schedule_time].year}"  # Set the start date
-      @options[:start_hour] = "#{@options[:schedule_time].hour}"
-      @options[:start_min] = "#{@options[:schedule_time].min}"
+      @options[:start_hour] = @options[:schedule_time].hour.to_s
+      @options[:start_min] = @options[:schedule_time].min.to_s
     end
     drop_breadcrumb(:name => @miq_request.description.to_s.split(' submitted')[0], :url => "/miq_request/show/#{@miq_request.id}")
     if @miq_request.workflow_class
@@ -822,8 +833,8 @@ module ApplicationController::MiqRequestMethods
         @edit[:new][:schedule_time] = format_timezone(@edit[:new][:schedule_time], Time.zone, "raw")
         @edit[:new][:start_date] = "#{@edit[:new][:schedule_time].month}/#{@edit[:new][:schedule_time].day}/#{@edit[:new][:schedule_time].year}" # Set the start date
         if params[:id]
-          @edit[:new][:start_hour] = "#{@edit[:new][:schedule_time].hour}"
-          @edit[:new][:start_min] = "#{@edit[:new][:schedule_time].min}"
+          @edit[:new][:start_hour] = @edit[:new][:schedule_time].hour.to_s
+          @edit[:new][:start_min] = @edit[:new][:schedule_time].min.to_s
         else
           @edit[:new][:start_hour] = "00"
           @edit[:new][:start_min] = "00"
@@ -857,7 +868,7 @@ module ApplicationController::MiqRequestMethods
           @edit[:vc_sortcol] ||= "name"
           @edit[:template_sortdir] ||= "ASC"
           @edit[:template_sortcol] ||= "name"
-          build_vm_grid(@edit[:wf].send("allowed_templates"), @edit[:vm_sortdir], @edit[:vm_sortcol])
+          build_vm_grid(@edit[:wf].send("allowed_templates"), @edit[:vm_sortdir], @edit[:vm_sortcol], build_template_filter)
           build_tags_tree(@edit[:wf], @edit[:new][:vm_tags], true)
           build_ous_tree(@edit[:wf], @edit[:new][:ldap_ous])
           if @edit[:wf].supports_pxe?
@@ -989,9 +1000,7 @@ module ApplicationController::MiqRequestMethods
         if ldap_ous == ou[1][:ou]
           # expand selected nodes parents when editing existing record
           @expand_parent_nodes = id
-          temp[:addClass] = "cfme-blue-bold-node"
-        else
-          temp[:addClass] = "cfme-no-cursor-node"
+          temp[:highlighted] = true
         end
         @ou_kids = []
         ou[1].each do |lvl1|
@@ -1009,7 +1018,7 @@ module ApplicationController::MiqRequestMethods
       end
     end
     unless all_dcs.blank?
-      @ldap_ous_tree = all_dcs.to_json  # Add ci node array to root of tree
+      @ldap_ous_tree = TreeBuilder.convert_bs_tree(all_dcs).to_json # Add ci node array to root of tree
     else
       @ldap_ous_tree = nil
     end
@@ -1027,10 +1036,8 @@ module ApplicationController::MiqRequestMethods
     }
 
     if ldap_ous == node[1][:ou]
-      kids[:addClass] = "cfme-blue-bold-node"
+      temp[:highlighted] = true
       @expand_parent_nodes = id
-    else
-      kids[:addClass] = "cfme-no-cursor-node"
     end
 
     ou_kids = []
@@ -1050,6 +1057,8 @@ module ApplicationController::MiqRequestMethods
     # Build the default filters tree for the search views
     all_tags = []                          # Array to hold all CIs
     kids_checked = false
+    parent_icon = ActionController::Base.helpers.image_path("100/folder.png")
+    child_icon  = ActionController::Base.helpers.image_path("100/tag.png")
     tags.each_with_index do |t, i| # Go thru all of the Searches
       if @curr_tag.blank? || @curr_tag != t[:name]
         if @curr_tag != t[:name] && @ci_node
@@ -1065,7 +1074,7 @@ module ApplicationController::MiqRequestMethods
         @ci_node[:title] += " *" if t[:single_value]
         @ci_node[:tooltip] = t[:description]
         @ci_node[:addClass] = "cfme-no-cursor-node"      # No cursor pointer
-        @ci_node[:icon] = ActionController::Base.helpers.image_path("100/folder.png")
+        @ci_node[:icon] = parent_icon
         @ci_node[:hideCheckbox] = @ci_node[:cfmeNoClick] = true
         @ci_node[:addClass] = "cfme-bold-node"  # Show node as different
         @ci_kids = []
@@ -1075,10 +1084,10 @@ module ApplicationController::MiqRequestMethods
           temp = {}
           temp[:key] = c[0].to_s
           # only add cfme_parent_key for single value tags, need to use in JS onclick handler
-          temp[:cfme_parent_key] = t[:id].to_s if t[:single_value]
+          temp[:selectable] = false
           temp[:title] = temp[:tooltip] = c[1][:description]
           temp[:addClass] = "cfme-no-cursor-node"
-          temp[:icon] = ActionController::Base.helpers.image_path("100/tag.png")
+          temp[:icon] = child_icon
           if edit_mode              # Don't show checkboxes/radio buttons in non-edit mode
             if vm_tags && vm_tags.include?(c[0].to_i)
               temp[:select] = true
@@ -1107,8 +1116,14 @@ module ApplicationController::MiqRequestMethods
         all_tags.push(@ci_node) unless @ci_kids.blank?
       end
     end
-    @all_tags_tree = all_tags.to_json # Add ci node array to root of tree
+    @all_tags_tree = TreeBuilder.convert_bs_tree(all_tags).to_json # Add ci node array to root of tree
     session[:tree] = "all_tags"
     session[:tree_name] = "all_tags_tree"
+  end
+
+  def build_template_filter
+    return ->(x) { !x.deprecated } if @edit[:hide_deprecated_templates]
+
+    ->(_) { true } # do not apply a filter
   end
 end

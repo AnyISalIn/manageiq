@@ -1,4 +1,5 @@
 describe MiqAeClassController do
+  include CompressedIds
   context "#set_record_vars" do
     it "Namespace remains unchanged when a class is edited" do
       ns = FactoryGirl.create(:miq_ae_namespace)
@@ -35,31 +36,31 @@ describe MiqAeClassController do
 
   context "#domain_lock" do
     it "Marks domain as locked/readonly" do
-      set_user_privileges
+      stub_user(:features => :all)
       ns = FactoryGirl.create(:miq_ae_domain_enabled)
       controller.instance_variable_set(:@_params, :id => ns.id)
       allow(controller).to receive(:replace_right_cell)
       controller.send(:domain_lock)
       ns.reload
-      expect(ns.system).to eq(true)
+      expect(ns.contents_locked?).to eq(true)
     end
   end
 
   context "#domain_unlock" do
     it "Marks domain as unlocked/editable" do
-      set_user_privileges
+      stub_user(:features => :all)
       ns = FactoryGirl.create(:miq_ae_domain_disabled)
       controller.instance_variable_set(:@_params, :id => ns.id)
       allow(controller).to receive(:replace_right_cell)
       controller.send(:domain_unlock)
       ns.reload
-      expect(ns.system).to eq(false)
+      expect(ns.contents_locked?).to eq(false)
     end
   end
 
   context "#domains_priority_edit" do
     it "sets priority of domains" do
-      set_user_privileges
+      stub_user(:features => :all)
       FactoryGirl.create(:miq_ae_domain, :name => "test1", :parent => nil, :priority => 1)
       FactoryGirl.create(:miq_ae_domain, :name => "test2", :parent => nil, :priority => 2)
       FactoryGirl.create(:miq_ae_domain, :name => "test3", :parent => nil, :priority => 3)
@@ -84,7 +85,7 @@ describe MiqAeClassController do
 
   context "#copy_objects" do
     it "do not replace left side explorer tree when copy form is loaded initially" do
-      set_user_privileges
+      stub_user(:features => :all)
       d1 = FactoryGirl.create(:miq_ae_domain, :name => "domain1")
       ns1 = FactoryGirl.create(:miq_ae_namespace, :name => "ns1", :parent_id => d1.id)
       cls1 = FactoryGirl.create(:miq_ae_class, :name => "cls1", :namespace_id => ns1.id)
@@ -103,12 +104,12 @@ describe MiqAeClassController do
     end
 
     it "copies class under specified namespace" do
-      set_user_privileges
+      stub_user(:features => :all)
       d1 = FactoryGirl.create(:miq_ae_domain, :name => "domain1")
       ns1 = FactoryGirl.create(:miq_ae_namespace, :name => "ns1", :parent_id => d1.id)
       cls1 = FactoryGirl.create(:miq_ae_class, :name => "cls1", :namespace_id => ns1.id)
 
-      d2 = FactoryGirl.create(:miq_ae_domain, :name => "domain2", :system => false)
+      d2 = FactoryGirl.create(:miq_ae_domain, :name => "domain2")
       ns2 = FactoryGirl.create(:miq_ae_namespace, :name => "ns2", :parent_id => d2.id)
 
       new = {:domain => d2.id, :namespace => ns2.fqname, :overwrite_location => false}
@@ -133,7 +134,7 @@ describe MiqAeClassController do
     end
 
     it "copy class under same namespace returns error when class exists" do
-      set_user_privileges
+      stub_user(:features => :all)
       d1 = FactoryGirl.create(:miq_ae_domain, :name => "domain1")
       ns1 = FactoryGirl.create(:miq_ae_namespace, :name => "ns1", :parent_id => d1.id)
       cls1 = FactoryGirl.create(:miq_ae_class, :name => "cls1", :namespace_id => ns1.id)
@@ -160,12 +161,12 @@ describe MiqAeClassController do
     end
 
     it "overwrite class under same namespace when class exists" do
-      set_user_privileges
+      stub_user(:features => :all)
       d1 = FactoryGirl.create(:miq_ae_domain, :name => "domain1")
       ns1 = FactoryGirl.create(:miq_ae_namespace, :name => "ns1", :parent_id => d1.id)
       cls1 = FactoryGirl.create(:miq_ae_class, :name => "cls1", :namespace_id => ns1.id)
 
-      d2 = FactoryGirl.create(:miq_ae_domain, :system => false)
+      d2 = FactoryGirl.create(:miq_ae_domain)
       ns2 = FactoryGirl.create(:miq_ae_namespace, :name => "ns2", :parent_id => d2.id)
 
       new = {:domain => d2.id, :namespace => ns2.fqname, :override_existing => true}
@@ -189,7 +190,7 @@ describe MiqAeClassController do
     end
 
     it "copies a class with new name under same domain" do
-      set_user_privileges
+      stub_user(:features => :all)
       d1 = FactoryGirl.create(:miq_ae_domain, :name => "domain1")
       ns1 = FactoryGirl.create(:miq_ae_namespace, :name => "ns1", :parent_id => d1.id)
       cls1 = FactoryGirl.create(:miq_ae_class, :name => "cls1", :namespace_id => ns1.id)
@@ -242,6 +243,7 @@ describe MiqAeClassController do
                                     :name         => "some_name",
                                     :fqname       => "fqname",
                                     :created_on   => Time.now,
+                                    :updated_on   => Time.current,
                                     :updated_by   => "some_user",
                                     :domain       => miq_ae_domain
                                    )
@@ -255,6 +257,7 @@ describe MiqAeClassController do
                                     :name         => "some_name",
                                     :fqname       => "fqname",
                                     :created_on   => Time.now,
+                                    :updated_on   => Time.current,
                                     :updated_by   => "some_user",
                                     :domain       => miq_ae_domain
                                    )
@@ -284,7 +287,7 @@ describe MiqAeClassController do
 
     context "#node_info" do
       it "collect namespace info" do
-        set_user_privileges
+        stub_user(:features => :all)
         d1 = FactoryGirl.create(:miq_ae_domain, :name => "domain1")
         ns1 = FactoryGirl.create(:miq_ae_namespace, :name => "ns1", :parent_id => d1.id)
         FactoryGirl.create(:miq_ae_namespace, :name => "ns2", :parent_id => ns1.id)
@@ -399,10 +402,10 @@ describe MiqAeClassController do
 
   context "#delete_domain" do
     it "Should only delete editable domains" do
-      set_user_privileges
-      domain1 = FactoryGirl.create(:miq_ae_domain_enabled, :system => true)
+      stub_user(:features => :all)
+      domain1 = FactoryGirl.create(:miq_ae_system_domain_enabled)
 
-      domain2 = FactoryGirl.create(:miq_ae_domain_enabled, :system => false)
+      domain2 = FactoryGirl.create(:miq_ae_domain_enabled)
       controller.instance_variable_set(:@_params,
                                        :miq_grid_checks => "aen-#{domain1.id}, aen-#{domain2.id}, aen-someid"
                                       )
@@ -418,7 +421,7 @@ describe MiqAeClassController do
 
   context "#ae_class_validation" do
     before(:each) do
-      set_user_privileges
+      stub_user(:features => :all)
       ns = FactoryGirl.create(:miq_ae_namespace)
       @cls = FactoryGirl.create(:miq_ae_class, :namespace_id => ns.id)
       @cls.ae_fields << FactoryGirl.create(:miq_ae_field, :name => 'fred',
@@ -429,37 +432,68 @@ describe MiqAeClassController do
       expect(controller).to receive(:render)
       controller.instance_variable_set(:@sb, :trees       => {:ae_tree => {:active_node => "aec-#{@cls.id}"}},
                                              :active_tree => :ae_tree)
-    end
-
-    after(:each) do
-      expect(controller.send(:flash_errors?)).to be_truthy
-      expect(assigns(:flash_array).first[:message]).to include("Name has already been taken")
-      expect(assigns(:edit)).not_to be_nil
-      expect(response.status).to eq(200)
-    end
-
-    it "Should not allow to create two schema fields with identical name" do
-      field = {"aetype"   => "attribute",
-               "datatype" => "string",
-               "name"     => "name01"}
       session[:edit] = {
         :key         => "aefields_edit__#{@cls.id}",
         :ae_class_id => @cls.id,
         :new         => {
           :datatypes => [],
           :aetypes   => [],
-          :fields    => [field, field]
+          :fields    => []
         }
       }
+    end
+
+    after(:each) do
+      expect(controller.send(:flash_errors?)).to be_truthy
+      expect(assigns(:edit)).not_to be_nil
+      expect(response.status).to eq(200)
+    end
+
+    it "Should not allow to accept schema field without name" do
+      field = {:aetype   => "attribute"}
+      controller.instance_variable_set(:@edit, session[:edit])
+      session[:field_data] = field
+      controller.instance_variable_set(:@_params, :button => "accept", :id => @cls.id)
+      controller.send(:field_accept)
+
+      expect(assigns(:flash_array).first[:message]).to include("Name is required")
+    end
+
+    it "Should not allow to accept schema field without type" do
+      field = {:name   => "name"}
+      controller.instance_variable_set(:@edit, session[:edit])
+      session[:field_data] = field
+      controller.instance_variable_set(:@_params, :button => "accept", :id => @cls.id)
+      controller.send(:field_accept)
+
+      expect(assigns(:flash_array).first[:message]).to include("Type is required")
+    end
+
+    it "Should not allow to accept schema field without name and type" do
+      field = {}
+      controller.instance_variable_set(:@edit, session[:edit])
+      session[:field_data] = field
+      controller.instance_variable_set(:@_params, :button => "accept", :id => @cls.id)
+      controller.send(:field_accept)
+
+      expect(assigns(:flash_array).first[:message]).to include("Name and Type is required")
+    end
+
+    it "Should not allow to create two schema fields with identical name" do
+      field = {:aetype   => "attribute",
+               :datatype => "string",
+               :name     => "name01"}
+      session[:edit][:new][:fields] = [field, field]
       controller.instance_variable_set(:@_params, :button => "save", :id => @cls.id)
       controller.send(:update_fields)
+      expect(assigns(:flash_array).first[:message]).to include("Name has already been taken")
     end
 
     it "Should not allow to add two parameters with identical name to a method" do
-      field = {"default_value" => nil,
-               "datatype"      => nil,
-               "name"          => "name01",
-               "method_id"     => @method.id}
+      field = {:default_value => nil,
+               :datatype      => nil,
+               :name          => "name01",
+               :method_id     => @method.id}
       session[:edit] = {
         :key         => "aemethod_edit__#{@method.id}",
         :ae_class_id => @cls.id,
@@ -471,13 +505,14 @@ describe MiqAeClassController do
       }
       controller.instance_variable_set(:@_params, :button => "save", :id => @method.id)
       controller.send(:update_method)
+      expect(assigns(:flash_array).first[:message]).to include("Name has already been taken")
     end
 
     it "Should not allow to add two parameters with identical name to a newly created method" do
-      field = {"default_value" => nil,
-               "datatype"      => nil,
-               "name"          => "name01",
-               "method_id"     => nil}
+      field = {:default_value => nil,
+               :datatype      => nil,
+               :name          => "name01",
+               :method_id     => nil}
       session[:edit] = {
         :key         => "aemethod_edit__new",
         :ae_class_id => @cls.id,
@@ -492,16 +527,20 @@ describe MiqAeClassController do
       }
       controller.instance_variable_set(:@_params, :button => "add")
       controller.send(:create_method)
+      expect(assigns(:flash_array).first[:message]).to include("Name has already been taken")
     end
   end
 
   context "save class/method" do
     before do
-      set_user_privileges
+      stub_user(:features => :all)
       ns = FactoryGirl.create(:miq_ae_namespace)
       @cls = FactoryGirl.create(:miq_ae_class, :namespace_id => ns.id)
-      @cls.ae_fields << FactoryGirl.create(:miq_ae_field, :name => 'fred',
-                                           :class_id => @cls.id, :priority => 1)
+      @cls.ae_fields << FactoryGirl.create(:miq_ae_field,
+                                           :name          => 'fred',
+                                           :class_id      => @cls.id,
+                                           :default_value => "Wilma",
+                                           :priority      => 1)
       @cls.save
       @method = FactoryGirl.create(:miq_ae_method, :name => "method01", :scope => "class",
         :language => "ruby", :class_id => @cls.id, :data => "exit MIQ_OK", :location => "inline")
@@ -511,10 +550,10 @@ describe MiqAeClassController do
     end
 
     it "update a method with inputs" do
-      field = {"default_value" => nil,
-               "datatype"      => nil,
-               "name"          => "name01",
-               "method_id"     => @method.id}
+      field = {:default_value => nil,
+               :datatype      => nil,
+               :name          => "name01",
+               :method_id     => @method.id}
       session[:edit] = {
         :key              => "aemethod_edit__#{@method.id}",
         :fields_to_delete => [],
@@ -535,9 +574,9 @@ describe MiqAeClassController do
     end
 
     it "update a class with fields" do
-      field = {"aetype"   => "attribute",
-               "datatype" => "string",
-               "name"     => "name01"}
+      field = {:aetype   => "attribute",
+               :datatype => "string",
+               :name     => "name01"}
       session[:edit] = {
         :key              => "aefields_edit__#{@cls.id}",
         :ae_class_id      => @cls.id,
@@ -553,6 +592,32 @@ describe MiqAeClassController do
       expect(controller.send(:flash_errors?)).to be_falsey
       expect(response.status).to eq(200)
     end
+
+    it "update a default value of existing class field" do
+      field = {:aetype        => "attribute",
+               :default_value => "Wilma",
+               :name          => "name01"}
+      session[:field_data] = field
+      session[:edit] = {
+        :key              => "aefields_edit__#{@cls.id}",
+        :ae_class_id      => @cls.id,
+        :fields_to_delete => [],
+        :new_field        => {},
+        :new              => {
+          :datatypes => [],
+          :aetypes   => [],
+          :fields    => [@cls.ae_fields.first]
+        }
+      }
+      controller.instance_variable_set(:@_params, "fields_default_value_0" => "Pebbles", :id => @cls.id)
+      allow(controller).to receive(:render)
+      controller.send(:fields_form_field_changed)
+      expect(@cls.ae_fields.first.default_value).to eq("Wilma")
+      controller.instance_variable_set(:@_params, :button => "save", :id => @cls.id)
+      controller.send(:update_fields)
+      @cls.reload
+      expect(@cls.ae_fields.first.default_value).to eq("Pebbles")
+    end
   end
 
   context "#copy_objects_edit_screen" do
@@ -566,9 +631,9 @@ describe MiqAeClassController do
     end
   end
 
-  context "#delete_domain_or_namespaces" do
+  context "#delete_namespaces_or_classes" do
     before do
-      set_user_privileges
+      stub_user(:features => :all)
       domain = FactoryGirl.create(:miq_ae_domain, :tenant => Tenant.seed)
       @namespace = FactoryGirl.create(:miq_ae_namespace, :name => "foo_namespace", :parent => domain)
       @ae_class = FactoryGirl.create(:miq_ae_class, :name => "foo_class", :namespace_id => 1)
@@ -576,6 +641,7 @@ describe MiqAeClassController do
                                        :trees       => {},
                                        :active_tree => :ae_tree)
       allow(controller).to receive(:replace_right_cell)
+      controller.x_node = "aen-#{@namespace.compressed_id}"
     end
 
 
@@ -584,7 +650,7 @@ describe MiqAeClassController do
                                        :miq_grid_checks => "aec-#{@ae_class.id},aen-#{@namespace.id}",
                                        :id              => @namespace.id
       )
-      controller.send(:delete_domain_or_namespaces)
+      controller.send(:delete_namespaces_or_classes)
       flash_messages = assigns(:flash_array)
       expect(flash_messages.first[:message]).to include("Automate Namespace \"foo_namespace\": Delete successful")
       expect(flash_messages.last[:message]).to include("Automate Class \"foo_class\": Delete successful")
@@ -595,9 +661,34 @@ describe MiqAeClassController do
                                        :id => @namespace.id
       )
 
-      controller.send(:delete_domain_or_namespaces)
+      controller.send(:delete_namespaces_or_classes)
       flash_messages = assigns(:flash_array)
       expect(flash_messages.first[:message]).to include("Automate Namespace \"foo_namespace\": Delete successful")
+    end
+  end
+
+  context "#deleteclasses" do
+    before do
+      stub_user(:features => :all)
+      domain = FactoryGirl.create(:miq_ae_domain, :tenant => Tenant.seed)
+      @namespace = FactoryGirl.create(:miq_ae_namespace, :name => "foo_namespace", :parent => domain)
+      @ae_class = FactoryGirl.create(:miq_ae_class, :name => "foo_class", :namespace_id => @namespace.id)
+      controller.instance_variable_set(:@sb,
+                                       :trees       => {},
+                                       :active_tree => :ae_tree)
+      allow(controller).to receive(:replace_right_cell)
+    end
+
+    it "Should delete selected class in the tree" do
+      controller.x_node = "aec-#{@ae_class.compressed_id}"
+      controller.instance_variable_set(:@_params,
+                                       :id => @namespace.id
+      )
+
+      controller.send(:deleteclasses)
+      flash_messages = assigns(:flash_array)
+      expect(flash_messages.first[:message]).to include("Automate Class \"foo_class\": Delete successful")
+      expect(controller.x_node).to eq("aen-#{@namespace.compressed_id}")
     end
   end
 
@@ -617,9 +708,9 @@ describe MiqAeClassController do
                                   :name     => "name02",
                                   :class_id => cls.id,
                                   :priority => 2)
-      field3 = {"aetype"   => "attribute",
-                "datatype" => "string",
-                "name"     => "name03"}
+      field3 = {:aetype   => "attribute",
+                :datatype => "string",
+                :name     => "name03"}
       edit = {:fields_to_delete => [], :new => {:fields => [field2, field3, field1]}}
       controller.instance_variable_set(:@edit, edit)
       controller.instance_variable_set(:@ae_class, cls)

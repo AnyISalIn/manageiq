@@ -23,7 +23,8 @@ class ApplicationHelper::Toolbar::DiagnosticsRegionCenter < ApplicationHelper::T
           :confirm => proc do
                         _("Do you want to delete Server %{server_name} [%{server_id}]?") %
                           {:server_name => @record.name, :server_id => @record.id}
-                      end
+                      end,
+          :klass => ApplicationHelper::Button::DeleteServer
         ),
         button(
           :role_start,
@@ -40,7 +41,9 @@ class ApplicationHelper::Toolbar::DiagnosticsRegionCenter < ApplicationHelper::T
                           :server_role_description => @record.server_role.description,
                           :server_name             => @record.miq_server.name,
                           :server_id               => @record.miq_server.id}
-                      end),
+                      end,
+          :klass => ApplicationHelper::Button::RoleStart
+        ),
         button(
           :role_suspend,
           'fa fa-pause-circle-o fa-lg',
@@ -56,7 +59,8 @@ class ApplicationHelper::Toolbar::DiagnosticsRegionCenter < ApplicationHelper::T
                           :server_role_description => @record.server_role.description,
                           :server_name             => @record.miq_server.name,
                           :server_id               => @record.miq_server.id}
-                      end
+                      end,
+          :klass => ApplicationHelper::Button::RoleSuspend
         ),
         button(
           :demote_server,
@@ -68,7 +72,8 @@ class ApplicationHelper::Toolbar::DiagnosticsRegionCenter < ApplicationHelper::T
               :server_id               => @record.miq_server.id}
           end,
           N_('Demote Server'),
-          :confirm => N_("Do you want to demote this Server to secondary?  This will leave no primary Server for this Role.")),
+          :confirm => N_("Do you want to demote this Server to secondary?  This will leave no primary Server for this Role."),
+          :klass => ApplicationHelper::Button::ServerDemote),
         button(
           :promote_server,
           'product product-migrate fa-lg',
@@ -79,7 +84,8 @@ class ApplicationHelper::Toolbar::DiagnosticsRegionCenter < ApplicationHelper::T
               :server_id               => @record.miq_server.id}
           end,
           N_('Promote Server'),
-          :confirm => N_("Do you want to promote this Server to primary?  This will replace any existing primary Server for this Role.")),
+          :confirm => N_("Do you want to promote this Server to primary?  This will replace any existing primary Server for this Role."),
+          :klass => ApplicationHelper::Button::ServerPromote),
       ]
     ),
   ])

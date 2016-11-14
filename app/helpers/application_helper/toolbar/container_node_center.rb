@@ -18,7 +18,7 @@ class ApplicationHelper::Toolbar::ContainerNodeCenter < ApplicationHelper::Toolb
           t = N_('Remove this Node from the VMDB'),
           t,
           :url_parms => "&refresh=y",
-          :confirm   => N_("Warning: This Node and ALL of its components will be permanently removed from the Virtual Management Database.  Are you sure you want to remove this Node?")),
+          :confirm   => N_("Warning: This Node and ALL of its components will be permanently removed!")),
       ]
     ),
   ])
@@ -58,7 +58,27 @@ class ApplicationHelper::Toolbar::ContainerNodeCenter < ApplicationHelper::Toolb
           'pficon pficon-edit fa-lg',
           N_('Edit Tags for this Node'),
           N_('Edit Tags')),
+        button(
+          :container_node_protect,
+          'pficon pficon-edit fa-lg',
+          N_('Manage Policies for this Node'),
+          N_('Manage Policies')),
+        button(
+          :container_node_check_compliance,
+          'fa fa-search fa-lg',
+          N_('Check Compliance of the last known configuration for this Node'),
+          N_('Check Compliance of Last Known Configuration'),
+          :confirm => N_("Initiate Check Compliance of the last known configuration for this item?")),
       ]
     ),
+  ])
+  button_group('container_cockpit_button_group', [
+    button(
+      :cockpit_console,
+      nil,
+      N_('Open a new browser window with Cockpit for this Node.  This requires that Cockpit is pre-configured on the Node.'),
+      nil,
+      :image => "cockpit",
+      :url   => "launch_cockpit"),
   ])
 end

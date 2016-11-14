@@ -1,5 +1,15 @@
 class ServiceTemplate < ApplicationRecord
   DEFAULT_PROCESS_DELAY_BETWEEN_GROUPS = 120
+
+  GENERIC_ITEM_SUBTYPES = {
+    "custom"          => _("Custom"),
+    "vm"              => _("VM"),
+    "playbook"        => _("Playbook"),
+    "hosted_database" => _("Hosted Database"),
+    "load_balancer"   => _("Load Balancer"),
+    "storage"         => _("Storage")
+  }.freeze
+
   include ServiceMixin
   include OwnershipMixin
   include NewWithTypeStiMixin
@@ -7,6 +17,7 @@ class ServiceTemplate < ApplicationRecord
   include_concern 'Filter'
 
   belongs_to :tenant
+  belongs_to :blueprint
   # # These relationships are used to specify children spawned from a parent service
   # has_many   :child_services, :class_name => "ServiceTemplate", :foreign_key => :service_template_id
   # belongs_to :parent_service, :class_name => "ServiceTemplate", :foreign_key => :service_template_id
@@ -29,9 +40,15 @@ class ServiceTemplate < ApplicationRecord
   virtual_column   :template_valid_error_message, :type => :string
 
   default_value_for :service_type,  'unknown'
+  default_value_for(:generic_subtype) { |st| 'custom' if st.prov_type == 'generic' }
 
   virtual_has_one :custom_actions, :class_name => "Hash"
   virtual_has_one :custom_action_buttons, :class_name => "Array"
+
+  def readonly?
+    return true if super
+    blueprint.try(:published?)
+  end
 
   def children
     service_templates
@@ -61,8 +78,11 @@ class ServiceTemplate < ApplicationRecord
   end
 
   def custom_buttons
-    service_buttons = CustomButton.buttons_for("Service").select { |button| button.parent.nil? }
-    service_buttons + CustomButton.buttons_for(self).select { |b| b.parent.nil? }
+    CustomButton.buttons_for("Service").select { |button| button.parent.nil? } + direct_custom_buttons
+  end
+
+  def direct_custom_buttons
+    CustomButton.buttons_for(self).select { |b| b.parent.nil? }
   end
 
   def vms_and_templates
@@ -114,7 +134,10 @@ class ServiceTemplate < ApplicationRecord
       svc.add_resource(sr.resource, nh) unless sr.resource.nil?
     end
 
-    parent_svc.add_resource!(svc) unless parent_svc.nil?
+    if parent_svc
+      service_resource = ServiceResource.find_by(:id => service_task.options[:service_resource_id])
+      parent_svc.add_resource!(svc, service_resource)
+    end
 
     svc.save
     svc
@@ -219,12 +242,20 @@ class ServiceTemplate < ApplicationRecord
     service.save
   end
 
-  def self.default_provisioning_entry_point
-    '/Service/Provisioning/StateMachines/ServiceProvision_Template/default'
+  def self.default_provisioning_entry_point(service_type)
+    if service_type == 'atomic'
+      '/Service/Provisioning/StateMachines/ServiceProvision_Template/CatalogItemInitialization'
+    else
+      '/Service/Provisioning/StateMachines/ServiceProvision_Template/CatalogBundleInitialization'
+    end
   end
 
   def self.default_retirement_entry_point
-    '/Service/Retirement/StateMachines/ServiceRetirement/default'
+    '/Service/Retirement/StateMachines/ServiceRetirement/Default'
+  end
+
+  def self.default_reconfiguration_entry_point
+    nil
   end
 
   def template_valid?
@@ -237,6 +268,14 @@ class ServiceTemplate < ApplicationRecord
   end
 
   def validate_template
+    missing_resources = service_resources.select { |sr| sr.resource.nil? }
+
+    if missing_resources.present?
+      missing_list = missing_resources.collect { |sr| "#{sr.resource_type}:#{sr.resource_id}" }.join(", ")
+      return {:valid   => false,
+              :message => "Missing Service Resource(s): #{missing_list}"}
+    end
+
     service_resources.detect do |s|
       r = s.resource
       r.respond_to?(:template_valid?) && !r.template_valid?

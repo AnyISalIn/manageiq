@@ -1,8 +1,7 @@
 # TODO: Nothing appears to be using xml_utils in this file???
 # Perhaps, it's being required here because lower level code requires xml_utils to be loaded
 # but wrongly doesn't require it itself.
-$LOAD_PATH << File.join(GEMS_PENDING_ROOT, "util/xml")
-require 'xml_utils'
+require 'xml/xml_utils'
 
 require 'blackbox/VmBlackBox'
 require 'metadata/MIQExtract/MIQExtract'
@@ -104,7 +103,6 @@ module ScanningMixin
       MiqEvent.add_elements(self, xml_node)
     end
     # Update the last sync time if we did something
-    # self.last_sync_on = Time.new.utc  if updated == true
     self.last_sync_on = Time.at(xml_node.root.attributes["created_on"].to_i).utc if updated == true && xml_node.root.attributes["created_on"]
     save
     hardware.save if self.respond_to?(:hardware) && !hardware.nil?
@@ -357,7 +355,7 @@ module ScanningMixin
         end
       end
     rescue => syncErr
-      _log.error "#{syncErr}"
+      _log.error syncErr.to_s
       _log.debug { syncErr.backtrace.join("\n") }
     ensure
       if bb

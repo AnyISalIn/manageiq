@@ -14,16 +14,17 @@ class ManageIQ::Providers::Openstack::NetworkManager < ManageIQ::Providers::Netw
   require_nested :SecurityGroup
 
   include ManageIQ::Providers::Openstack::ManagerMixin
+  include SupportsFeatureMixin
 
-  belongs_to :parent_manager,
-             :foreign_key => :parent_ems_id,
-             :class_name  => "ManageIQ::Providers::BaseManager",
-             :autosave    => true
+  supports :create_floating_ip
+  supports :create_security_group
+  supports :create_network_router
 
   has_many :public_networks,  :foreign_key => :ems_id, :dependent => :destroy,
            :class_name => "ManageIQ::Providers::Openstack::NetworkManager::CloudNetwork::Public"
   has_many :private_networks, :foreign_key => :ems_id, :dependent => :destroy,
            :class_name => "ManageIQ::Providers::Openstack::NetworkManager::CloudNetwork::Private"
+  alias_method :all_private_networks, :private_networks
 
   # Auth and endpoints delegations, editing of this type of manager must be disabled
   delegate :authentication_check,
@@ -41,23 +42,6 @@ class ManageIQ::Providers::Openstack::NetworkManager < ManageIQ::Providers::Netw
            :hostname,
            :default_endpoint,
            :endpoints,
-           :to        => :parent_manager,
-           :allow_nil => true
-
-  # Relationships delegated to parent manager
-  delegate :availability_zones,
-           :cloud_tenants,
-           :flavors,
-           :cloud_resource_quotas,
-           :cloud_volumes,
-           :cloud_volume_snapshots,
-           :cloud_object_store_containers,
-           :cloud_object_store_objects,
-           :key_pairs,
-           :orchestration_stacks,
-           :direct_orchestration_stacks,
-           :vms,
-           :hosts,
            :to        => :parent_manager,
            :allow_nil => true
 
@@ -107,5 +91,68 @@ class ManageIQ::Providers::Openstack::NetworkManager < ManageIQ::Providers::Netw
 
   def self.event_monitor_class
     ManageIQ::Providers::Openstack::NetworkManager::EventCatcher
+  end
+
+  def create_network_router(options)
+    NetworkRouter.create_network_router(self, options)
+  end
+
+  def create_network_router_queue(userid, options = {})
+    task_opts = {
+      :action => "creating Network Router for user #{userid}",
+      :userid => userid
+    }
+    queue_opts = {
+      :class_name  => self.class.name,
+      :method_name => 'create_network_router',
+      :instance_id => id,
+      :priority    => MiqQueue::HIGH_PRIORITY,
+      :role        => 'ems_operations',
+      :zone        => my_zone,
+      :args        => [options]
+    }
+    MiqTask.generic_action_with_callback(task_opts, queue_opts)
+  end
+
+  def create_floating_ip(options)
+    FloatingIp.raw_create_floating_ip(self, options)
+  end
+
+  def create_floating_ip_queue(userid, options = {})
+    task_opts = {
+      :action => "creating Floating IP for user #{userid}",
+      :userid => userid
+    }
+    queue_opts = {
+      :class_name  => self.class.name,
+      :method_name => 'create_security_group',
+      :instance_id => id,
+      :priority    => MiqQueue::HIGH_PRIORITY,
+      :role        => 'ems_operations',
+      :zone        => my_zone,
+      :args        => [options]
+    }
+    MiqTask.generic_action_with_callback(task_opts, queue_opts)
+  end
+
+  def create_security_group(options)
+    SecurityGroup.raw_create_security_group(self, options)
+  end
+
+  def create_security_group_queue(userid, options = {})
+    task_opts = {
+      :action => "creating Security Group for user #{userid}",
+      :userid => userid
+    }
+    queue_opts = {
+      :class_name  => self.class.name,
+      :method_name => 'create_floating_ip',
+      :instance_id => id,
+      :priority    => MiqQueue::HIGH_PRIORITY,
+      :role        => 'ems_operations',
+      :zone        => my_zone,
+      :args        => [options]
+    }
+    MiqTask.generic_action_with_callback(task_opts, queue_opts)
   end
 end

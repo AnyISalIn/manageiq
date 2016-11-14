@@ -1,4 +1,5 @@
-# Strings extracted from en.yml for gettext to find
+# This is automatically generated file (rake locale:store_dictionary_strings).
+# The file contains strings extracted from en.yml for gettext to find.
 # TRANSLATORS: en.yml key: dictionary.column.User.name
 _("Full Name")
 # TRANSLATORS: en.yml key: dictionary.column.userid
@@ -1328,9 +1329,9 @@ _("Image Registry")
 # TRANSLATORS: en.yml key: dictionary.model.ContainerImageRegistry (plural form)
 _("Image Registries")
 # TRANSLATORS: en.yml key: dictionary.model.ContainerImage
-_("Image")
+_("Container Image")
 # TRANSLATORS: en.yml key: dictionary.model.ContainerImage (plural form)
-_("Images")
+_("Container Images")
 # TRANSLATORS: en.yml key: dictionary.model.ContainerNode
 _("Node")
 # TRANSLATORS: en.yml key: dictionary.model.ContainerNode (plural form)
@@ -1348,9 +1349,9 @@ _("Replicator")
 # TRANSLATORS: en.yml key: dictionary.model.ContainerReplicator (plural form)
 _("Replicators")
 # TRANSLATORS: en.yml key: dictionary.model.ContainerService
-_("Service")
+_("Container Service")
 # TRANSLATORS: en.yml key: dictionary.model.ContainerService (plural form)
-_("Services")
+_("Container Services")
 # TRANSLATORS: en.yml key: dictionary.model.EmsCluster
 _("Cluster / Deployment Role")
 # TRANSLATORS: en.yml key: dictionary.model.EmsCluster (plural form)
@@ -1429,6 +1430,10 @@ _("LDAP Regions")
 _("LDAP Server")
 # TRANSLATORS: en.yml key: dictionary.model.LdapServer (plural form)
 _("LDAP Servers")
+# TRANSLATORS: en.yml key: dictionary.model.LoadBalancer
+_("Load Balancer")
+# TRANSLATORS: en.yml key: dictionary.model.LoadBalancer (plural form)
+_("Load Balancers")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::BaseManager
 _("Provider")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::BaseManager (plural form)
@@ -1457,6 +1462,10 @@ _("Configured Systems (Ansible Tower)")
 _("Configured System (Foreman)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Foreman::ConfigurationManager::ConfiguredSystem (plural form)
 _("Configured Systems (Foreman)")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::AnsibleTower::ConfigurationManager::Job
+_("Ansible Tower Job")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::AnsibleTower::ConfigurationManager::Job (plural form)
+_("Ansible Tower Jobs")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::CloudManager
 _("Cloud Provider")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::CloudManager (plural form)
@@ -1474,17 +1483,29 @@ _("Instance (OpenStack)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Openstack::CloudManager::Vm (plural form)
 _("Instances (OpenStack)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Azure::CloudManager::Vm
-_("Instance (Azure)")
+_("Instance (Microsoft Azure)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Azure::CloudManager::Vm (plural form)
-_("Instances (Azure)")
+_("Instances (Microsoft Azure)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Amazon::CloudManager::Vm
 _("Instance (Amazon)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Amazon::CloudManager::Vm (plural form)
 _("Instances (Amazon)")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Vmware::CloudManager::Vm
+_("Instance (VMware vCloud)")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Vmware::CloudManager::Vm (plural form)
+_("Instances (VMware vCloud)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::CloudManager::Template
 _("Image")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::CloudManager::Template (plural form)
 _("Images")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::CloudManager::VirtualTemplate
+_("Resourceless Server Template")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::CloudManager::VirtualTemplate (plural form)
+_("Resourceless Server Templates")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::CloudManager::OrchestrationStack
+_("Orchestration Stack")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::CloudManager::OrchestrationStack (plural form)
+_("Orchestration Stacks")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::ContainerManager
 _("Containers Provider")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::ContainerManager (plural form)
@@ -1510,21 +1531,21 @@ _("Network Manager")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::NetworkManager (plural form)
 _("Network Managers")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Openstack::InfraManager
-_("Infrastructure Provider (Openstack)")
+_("Infrastructure Provider (OpenStack)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Openstack::InfraManager (plural form)
-_("Infrastructure Providers (Openstack)")
+_("Infrastructure Providers (OpenStack)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Microsoft::InfraManager
 _("Infrastructure Provider (Microsoft)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Microsoft::InfraManager (plural form)
 _("Infrastructure Providers (Microsoft)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Redhat::InfraManager
-_("Infrastructure Provider (Redhat)")
+_("Infrastructure Provider (Red Hat)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Redhat::InfraManager (plural form)
-_("Infrastructure Providers (Redhat)")
+_("Infrastructure Providers (Red Hat)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Vmware::InfraManager
-_("Infrastructure Provider (Vmware)")
+_("Infrastructure Provider (VMware)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Vmware::InfraManager (plural form)
-_("Infrastructure Providers (Vmware)")
+_("Infrastructure Providers (VMware)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Vmware::InfraManager::Vm
 _("Virtual Machine (VMware)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Vmware::InfraManager::Vm (plural form)
@@ -1538,13 +1559,13 @@ _("Virtual Machine (Red Hat)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Redhat::InfraManager::Vm (plural form)
 _("Virtual Machines (Red Hat)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Openstack::CloudManager
-_("Cloud Provider (Openstack)")
+_("Cloud Provider (OpenStack)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Openstack::CloudManager (plural form)
-_("Cloud Providers (Openstack)")
+_("Cloud Providers (OpenStack)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Openstack::NetworkManager
-_("Network Provider (Openstack)")
+_("Network Provider (OpenStack)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Openstack::NetworkManager (plural form)
-_("Network Providers (Openstack)")
+_("Network Providers (OpenStack)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Openstack::NetworkManager::CloudNetwork
 _("Cloud Network (OpenStack)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Openstack::NetworkManager::CloudNetwork (plural form)
@@ -1557,14 +1578,14 @@ _("Cloud Providers (Amazon)")
 _("Cloud Provider (Microsoft Azure)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Azure::CloudManager (plural form)
 _("Cloud Providers (Microsoft Azure)")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Vmware::CloudManage
+_("Cloud Provider (VMware vCloud)")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Vmware::CloudManage (plural form)
+_("Cloud Providers (VMware vCloud)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Azure::NetworkManager::CloudNetwork
-_("Cloud Network (Azure)")
+_("Cloud Network (Microsoft Azure)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Azure::NetworkManager::CloudNetwork (plural form)
-_("Cloud Networks (Azure)")
-# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Atomic::ContainerManager
-_("Container Provider (Atomic)")
-# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Atomic::ContainerManager (plural form)
-_("Container Providers (Atomic)")
+_("Cloud Networks (Microsoft Azure)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Kubernetes::ContainerManager
 _("Container Provider (Kubernetes)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Kubernetes::ContainerManager (plural form)
@@ -1574,13 +1595,13 @@ _("Pod (Kubernetes)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Kubernetes::ContainerManager::ContainerGroup (plural form)
 _("Pods (Kubernetes)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Openshift::ContainerManager
-_("Container Provider (Openshift)")
+_("Container Provider (OpenShift Origin)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Openshift::ContainerManager (plural form)
-_("Container Providers (Openshift)")
+_("Container Providers (OpenShift Origin)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::OpenshiftEnterprise::ContainerManager
-_("Container Provider (Openshift Enterprise)")
+_("Container Provider (OpenShift Container Platform)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::OpenshiftEnterprise::ContainerManager (plural form)
-_("Container Providers (Openshift Enterprise)")
+_("Container Providers (OpenShift Container Platform)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Amazon::NetworkManager::CloudNetwork
 _("Cloud Network (Amazon)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Amazon::NetworkManager::CloudNetwork (plural form)
@@ -1589,14 +1610,42 @@ _("Cloud Networks (Amazon)")
 _("Cloud Subnet (Amazon)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Amazon::NetworkManager::CloudSubnet (plural form)
 _("Cloud Subnets (Amazon)")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Amazon::NetworkManager::LoadBalancer
+_("Load Balancer (Amazon)")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Amazon::NetworkManager::LoadBalancer (plural form)
+_("Load Balancers (Amazon)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Amazon::NetworkManager::SecurityGroup
 _("Security Group (Amazon)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Amazon::NetworkManager::SecurityGroup (plural form)
 _("Security Groups (Amazon)")
-# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Google::CloudManager::SecurityGroup
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Google::NetworkManager
+_("Network Provider (Google)")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Google::NetworkManager (plural form)
+_("Network Providers (Google)")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Google::NetworkManager::SecurityGroup
 _("Security Group (Google)")
-# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Google::CloudManager::SecurityGroup (plural form)
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Google::NetworkManager::SecurityGroup (plural form)
 _("Security Groups (Google)")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Google::NetworkManager::NetworkPort
+_("Network Port (Google)")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Google::NetworkManager::NetworkPort (plural form)
+_("Network Ports (Google)")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Google::NetworkManager::FloatingIp
+_("Floating Ip (Google)")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Google::NetworkManager::FloatingIp (plural form)
+_("Floating Ips (Google)")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Google::NetworkManager::NetworkRouter
+_("Network Router (Google)")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Google::NetworkManager::NetworkRouter (plural form)
+_("Network Routers (Google)")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Google::NetworkManager::CloudSubnet
+_("Cloud Subnet (Google)")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Google::NetworkManager::CloudSubnet (plural form)
+_("Cloud Subnets (Google)")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Google::NetworkManager::CloudNetwork
+_("Cloud Network (Google)")
+# TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Google::NetworkManager::CloudNetwork (plural form)
+_("Cloud Networks (Google)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Openstack::NetworkManager::SecurityGroup
 _("Security Group (OpenStack)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Openstack::NetworkManager::SecurityGroup (plural form)
@@ -1606,9 +1655,9 @@ _("Cloud Subnet (Microsoft Azure)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Azure::NetworkManager::CloudSubnet (plural form)
 _("Cloud Subnets (Microsoft Azure)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Azure::CloudManager::SecurityGroup
-_("Security Group (Azure)")
+_("Security Group (Microsoft Azure)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Azure::CloudManager::SecurityGroup (plural form)
-_("Security Groups (Azure)")
+_("Security Groups (Microsoft Azure)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Openstack::NetworkManager::FloatingIp
 _("Floating IP (OpenStack)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Openstack::NetworkManager::FloatingIp (plural form)
@@ -1634,9 +1683,9 @@ _("Orchestration Stack (OpenStack)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Openstack::CloudManager::OrchestrationStack (plural form)
 _("Orchestration Stacks (OpenStack)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Azure::CloudManager::OrchestrationStack
-_("Orchestration Stack (Azure)")
+_("Orchestration Stack (Microsoft Azure)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Azure::CloudManager::OrchestrationStack (plural form)
-_("Orchestration Stacks (Azure)")
+_("Orchestration Stacks (Microsoft Azure)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Amazon::CloudManager::OrchestrationStack
 _("Orchestration Stack (Amazon)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Amazon::CloudManager::OrchestrationStack (plural form)
@@ -1646,9 +1695,9 @@ _("Network Port (Amazon)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Amazon::NetworkManager::NetworkPort (plural form)
 _("Network Ports (Amazon)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Azure::NetworkManager::NetworkPort
-_("Network Port (Azure)")
+_("Network Port (Microsoft Azure)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Azure::NetworkManager::NetworkPort (plural form)
-_("Network Ports (Azure)")
+_("Network Ports (Microsoft Azure)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Openstack::NetworkManager::NetworkPort
 _("Network Port (OpenStack)")
 # TRANSLATORS: en.yml key: dictionary.model.ManageIQ::Providers::Openstack::NetworkManager::NetworkPort (plural form)
@@ -1657,6 +1706,14 @@ _("Network Ports (OpenStack)")
 _("Middleware Datasource")
 # TRANSLATORS: en.yml key: dictionary.model.MiddlewareDatasource (plural form)
 _("Middleware Datasources")
+# TRANSLATORS: en.yml key: dictionary.model.MiddlewareDomain
+_("Middleware Domain")
+# TRANSLATORS: en.yml key: dictionary.model.MiddlewareDomain (plural form)
+_("Middleware Domains")
+# TRANSLATORS: en.yml key: dictionary.model.MiddlewareMessaging
+_("Middleware Messaging")
+# TRANSLATORS: en.yml key: dictionary.model.MiddlewareMessaging (plural form)
+_("Middleware Messagings")
 # TRANSLATORS: en.yml key: dictionary.model.MiddlewareDeployment
 _("Middleware Deployment")
 # TRANSLATORS: en.yml key: dictionary.model.MiddlewareDeployment (plural form)
@@ -1665,6 +1722,10 @@ _("Middleware Deployments")
 _("Middleware Server")
 # TRANSLATORS: en.yml key: dictionary.model.MiddlewareServer (plural form)
 _("Middleware Servers")
+# TRANSLATORS: en.yml key: dictionary.model.MiddlewareServerGroup
+_("Middleware Server Group")
+# TRANSLATORS: en.yml key: dictionary.model.MiddlewareServerGroup (plural form)
+_("Middleware Server Groups")
 # TRANSLATORS: en.yml key: dictionary.model.MiqAction
 _("Action")
 # TRANSLATORS: en.yml key: dictionary.model.MiqAction (plural form)
@@ -1839,6 +1900,10 @@ _("Heat Templates")
 _("Azure Template")
 # TRANSLATORS: en.yml key: dictionary.model.OrchestrationTemplateAzure (plural form)
 _("Azure Templates")
+# TRANSLATORS: en.yml key: dictionary.model.OrchestrationTemplateVnfd
+_("VNF Template")
+# TRANSLATORS: en.yml key: dictionary.model.OrchestrationTemplateVnfd (plural form)
+_("VNF Templates")
 # TRANSLATORS: en.yml key: dictionary.model.PersistentVolume
 _("Persistent Volume")
 # TRANSLATORS: en.yml key: dictionary.model.PersistentVolume (plural form)
@@ -2163,12 +2228,30 @@ _("Middleware Datasource")
 _("Middleware Datasources")
 # TRANSLATORS: en.yml key: dictionary.table.middleware_datasources
 _("Middleware Datasources")
+# TRANSLATORS: en.yml key: dictionary.table.middleware_domain
+_("Middleware Domain")
+# TRANSLATORS: en.yml key: dictionary.table.middleware_domain (plural form)
+_("Middleware Domains")
+# TRANSLATORS: en.yml key: dictionary.table.middleware_domains
+_("Middleware Domains")
+# TRANSLATORS: en.yml key: dictionary.table.middleware_messaging
+_("Middleware Messaging")
+# TRANSLATORS: en.yml key: dictionary.table.middleware_messaging (plural form)
+_("Middleware Messagings")
+# TRANSLATORS: en.yml key: dictionary.table.middleware_messagings
+_("Middleware Messagings")
 # TRANSLATORS: en.yml key: dictionary.table.middleware_deployment
 _("Middleware Deployment")
 # TRANSLATORS: en.yml key: dictionary.table.middleware_deployment (plural form)
 _("Middleware Deployments")
 # TRANSLATORS: en.yml key: dictionary.table.middleware_deployments
 _("Middleware Deployments")
+# TRANSLATORS: en.yml key: dictionary.table.middleware_server_group
+_("Middleware Server Group")
+# TRANSLATORS: en.yml key: dictionary.table.middleware_server_group (plural form)
+_("Middleware Server Groups")
+# TRANSLATORS: en.yml key: dictionary.table.middleware_server_groups
+_("Middleware Server Groups")
 # TRANSLATORS: en.yml key: dictionary.table.evm_owner
 _("EVM Owner")
 # TRANSLATORS: en.yml key: dictionary.table.evm_owner (plural form)
@@ -2252,9 +2335,9 @@ _("Configuration Profile (Foreman)")
 # TRANSLATORS: en.yml key: dictionary.table.manageiq_providers_foreman_configuration_manager_configuration_profile (plural form)
 _("Configuration Profiles (Foreman)")
 # TRANSLATORS: en.yml key: dictionary.table.manageiq_providers_openstack_infra_manager_cloud_networks
-_("Cloud Networks (Openstack)")
+_("Cloud Networks (OpenStack)")
 # TRANSLATORS: en.yml key: dictionary.table.manageiq_providers_openstack_cloud_manager_cloud_tenant
-_("Cloud Tenants (Openstack)")
+_("Cloud Tenants (OpenStack)")
 # TRANSLATORS: en.yml key: dictionary.table.miq_provision
 _("Provision")
 # TRANSLATORS: en.yml key: dictionary.table.miq_provision (plural form)

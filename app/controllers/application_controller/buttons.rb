@@ -73,10 +73,7 @@ module ApplicationController::Buttons
       end
     else
       add_flash(_("No Button Group was selected!"), :error)
-      render :update do |page|
-        page << javascript_prologue
-        page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-      end
+      javascript_flash
     end
   end
 
@@ -119,7 +116,7 @@ module ApplicationController::Buttons
         page.replace("ab_form", :partial => "shared/buttons/ab_form")
       end
       if params[:visibility_typ]
-        page.replace("form_role_visibility", :partial => "layouts/role_visibility", :locals => {:rec_id => "#{@custom_button.id || "new"}", :action => "automate_button_field_changed"})
+        page.replace("form_role_visibility", :partial => "layouts/role_visibility", :locals => {:rec_id => (@custom_button.id || "new").to_s, :action => "automate_button_field_changed"})
       end
       unless params[:target_class]
         @changed = (@edit[:new] != @edit[:current])
@@ -158,10 +155,7 @@ module ApplicationController::Buttons
       replace_right_cell(x_node, x_active_tree == :ab_tree ? [:ab] : [:sandt])
     else
       custom_button.errors.each { |field, msg| add_flash("#{field.to_s.capitalize} #{msg}", :error) }
-      render :update do |page|
-        page << javascript_prologue
-        page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-      end
+      javascript_flash
     end
   end
 
@@ -238,10 +232,7 @@ module ApplicationController::Buttons
       replace_right_cell(x_node, x_active_tree == :ab_tree ? [:ab] : [:sandt])
     else
       custom_button_set.errors.each { |field, msg| add_flash("#{field.to_s.capitalize} #{msg}", :error) }
-      render :update do |page|
-        page << javascript_prologue
-        page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-      end
+      javascript_flash
     end
   end
 
@@ -276,16 +267,13 @@ module ApplicationController::Buttons
     else
       begin
         button.invoke(obj)    # Run the task
-      rescue StandardError => bang
+      rescue => bang
         add_flash(_("Error executing: \"%{task_description}\" %{error_message}") %
           {:task_description => params[:desc], :error_message => bang.message}, :error) # Push msg and error flag
       else
         add_flash(_("\"%{task_description}\" was executed") % {:task_description => params[:desc]})
       end
-      render :update do |page|
-        page << javascript_prologue
-        page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-      end
+      javascript_flash
     end
   end
 
@@ -437,10 +425,7 @@ module ApplicationController::Buttons
         drop_breadcrumb(:name => _("Edit of Button"), :url => "/miq_ae_customization/button_edit")
         @lastaction = "automate_button"
         @layout = "miq_ae_automate_button"
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
         return
       else
         attrs = {}
@@ -491,10 +476,7 @@ module ApplicationController::Buttons
           end
           @lastaction = "automate_button"
           @layout = "miq_ae_automate_button"
-          render :update do |page|
-            page << javascript_prologue
-            page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-          end
+          javascript_flash
         end
       end
     elsif params[:button] == "save"
@@ -513,10 +495,7 @@ module ApplicationController::Buttons
         drop_breadcrumb(:name => _("Edit of Button"), :url => "/miq_ae_customization/button_edit")
         @lastaction = "automate_button"
         @layout = "miq_ae_automate_button"
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
         return
       else
         if @custom_button.save
@@ -533,10 +512,7 @@ module ApplicationController::Buttons
           drop_breadcrumb(:name => "Edit of Button", :url => "/miq_ae_customization/button_edit")
           @lastaction = "automate_button"
           @layout = "miq_ae_automate_button"
-          render :update do |page|
-            page << javascript_prologue
-            page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-          end
+          javascript_flash
         end
       end
     elsif params[:button] == "reset"
@@ -618,7 +594,6 @@ module ApplicationController::Buttons
     drop_breadcrumb(:name => title, :url => "/miq_ae_customization/button_new")
     @lastaction = "automate_button"
     @layout = "miq_ae_automate_button"
-    @custom_button = nil
     @sb[:buttons] = nil
     @sb[:button_groups] = nil
     replace_right_cell("button_edit")
@@ -637,7 +612,7 @@ module ApplicationController::Buttons
     @edit[:current] = {}
     @edit[:key] = "bg_edit__#{@custom_button_set.id || "new"}"
     @edit[:custom_button_set_id] = @custom_button_set.id
-    @edit[:rec_id] = @custom_button_set ? @custom_button_set.id : nil
+    @edit[:rec_id] = @custom_button_set.try(:id)
     @edit[:new][:name] = @custom_button_set[:name].split("|").first unless @custom_button_set[:name].blank?
     @edit[:new][:applies_to_class] = @custom_button_set[:set_data] && @custom_button_set[:set_data][:applies_to_class] ? @custom_button_set[:set_data][:applies_to_class] : @sb[:applies_to_class]
     @edit[:new][:description] = @custom_button_set.description
@@ -827,7 +802,7 @@ module ApplicationController::Buttons
     @edit[:new] = {}
     @edit[:current] = {}
     @edit[:new][:attrs] ||= []
-    @edit[:rec_id] = @custom_button ? @custom_button.id : nil
+    @edit[:rec_id] = @custom_button.try(:id)
     if @custom_button.uri_attributes
       instance_name = @custom_button.uri_object_name
       if @edit[:instance_names].include?(instance_name)
@@ -852,7 +827,7 @@ module ApplicationController::Buttons
     @edit[:new][:button_image] = @custom_button.options && @custom_button.options[:button_image] ? @custom_button.options[:button_image] : ""
     @edit[:new][:display] = @custom_button.options && @custom_button.options.key?(:display) ? @custom_button.options[:display] : true
     @edit[:new][:object_message] = @custom_button.uri_message || "create"
-    @edit[:new][:instance_name] ||= "Automation"
+    @edit[:new][:instance_name] ||= "Request"
     @edit[:current] = copy_hash(@edit[:new])
 
     @edit[:new][:button_images] = @edit[:current][:button_images] = build_button_image_options
@@ -994,7 +969,7 @@ module ApplicationController::Buttons
     @resolve ||= {}
     @resolve[:new] ||= {}
     @resolve[:new][:starting_object] ||= "SYSTEM/PROCESS"
-    @resolve[:new][:readonly] = true
+    @resolve[:new][:readonly] = false unless @resolve[:new][:readonly]
     @resolve[:throw_ready] = false
 
     # Following commented out since all resolutions start at SYSTEM/PROCESS
@@ -1004,8 +979,8 @@ module ApplicationController::Buttons
     if matching_instances.any?
       @resolve[:instance_names] = matching_instances.collect(&:name)
       instance_name = @custom_button && @custom_button.uri_object_name
-      @resolve[:new][:instance_name] = instance_name ? instance_name : "Automation"
-      @resolve[:new][:object_message] = @custom_button && @custom_button.uri_message || "create"
+      @resolve[:new][:instance_name] = instance_name || @resolve[:new][:instance_name] || "Request"
+      @resolve[:new][:object_message] = @custom_button.try(:uri_message) || @resolve[:new][:object_message] || "create"
       @resolve[:target_class] = nil
       @resolve[:target_classes] = {}
       CustomButton.button_classes.each { |db| @resolve[:target_classes][db] = ui_lookup(:model => db) }

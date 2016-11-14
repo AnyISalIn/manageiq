@@ -59,6 +59,11 @@ describe MiqRequest do
       end
     end
 
+    it ".find_source_id_from_values with :src_ids" do
+      src_id_hash = {:src_ids => [101, 102, 103]}
+      expect(described_class.send(:find_source_id_from_values, src_id_hash)).to eq(101)
+    end
+
     it "#call_automate_event_queue" do
       allow(MiqServer).to receive(:my_zone).and_return("New York")
 
@@ -357,6 +362,20 @@ describe MiqRequest do
 
       expect(task.state).to eq('pending')
       expect(request.request_state).to eq('active')
+    end
+  end
+
+  context ".class_from_request_data" do
+    it "with a valid request_type" do
+      expect(described_class.class_from_request_data(:request_type => "template")).to eq(MiqProvisionRequest)
+    end
+
+    it "with a invalid request_type" do
+      expect { described_class.class_from_request_data(:request_type => "abc") }.to raise_error("Invalid request_type")
+    end
+
+    it "without a request_type" do
+      expect { described_class.class_from_request_data({}) }.to raise_error("Invalid request_type")
     end
   end
 end

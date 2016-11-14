@@ -1,8 +1,10 @@
 class EmsCluster < ApplicationRecord
+  include SupportsFeatureMixin
   include NewWithTypeStiMixin
   include_concern 'CapacityPlanning'
   include EventMixin
   include VirtualTotalMixin
+  include TenantIdentityMixin
 
   acts_as_miq_taggable
 
@@ -55,14 +57,6 @@ class EmsCluster < ApplicationRecord
   include Metric::CiMixin
   include MiqPolicyMixin
   include AsyncDeleteMixin
-
-  def tenant_identity
-    if ext_management_system
-      ext_management_system.tenant_identity
-    else
-      User.super_admin.tap { |u| u.current_group = Tenant.root_tenant.default_miq_group }
-    end
-  end
 
   #
   # Provider Object methods
@@ -126,10 +120,6 @@ class EmsCluster < ApplicationRecord
   alias_method :all_miq_template_ids,   :miq_template_ids
 
   # Host relationship methods
-  def total_hosts
-    hosts.size
-  end
-
   def failover_hosts(_options = {})
     hosts.select(&:failover)
   end
@@ -164,13 +154,8 @@ class EmsCluster < ApplicationRecord
     direct_vm_ids + direct_miq_template_ids
   end
 
-  def total_direct_vms
-    direct_vm_rels.size
-  end
-
-  def total_direct_miq_templates
-    direct_miq_template_ids.size
-  end
+  virtual_total :total_direct_vms, :direct_vm_rels
+  virtual_total :total_direct_miq_templates, :direct_miq_templates
 
   def total_direct_vms_and_templates
     total_direct_vms + total_direct_miq_templates
@@ -182,19 +167,11 @@ class EmsCluster < ApplicationRecord
   end
 
   def resource_pools
-    # Look for only the resource_pools at the second depth (default depth + 1)
-    rels = descendant_rels(:of_type => 'ResourcePool')
-    min_depth = rels.collect(&:depth).min
-    rels = rels.select { |r| r.depth == min_depth + 1 }
-    Relationship.resources(rels).sort_by { |r| r.name.downcase }
+    Relationship.resources(grandchild_rels(:of_type => 'ResourcePool'))
   end
 
   def resource_pools_with_default
-    # Look for only the resource_pools up to the second depth (default depth + 1)
-    rels = descendant_rels(:of_type => 'ResourcePool')
-    min_depth = rels.collect(&:depth).min
-    rels = rels.select { |r| r.depth <= min_depth + 1 }
-    Relationship.resources(rels).sort_by { |r| r.name.downcase }
+    Relationship.resources(child_and_grandchild_rels(:of_type => 'ResourcePool'))
   end
 
   alias_method :add_resource_pool, :set_child
@@ -206,7 +183,10 @@ class EmsCluster < ApplicationRecord
 
   # All RPs under this Cluster and all child RPs
   def all_resource_pools
-    descendants(:of_type => 'ResourcePool')[1..-1].sort_by { |r| r.name.downcase }
+    # descendants typically returns the default_rp first but sporadically it
+    # will not due to a bug in the ancestry gem, this means we cannot simply
+    # drop the first value and need to check is_default
+    descendants(:of_type => 'ResourcePool').select { |r| !r.is_default }.sort_by { |r| r.name.downcase }
   end
 
   def all_resource_pools_with_default

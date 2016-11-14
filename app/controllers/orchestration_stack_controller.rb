@@ -4,6 +4,10 @@ class OrchestrationStackController < ApplicationController
   after_action :cleanup_action
   after_action :set_session_data
 
+  def self.table_name
+    @table_name ||= "orchestration_stack"
+  end
+
   def index
     redirect_to :action => 'show_list'
   end
@@ -32,6 +36,13 @@ class OrchestrationStackController < ApplicationController
                       :url  => "/orchestration_stack/show/#{@orchestration_stack.id}?display=#{@display}")
       @view, @pages = get_view(ManageIQ::Providers::CloudManager::Vm, :parent => @orchestration_stack)
       @showtype = @display
+    when "children"
+      title = ui_lookup(:tables => "orchestration_stack")
+      kls   = OrchestrationStack
+      drop_breadcrumb(:name => _("%{name} (All %{title})") % {:name => @orchestration_stack.name, :title => title},
+                      :url  => "/orchestration_stack/show/#{@orchestration_stack.id}?display=#{@display}")
+      @view, @pages = get_view(kls, :parent => @orchestration_stack)
+      @showtype = @display
     when "security_groups"
       title = ui_lookup(:tables => "security_group")
       kls   = SecurityGroup
@@ -51,7 +62,9 @@ class OrchestrationStackController < ApplicationController
   end
 
   def show_list
-    process_show_list
+    process_show_list(
+      :where_clause => "orchestration_stacks.type != 'ManageIQ::Providers::AnsibleTower::ConfigurationManager::Job'"
+    )
   end
 
   def cloud_networks
@@ -131,10 +144,7 @@ class OrchestrationStackController < ApplicationController
     end
 
     if !@flash_array.nil? && params[:pressed] == "orchestration_stack_delete" && @single_delete
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to :action => 'show_list', :flash_msg => @flash_array[0][:message]
-      end
+      javascript_redirect :action => 'show_list', :flash_msg => @flash_array[0][:message]
     elsif params[:pressed].ends_with?("_edit") || ["#{pfx}_miq_request_new", "#{pfx}_clone",
                                                    "#{pfx}_migrate", "#{pfx}_publish"].include?(params[:pressed])
       render_or_redirect_partial(pfx)
@@ -178,7 +188,7 @@ class OrchestrationStackController < ApplicationController
     else
       begin
         template.save_as_orderable!
-      rescue StandardError => bang
+      rescue => bang
         add_flash(_("An error occured when changing orchestration template \"%{name}\" to orderable: %{err_msg}") %
           {:name => template.name, :err_msg => bang.message}, :error)
         render_flash
@@ -241,30 +251,24 @@ class OrchestrationStackController < ApplicationController
       )
       begin
         ot.save_as_orderable!
-      rescue StandardError => bang
+      rescue => bang
         add_flash(_("Error during 'Orchestration Template Copy': %{error_message}") %
           {:error_message => bang.message}, :error)
         render_flash
       else
         flash_message = _("%{model} \"%{name}\" was saved") % {:model => ui_lookup(:model => 'OrchestrationTemplate'),
                                                                :name  => ot.name}
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to(:controller    => 'catalog',
-                           :action        => 'ot_show',
-                           :id            => ot.id,
-                           :flash_message => flash_message)
-        end
+        javascript_redirect :controller    => 'catalog',
+                            :action        => 'ot_show',
+                            :id            => ot.id,
+                            :flash_message => flash_message
       end
     end
   end
 
   def orchestration_templates_view
     template = find_by_id_filtered(OrchestrationStack, params[:id]).orchestration_template
-    render :update do |page|
-      page << javascript_prologue
-      page.redirect_to(:controller => 'catalog', :action => 'ot_show', :id => template.id)
-    end
+    javascript_redirect :controller => 'catalog', :action => 'ot_show', :id => template.id
   end
 
   def get_session_data
@@ -278,4 +282,6 @@ class OrchestrationStackController < ApplicationController
     session[:orchestration_stack_lastaction] = @lastaction
     session[:orchestration_stack_display]    = @display unless @display.nil?
   end
+
+  menu_section :clo
 end

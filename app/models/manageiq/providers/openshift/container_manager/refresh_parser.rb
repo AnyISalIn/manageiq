@@ -7,6 +7,7 @@ module ManageIQ::Providers
         get_routes(inventory)
         get_builds(inventory)
         get_build_pods(inventory)
+        get_templates(inventory)
         EmsRefresh.log_inv_debug_trace(@data, "data:")
         @data
       end
@@ -39,6 +40,14 @@ module ManageIQ::Providers
         end
       end
 
+      def get_templates(inventory)
+        process_collection(inventory["template"], :container_templates) { |n| parse_template(n) }
+
+        @data[:container_templates].each do |ct|
+          @data_index.store_path(:container_templates, :by_namespace_and_name, ct[:namespace], ct[:name], ct)
+        end
+      end
+
       def parse_project(project_item)
         project = @data_index.fetch_path(:container_projects, :by_name, project_item.metadata.name)
         project.merge!(:display_name => project_item.metadata.annotations['openshift.io/display-name']) unless
@@ -52,11 +61,13 @@ module ManageIQ::Providers
       def parse_route(route)
         new_result = parse_base_item(route)
 
+        labels = parse_labels(route)
         new_result.merge!(
           # TODO: persist tls
-          :host_name       => route.spec.try(:host),
-          :labels_and_tags => parse_labels(route),
-          :path            => route.path
+          :host_name => route.spec.try(:host),
+          :labels    => labels,
+          :tags      => map_labels('ContainerRoute', labels),
+          :path      => route.path
         )
 
         new_result[:project] = @data_index.fetch_path(:container_projects, :by_name,
@@ -80,8 +91,10 @@ module ManageIQ::Providers
       def parse_build(build)
         new_result = parse_base_item(build)
         new_result.merge! parse_build_source(build.spec.source)
+        labels = parse_labels(build)
         new_result.merge!(
-          :labels_and_tags             => parse_labels(build),
+          :labels                      => labels,
+          :tags                        => map_labels('ContainerBuild', labels),
           :service_account             => build.spec.serviceAccount,
           :completion_deadline_seconds => build.spec.try(:completionDeadlineSeconds),
           :output_name                 => build.spec.try(:output).try(:to).try(:name)
@@ -107,6 +120,29 @@ module ManageIQ::Providers
         )
         new_result[:build_config] = @data_index.fetch_path(:container_builds, :by_name,
                                                            build_pod.status.config.try(:name))
+        new_result
+      end
+
+      def parse_template_parameters(parameters)
+        parameters.to_a.collect do |param|
+          {
+            :name         => param['name'],
+            :display_name => param['displayName'],
+            :description  => param['description'],
+            :value        => param['value'],
+            :generate     => param['generate'],
+            :from         => param['from'],
+            :required     => param['required']
+          }
+        end
+      end
+
+      def parse_template(template)
+        new_result = parse_base_item(template)
+        new_result[:container_template_parameters] = parse_template_parameters(template.parameters)
+        new_result[:labels] = parse_labels(template)
+        new_result[:objects] = template.objects.collect(&:to_h)
+        new_result[:container_project] = @data_index.fetch_path(:container_projects, :by_name, new_result[:namespace])
         new_result
       end
     end

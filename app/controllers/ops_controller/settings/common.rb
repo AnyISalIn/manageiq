@@ -140,15 +140,9 @@ module OpsController::Settings::Common
           end
         end
       when 'settings_workers'
-        if @edit[:default_verify_status] != session[:log_depot_default_verify_status]
-          session[:log_depot_default_verify_status] = @edit[:default_verify_status]
-          verb = @edit[:default_verify_status] ? 'show' : 'hide'
-          page << "miqValidateButtons('#{verb}', 'default_');"
-        end
         if @edit[:new].config[:workers][:worker_base][:ui_worker][:count] != @edit[:current].config[:workers][:worker_base][:ui_worker][:count]
           page.replace("flash_msg_div", :partial => "layouts/flash_msg")
         end
-        page.replace_html('pwd_note', @edit[:default_verify_status] ? '' : _("* Passwords don't match."))
       end
 
       page << javascript_for_miq_button_visibility(@changed || @login_text_changed)
@@ -172,17 +166,23 @@ module OpsController::Settings::Common
 
     smartproxy_affinity_get_form_vars(params[:id], params[:check] == '1') if params[:id] && params[:check]
 
-    changed = (@edit[:new] != @edit[:current])
-    render :update do |page|
-      page << javascript_prologue
-      page << javascript_for_miq_button_visibility(changed)
-    end
+    javascript_miq_button_visibility(@edit[:new] != @edit[:current])
   end
 
   def pglogical_subscriptions_form_fields
     replication_type = MiqRegion.replication_type
     subscriptions = replication_type == :global ? PglogicalSubscription.all : []
     subscriptions = get_subscriptions_array(subscriptions) unless subscriptions.empty?
+    if replication_type == :global
+      subscriptions.each do |h|
+        region = MiqRegion.find_by(:region => h[:provider_region])
+        h.merge!(
+          :auth_key_configured => !!region.try(:auth_key_configured?),
+          :remote_ws_address   => region.try(:remote_ws_address).to_s
+        )
+      end
+    end
+
     render :json => {
       :replication_type => replication_type,
       :subscriptions    => subscriptions
@@ -194,17 +194,13 @@ module OpsController::Settings::Common
     if replication_type == :global
       MiqRegion.replication_type = replication_type
       subscriptions_to_save = []
-      params[:subscriptions].each do |_, subscription|
-        sub = subscription['id'] ? PglogicalSubscription.find(subscription['id']) : PglogicalSubscription.new
-        sub.dbname   = subscription['dbname']
-        sub.host     = subscription['host']
-        sub.user     = subscription['user']
-        sub.password = subscription['password'] == '●●●●●●●●' ? nil : subscription['password']
-        sub.port     = subscription['port']
-        if sub.id && subscription['remove'] == "true"
-          sub.delete
+      params[:subscriptions].each do |_, subscription_params|
+        subscription = find_or_new_subscription(subscription_params['id'])
+        if subscription.id && subscription_params['remove'] == "true"
+          subscription.delete
         else
-          subscriptions_to_save.push(sub)
+          set_subscription_attributes(subscription, subscription_params)
+          subscriptions_to_save.push(subscription)
         end
       end
       begin
@@ -218,27 +214,19 @@ module OpsController::Settings::Common
     else
       begin
         MiqRegion.replication_type = replication_type
-      rescue StandardError => bang
-        add_flash(_("Error during replication configuration save: ") %
+      rescue => bang
+        add_flash(_("Error during replication configuration save: %{message}") %
                     {:message => bang.message}, :error)
       else
         add_flash(_("Replication configuration save was successful"))
       end
     end
-
-    render :update do |page|
-      page << javascript_prologue
-      page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-      page << "miqSparkle(false);"
-    end
+    javascript_flash(:spinner_off => true)
   end
 
   def pglogical_validate_subscription
-    valid = MiqRegionRemote.validate_connection_settings(params[:host],
-                                                         params[:port],
-                                                         params[:user],
-                                                         params[:password],
-                                                         params[:dbname])
+    subscription = find_or_new_subscription(params[:id])
+    valid = subscription.validate(params_for_connection_validation(params))
     if valid.nil?
       add_flash(_("Subscription Credentials validated successfully"))
     else
@@ -246,24 +234,81 @@ module OpsController::Settings::Common
         add_flash(v, :error)
       end
     end
-    render :update do |page|
-      page << javascript_prologue
-      page.replace("flash_msg_div", :partial => "layouts/flash_msg")
+    javascript_flash
+  end
+
+
+  def enable_central_admin
+    replication_type = MiqRegion.replication_type
+
+    if replication_type != :global || !@_params[:provider_region] || !@_params[:ssh_user] || !@_params[:ssh_password]
+      add_flash(_("Invalid data for enabling Central Admin"), :error)
+    else
+      provider_region = @_params[:provider_region]
+      region = MiqRegion.find_by(:region => provider_region)
+      if region
+        region.generate_auth_key_queue(@_params[:ssh_user], @_params[:ssh_password], @_params[:ssh_host])
+        add_flash(_("Enable Central Admin has been successfully initiated"))
+      else
+        add_flash(_("Region Not found"), :error)
+      end
     end
+    javascript_flash
+  end
+
+  def disable_central_admin
+    replication_type = MiqRegion.replication_type
+
+    if replication_type != :global || !@_params[:provider_region]
+      add_flash(_("Invalid data for disabling Central Admin"), :error)
+    else
+      provider_region = @_params[:provider_region]
+      region = MiqRegion.find_by( :region => provider_region)
+      if region
+        region.remove_auth_key
+        add_flash(_("Central Admin has been disabled"))
+      else
+        add_flash(_("Region Not found"), :error)
+      end
+    end
+    javascript_flash
   end
 
   private
 
+  PASSWORD_MASK = '●●●●●●●●'.freeze
+
+  def find_or_new_subscription(id = nil)
+    id.nil? ? PglogicalSubscription.new : PglogicalSubscription.find(id)
+  end
+
+  def set_subscription_attributes(subscription, params)
+    params_for_connection_validation(params).each do |k, v|
+      subscription.send("#{k}=".to_sym, v)
+    end
+  end
+
+  def params_for_connection_validation(subscription_params)
+    {'host'     => subscription_params['host'],
+     'port'     => subscription_params['port'],
+     'user'     => subscription_params['user'],
+     'dbname'   => subscription_params['dbname'],
+     'password' => subscription_params['password'] == PASSWORD_MASK ? nil : subscription_params['password']
+    }.delete_blanks
+  end
+
   def get_subscriptions_array(subscriptions)
-    subscriptions.collect { |sub|
-      {:dbname => sub.dbname,
-       :host     => sub.host,
-       :id       => sub.id,
-       :user     => sub.user,
-       :password => '●●●●●●●●',
-       :port     => sub.port
+    subscriptions.collect do |sub|
+      {
+        :dbname          => sub.dbname,
+        :host            => sub.host,
+        :id              => sub.id,
+        :user            => sub.user,
+        :password        => '●●●●●●●●',
+        :port            => sub.port,
+        :provider_region => sub.provider_region
       }
-    }
+    end
   end
 
   def valid_replication_type
@@ -287,10 +332,7 @@ module OpsController::Settings::Common
       end
     end
 
-    render :update do |page|
-      page << javascript_prologue
-      page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-    end
+    javascript_flash
   end
 
   def settings_update_amazon_verify
@@ -309,11 +351,7 @@ module OpsController::Settings::Common
         add_flash("#{field.titleize}: #{msg}", :error)
       end
     end
-
-    render :update do |page|
-      page << javascript_prologue
-      page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-    end
+    javascript_flash
   end
 
   def settings_update_email_verify
@@ -328,10 +366,7 @@ module OpsController::Settings::Common
       add_flash(_("The test email is being delivered, check \"%{email}\" to verify it was successful") %
                   {:email => @sb[:new_to]})
     end
-    render :update do |page|
-      page << javascript_prologue
-      page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-    end
+    javascript_flash
   end
 
   def settings_update_save
@@ -392,9 +427,6 @@ module OpsController::Settings::Common
       w = wb[:vim_broker_worker]
       @edit[:new].set_worker_setting!(:MiqVimBrokerWorker, :memory_threshold, human_size_to_rails_method(w[:memory_threshold]))
 
-      wb[:replication_worker][:replication][:destination].delete(:verify)
-      @edit[:new].set_worker_setting!(:MiqReplicationWorker, :replication, wb[:replication_worker][:replication])
-
       w = qwb[:smart_proxy_worker]
       @edit[:new].set_worker_setting!(:MiqSmartProxyWorker, :count, w[:count].to_i)
       @edit[:new].set_worker_setting!(:MiqSmartProxyWorker, :memory_threshold, human_size_to_rails_method(w[:memory_threshold]))
@@ -448,12 +480,9 @@ module OpsController::Settings::Common
             begin
               server.name = @update.config[:server][:name]
               server.save!
-            rescue StandardError => bang
+            rescue => bang
               add_flash(_("Error when saving new server name: %{message}") % {:message => bang.message}, :error)
-              render :update do |page|
-                page << javascript_prologue
-                page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-              end
+              javascript_flash
               return
             end
           end
@@ -462,11 +491,11 @@ module OpsController::Settings::Common
         end
         AuditEvent.success(build_config_audit(@edit[:new], @edit[:current].config))
         if @sb[:active_tab] == "settings_server"
-          add_flash(_("Configuration settings saved for CFME Server \"%{name} [%{server_id}]\" in Zone \"%{zone}\"") %
-                      {:name => server.name, :server_id => server.id, :zone => server.my_zone})
+          add_flash(_("Configuration settings saved for %{product} Server \"%{name} [%{server_id}]\" in Zone \"%{zone}\"") %
+                      {:name => server.name, :server_id => server.id, :zone => server.my_zone, :product => I18n.t('product.name')})
         elsif @sb[:active_tab] == "settings_authentication"
-          add_flash(_("Authentication settings saved for CFME Server \"%{name} [%{server_id}]\" in Zone \"%{zone}\"") %
-                      {:name => server.name, :server_id => server.id, :zone => server.my_zone})
+          add_flash(_("Authentication settings saved for %{product} Server \"%{name} [%{server_id}]\" in Zone \"%{zone}\"") %
+                      {:name => server.name, :server_id => server.id, :zone => server.my_zone, :product => I18n.t('product.name')})
         else
           add_flash(_("Configuration settings saved"))
         end
@@ -481,10 +510,7 @@ module OpsController::Settings::Common
         if @sb[:active_tab] == "settings_server"
           replace_right_cell(@nodetype, [:diagnostics, :settings])
         elsif @sb[:active_tab] == "settings_custom_logos"
-          render :update do |page|
-            page << javascript_prologue
-            page.redirect_to :action => 'explorer', :flash_msg => @flash_array[0][:message], :flash_error => @flash_array[0][:level] == :error, :escape => false  # redirect to build the server screen
-          end
+          javascript_redirect :action => 'explorer', :flash_msg => @flash_array[0][:message], :flash_error => @flash_array[0][:level] == :error, :escape => false # redirect to build the server screen
           return
         else
           replace_right_cell(@nodetype)
@@ -500,15 +526,9 @@ module OpsController::Settings::Common
       end
     elsif @sb[:active_tab] == "settings_workers" &&
           x_node.split("-").first != "z"
-      unless @edit[:default_verify_status]
-        add_flash(_("Password/Verify Password do not match"), :error)
-      end
       unless @flash_array.nil?
         session[:changed] = @changed = true
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
         return
       end
       @update.config.each_key do |category|
@@ -519,8 +539,8 @@ module OpsController::Settings::Common
         server.set_config(@update)
 
         AuditEvent.success(build_config_audit(@edit[:new].config, @edit[:current].config))
-        add_flash(_("Configuration settings saved for CFME Server \"%{name} [%{server_id}]\" in Zone \"%{zone}\"") %
-                    {:name => server.name, :server_id => @sb[:selected_server_id], :zone => server.my_zone})
+        add_flash(_("Configuration settings saved for %{product} Server \"%{name} [%{server_id}]\" in Zone \"%{zone}\"") %
+                    {:name => server.name, :server_id => @sb[:selected_server_id], :zone => server.my_zone, :product => I18n.t('product.name')})
 
         if @sb[:active_tab] == "settings_workers" && @sb[:selected_server_id] == MiqServer.my_server.id  # Reset session variables for names fields, if editing current server config
           session[:customer_name] = @update.config[:server][:company]
@@ -586,6 +606,11 @@ module OpsController::Settings::Common
     # Add/remove affinity based on the node that was checked
     server_id, child = id.split('__')
 
+    if server_id.include?('svr')
+      server_id = from_cid(server_id.sub('svr-', ''))
+    else
+      server_id.sub!('xx-', '')
+    end
     all_children = @edit[:new][:children]
     server = @edit[:new][:servers][server_id.to_i]
 
@@ -629,8 +654,13 @@ module OpsController::Settings::Common
       }
     end
 
-    @smartproxy_affinity_tree = build_smartproxy_affinity_tree(@selected_zone)
-
+    if @selected_zone.miq_servers.select(&:is_a_proxy?).present?
+      @smartproxy_affinity_tree = TreeBuilderSmartproxyAffinity.new(:smartproxy_affinity,
+                                                                    :smartproxy_affinity_tree,
+                                                                    @sb,
+                                                                    true,
+                                                                    @selected_zone)
+    end
     @edit[:new] = copy_hash(@edit[:current])
     session[:edit] = @edit
     @in_a_form = true
@@ -645,7 +675,7 @@ module OpsController::Settings::Common
         server.vm_scan_storage_affinity = Storage.where(:id => children[:storages].to_a).to_a
       end
     end
-  rescue StandardError => bang
+  rescue => bang
     add_flash(_("Error during Analysis Affinity save: %{message}") % {:message => bang.message}, :error)
   else
     add_flash(_("Analysis Affinity was saved"))
@@ -810,14 +840,6 @@ module OpsController::Settings::Common
       w = wb[:vim_broker_worker]
       w[:memory_threshold] = params[:vim_broker_worker_threshold] if params[:vim_broker_worker_threshold]
 
-      w = wb[:replication_worker][:replication][:destination]
-      w[:database] = params[:replication_worker_dbname] if params[:replication_worker_dbname]
-      w[:port] = params[:replication_worker_port] if params[:replication_worker_port]
-      w[:username] = params[:replication_worker_username] if params[:replication_worker_username]
-      w[:password] = params[:replication_worker_password] if params[:replication_worker_password]
-      w[:verify] = params[:replication_worker_verify] if params[:replication_worker_verify]
-      w[:host] = params[:replication_worker_host] if params[:replication_worker_host]
-
       w = qwb[:smart_proxy_worker]
       w[:count] = params[:proxy_worker_count].to_i if params[:proxy_worker_count]
       w[:memory_threshold] = params[:proxy_worker_threshold] if params[:proxy_worker_threshold]
@@ -835,9 +857,6 @@ module OpsController::Settings::Common
 
       w = wb[:websocket_worker]
       w[:count] = params[:websocket_worker_count].to_i if params[:websocket_worker_count]
-
-      restore_password if params[:restore_password]
-      set_workers_verify_status
     when "settings_custom_logos"                                            # Custom Logo tab
       new[:server][:custom_logo] = (params[:server_uselogo] == "1") if params[:server_uselogo]
       new[:server][:custom_login_logo] = (params[:server_useloginlogo] == "1") if params[:server_useloginlogo]
@@ -1037,11 +1056,6 @@ module OpsController::Settings::Common
       w = (wb[:ui_worker] ||= {})
       w[:count] = @edit[:current].get_raw_worker_setting(:MiqUiWorker, :count) || 2
 
-      rw = (wb[:replication_worker] ||= {})
-      r = (rw[:replication] ||= {})
-      d = (r[:destination] ||= {})
-      d[:verify] = d[:password]
-
       w = (qwb[:reporting_worker] ||= {})
       w[:count] = @edit[:current].get_raw_worker_setting(:MiqReportingWorker, :count) || 2
       w[:memory_threshold] = rails_method_to_human_size(@edit[:current].get_raw_worker_setting(:MiqReportingWorker, :memory_threshold)) || rails_method_to_human_size(400.megabytes)
@@ -1059,7 +1073,6 @@ module OpsController::Settings::Common
 
       @edit[:new].config = copy_hash(@edit[:current].config)
       session[:log_depot_default_verify_status] = true
-      set_workers_verify_status
       @in_a_form = true
     when "settings_custom_logos"                                  # Custom Logo tab
       @edit = {}
@@ -1137,13 +1150,14 @@ module OpsController::Settings::Common
         @sb[:good] = nil unless @sb[:show_button]
         add_flash(_("Choose the type of custom variables to be imported"))
         @in_a_form = true
+      when "settings_label_tag_mapping"
+        label_tag_mapping_get_all
       when "settings_rhn"
         @edit = session[:edit] || {}
         @edit[:new] ||= {}
         @edit[:new][:servers] ||= {}
         @customer = rhn_subscription
         @buttons_on = @edit[:new][:servers].detect { |_, value| !!value }
-        @check_all  = @edit[:new][:servers_all]
         @updates = rhn_update_information
       end
     when "xx"
@@ -1221,54 +1235,6 @@ module OpsController::Settings::Common
       @ldap_regions = LdapRegion.in_my_region
       @miq_schedules = MiqSchedule.where("(prod_default != 'system' or prod_default is null) and adhoc IS NULL")
                        .sort_by { |s| s.name.downcase }
-    end
-  end
-
-  def set_workers_verify_status
-    w = @edit[:new].config[:workers][:worker_base][:replication_worker][:replication][:destination]
-    @edit[:default_verify_status] = (w[:password] == w[:verify])
-  end
-
-  def build_smartproxy_affinity_node(zone, server, node_type)
-    affinities = server.send("vm_scan_#{node_type}_affinity").collect(&:id)
-    {
-      :key      => "#{server.id}__#{node_type}",
-      :icon     => ActionController::Base.helpers.image_path("100/#{node_type}.png"),
-      :title    => Dictionary.gettext(node_type.camelcase, :type => :model, :notfound => :titleize, :plural => true),
-      :children => zone.send(node_type.pluralize).sort_by(&:name).collect do |node|
-        {
-          :key    => "#{server.id}__#{node_type}_#{node.id}",
-          :icon   => ActionController::Base.helpers.image_path("100/#{node_type}.png"),
-          :title  => node.name,
-          :select => affinities.include?(node.id)
-        }
-      end
-    }
-  end
-
-  def build_smartproxy_affinity_tree(zone)
-    zone.miq_servers.select(&:is_a_proxy?).sort_by { |s| [s.name, s.id] }.collect do |s|
-      title = "#{Dictionary.gettext('MiqServer', :type => :model, :notfound => :titleize)}: #{s.name} [#{s.id}]"
-      if @sb[:my_server_id] == s.id
-        title = "<b class='cfme-bold-node'>'" + _("%{title} (current)") % {:title => title} + "</title>"
-        title = title.html_safe
-      end
-      {
-        :key      => s.id.to_s,
-        :icon     => ActionController::Base.helpers.image_path('100/evm_server.png'),
-        :title    => title,
-        :expand   => true,
-        :children => [build_smartproxy_affinity_node(zone, s, 'host'),
-                      build_smartproxy_affinity_node(zone, s, 'storage')]
-      }
-    end
-  end
-
-  def restore_password
-    if params[:replication_worker_password]
-      @edit[:new].config[:workers][:worker_base][:replication_worker][:replication][:destination][:password] =
-        @edit[:new].config[:workers][:worker_base][:replication_worker][:replication][:destination][:verify] =
-        MiqServer.find(@sb[:selected_server_id]).get_config.config[:workers][:worker_base][:replication_worker][:replication][:destination][:password]
     end
   end
 end

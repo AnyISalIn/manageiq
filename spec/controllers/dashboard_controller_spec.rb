@@ -119,7 +119,7 @@ describe DashboardController do
       skip_data_checks(validation_url)
 
       allow(User).to receive(:authenticate).and_return(user)
-      allow_any_instance_of(ApiUserTokenService).to receive(:generate_token)
+      allow_any_instance_of(Api::UserTokenService).to receive(:generate_token)
         .with(user.userid, "ui")
         .and_return(auth_token)
 
@@ -280,7 +280,7 @@ describe DashboardController do
       login_as FactoryGirl.create(:user, :features => "everything")
       controller.instance_variable_set(:@settings, :display => {:startpage => "/dashboard/show"})
 
-      allow(controller).to receive(:role_allows).and_return(true)
+      allow(controller).to receive(:role_allows?).and_return(true)
       url = controller.send(:start_url_for_user, nil)
       expect(url).to eq("/dashboard/show")
     end
@@ -290,20 +290,6 @@ describe DashboardController do
       controller.instance_variable_set(:@settings, :display => {:startpage => "/dashboard/show"})
       url = controller.send(:start_url_for_user, nil)
       expect(url).to eq("/vm_cloud/explorer?accordion=instances")
-    end
-  end
-
-  context "#get_layout" do
-    it "sets layout same as session[:layout] when changing window size" do
-      request.parameters["action"] = "window_sizes"
-      session[:layout] = "host"
-      layout = controller.send(:get_layout)
-      expect(layout).to eq(session[:layout])
-    end
-
-    it "defaults layout to login on Login screen" do
-      layout = controller.send(:get_layout)
-      expect(layout).to eq("login")
     end
   end
 
@@ -362,7 +348,7 @@ describe DashboardController do
       ems_cloud_amz = FactoryGirl.create(:ems_amazon)
       breadcrumbs = [{:name => "Name", :url => "/controller/action"}]
       session[:breadcrumbs] = breadcrumbs
-      session[:tab_url] = {:clo => {:controller => "ems_cloud", :action => "show", :id => ems_cloud_amz.id}}
+      session[:tab_url] = {:clo => "/ems_cloud/#{ems_cloud_amz.id}"}
       post :maintab, :params => { :tab => "clo" }
       expect(response.header['Location']).to include(ems_cloud_path(ems_cloud_amz))
       expect(controller.instance_variable_get(:@breadcrumbs)).to eq([])
@@ -371,21 +357,63 @@ describe DashboardController do
 
   context "#session_reset" do
     it "verify certain keys are restored after session is cleared" do
-      winH               = '600'
       user_TZO           = '5'
       browser_info       = {:name => 'firefox', :version => '32'}
       session[:browser]  = browser_info
       session[:user_TZO] = user_TZO
-      session[:winH]     = winH
       session[:foo]      = 'foo_bar'
 
       controller.send(:session_reset)
 
       expect(session[:browser]).to eq(browser_info)
-      expect(session[:winH]).to eq(winH)
       expect(session[:user_TZO]).to eq(user_TZO)
       expect(session[:foo]).to eq(nil)
       expect(browser_info(:version)).to eq(browser_info[:version])
+    end
+  end
+
+  describe "building tabs" do
+    let(:group) do
+      role = FactoryGirl.create(:miq_user_role)
+      FactoryGirl.create(:miq_group, :miq_user_role => role)
+    end
+
+    let(:user) do
+      FactoryGirl.create(:user, :miq_groups => [group])
+    end
+
+    let(:wset) do
+      FactoryGirl.create(
+        :miq_widget_set,
+        :name     => "Widgets",
+        :userid   => user.userid,
+        :group_id => group.id,
+        :set_data => {
+          :last_group_db_updated => Time.now.utc,
+          :col1 => [1], :col2 => [], :col3 => []
+        }
+      )
+    end
+
+    before(:each) do
+      login_as user
+
+      controller.instance_variable_set(:@_params, :tab => wset.id)
+      controller.instance_variable_set(
+        :@sb,
+        :active_db  => wset.name, :active_db_id => wset.id,
+        :dashboards => { wset.name => {:col1 => [1], :col2 => [], :col3 => []} }
+      )
+
+      controller.show
+    end
+
+    it 'sets the active tab' do
+      expect(assigns(:active_tab)).to eq(wset.id.to_s)
+    end
+
+    it 'sets available tabs' do
+      expect(assigns(:tabs)).not_to be_empty
     end
   end
 

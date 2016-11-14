@@ -10,8 +10,9 @@ class MiqReportResult < ApplicationRecord
 
   serialize :report
 
-  virtual_column :miq_group_description, :type => :string, :uses => :miq_group
-  virtual_column :status,                :type => :string, :uses => :miq_task
+  virtual_delegate :description, :to => :miq_group, :prefix => true, :allow_nil => true
+  virtual_delegate :state_or_status, :to => "miq_task", :allow_nil => true
+  virtual_attribute :status, :string, :uses => :state_or_status
   virtual_column :status_message,        :type => :string, :uses => :miq_task
 
   virtual_has_one :result_set,           :class_name => "Hash"
@@ -31,15 +32,11 @@ class MiqReportResult < ApplicationRecord
   end
 
   def status
-    miq_task.nil? ? "Unknown" : miq_task.human_status
+    MiqTask.human_status(state_or_status)
   end
 
   def status_message
     miq_task.nil? ? _("Report results are no longer available") : miq_task.message
-  end
-
-  def miq_group_description
-    miq_group.try(:description)
   end
 
   def report_results
@@ -62,6 +59,8 @@ class MiqReportResult < ApplicationRecord
     miq_report_result_details.build(results)
   end
 
+  # @option options :per_page number of items per page
+  # @option options :page page number (defaults to page 1)
   def html_rows(options = {})
     per_page = options.delete(:per_page)
     page     = options.delete(:page) || 1
@@ -71,7 +70,7 @@ class MiqReportResult < ApplicationRecord
     end
     update_attribute(:last_accessed_on, Time.now.utc)
     purge_for_user
-    html_details.apply_legacy_finder_options(options.merge(:order => "id asc")).collect(&:data)
+    html_details.order("id asc").offset(options[:offset]).limit(options[:limit]).collect(&:data)
   end
 
   def save_for_user(userid)
@@ -164,8 +163,8 @@ class MiqReportResult < ApplicationRecord
     hdr << "@page{margin: 40pt 30pt 40pt 30pt}"
     hdr << "@page{@top{content: '#{title}';color:blue}}"
     hdr << "@page{@bottom-left{content: url('#{ActionController::Base.helpers.image_path('layout/reportbanner_small1.png')}')}}"
-    hdr << "@page{@bottom-center{font-size: 75%;content: 'Report date: #{run_date}'}}"
-    hdr << "@page{@bottom-right{font-size: 75%;content: 'Page ' counter(page) ' of ' counter(pages)}}"
+    hdr << "@page{@bottom-center{font-size: 75%;content: '" + _("Report date: %{report_date}") % {:report_date => run_date} + "'}}"
+    hdr << "@page{@bottom-right{font-size: 75%;content: '" + _("Page %{page_number} of %{total_pages}") % {:page_number => " ' counter(page) '", :total_pages => " ' counter(pages)}}"}
     hdr << "</style></head>"
   end
 

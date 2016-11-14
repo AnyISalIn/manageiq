@@ -18,7 +18,9 @@ module VmCloudHelper::TextualSummary
   #
 
   def textual_group_properties
-    %i(name region server description ipaddress mac_address custom_1 container tools_status osinfo architecture advanced_settings resources guid virtualization_type root_device_type)
+    %i(name region server description ipaddress mac_address custom_1 container preemptible tools_status
+       load_balancer_health_check_state osinfo architecture snapshots advanced_settings resources guid
+       virtualization_type root_device_type ems_ref)
   end
 
   def textual_group_security
@@ -43,10 +45,6 @@ module VmCloudHelper::TextualSummary
 
   def textual_group_ems_custom_attributes
     textual_ems_custom_attributes
-  end
-
-  def textual_group_compliance
-    %i(compliance_status compliance_history)
   end
 
   def textual_group_power_management
@@ -77,6 +75,16 @@ module VmCloudHelper::TextualSummary
     {:label => _("Custom Identifier"), :value => @record.custom_1}
   end
 
+  def textual_preemptible
+    preemptible = @record.try(:preemptible?)
+    return nil if preemptible.nil?
+
+    {
+      :label => _("Preemptible"),
+      :value => (preemptible ? _("Yes; VM will run at most 24 hours.") : _("No"))
+    }
+  end
+
   def textual_tools_status
     {:label => _("Platform Tools"), :value => (@record.tools_status.nil? ? _("N/A") : @record.tools_status)}
   end
@@ -85,6 +93,17 @@ module VmCloudHelper::TextualSummary
     bitness = @record.hardware.try!(:bitness)
     return nil if bitness.blank?
     {:label => _("Architecture"), :value => "#{bitness} bit"}
+  end
+
+  def textual_snapshots
+    num = @record.number_of(:snapshots)
+    h = {:label => _("Snapshots"), :image => "snapshot", :value => (num == 0 ? _("None") : num)}
+    if role_allows?(:feature => "vm_snapshot_show_list") && @record.supports_snapshots?
+      h[:title] = _("Show the snapshot info for this VM")
+      h[:explorer] = true
+      h[:link] = url_for(:action => 'show', :id => @record, :display => 'snapshot_info')
+    end
+    h
   end
 
   def textual_resources
@@ -270,17 +289,8 @@ module VmCloudHelper::TextualSummary
   end
 
   def textual_compliance_history
-    h = {:label => _("History")}
-    if @record.number_of(:compliances) == 0
-      h[:value] = _("Not Available")
-    else
-      h[:image] = "compliance"
-      h[:value] = _("Available")
-      h[:title] = _("Show Compliance History of this VM (Last 10 Checks)")
-      h[:explorer] = true
-      h[:link]  = url_for(:controller => controller.controller_name, :action => 'show', :id => @record, :display => 'compliance_history')
-    end
-    h
+    super(:title    => _("Show Compliance History of this VM (Last 10 Checks)"),
+          :explorer => true)
   end
 
   def textual_boot_time
@@ -305,5 +315,10 @@ module VmCloudHelper::TextualSummary
     rd_type = @record.hardware.try!(:root_device_type)
     return nil if rd_type.blank?
     {:label => _("Root Device Type"), :value => rd_type.to_s}
+  end
+
+  def textual_ems_ref
+    return nil if @record.ems_ref.blank?
+    {:label => _("ID within Provider"), :value => @record.ems_ref}
   end
 end

@@ -11,16 +11,15 @@
         - height = 78
       = render_quadicon(@record, :mode => :icon, :size => 72, :height => height, :typ => :listnav)
 
-      %div{:style => "margin-top: -23px; line-height: 13px;"}
-        %center{:style => "color: #000;"}
-          - unless @record.vmm_product.nil?
-            = h(@record.vmm_product)
-          - unless @record.vmm_version.nil?
-            &nbsp;
-            = h(@record.vmm_version)
-          - unless @record.vmm_buildnumber.nil?
-            %br
-            = h(@record.vmm_buildnumber)
+      %div{:style => "text-align:center"}
+        - unless @record.vmm_product.nil?
+          = h(@record.vmm_product)
+        - unless @record.vmm_version.nil?
+          &nbsp;
+          = h(@record.vmm_version)
+        - unless @record.vmm_buildnumber.nil?
+          %br
+          = h(@record.vmm_buildnumber)
 
     = miq_accordion_panel(_("Properties"), false, "host_prop") do
       %ul.nav.nav-pills.nav-stacked
@@ -32,22 +31,22 @@
           :text       => _('Devices'),
           :record_id  => @record.id,
           :display    => 'devices',
-          :title      => _("Show %s devices") % host_title)
+          :title      => _("Show %{host} devices") % {:host => host_title})
         = li_link(:count => @record.number_of(:switches),
           :text          => _('Network'),
           :record_id     => @record.id,
           :display       => 'network',
-          :title         => _("Show %s network") % host_title)
+          :title         => _("Show %{host} network") % {:host => host_title})
         = li_link(:if => !(@record.hardware.blank? || @record.hardware.number_of(:storage_adapters) == 0),
           :text       => _('Storage Adapters'),
           :record_id  => @record.id,
           :display    => 'storage_adapters',
-          :title      => _("Show %s storage adapters") % host_title)
+          :title      => _("Show %{host} storage adapters") % {:host => host_title})
         = li_link(:if => !(@osinfo.nil? || @osinfo.empty?),
           :text       => _('OS Information'),
           :record_id  => @record.id,
           :display    => 'os_info',
-          :title      => _("Show %s OS information") % host_title)
+          :title      => _("Show %{host} OS information") % {:host => host_title})
         = li_link(:if => !(@vmminfo.nil? || @vmminfo.empty?),
           :text       => _('VMM Information'),
           :record_id  => @record.id,
@@ -63,7 +62,7 @@
           :display    => 'timeline',
           :record_id  => @record.id,
           :title      => _("Show Timelines"))
-        - if get_vmdb_config[:product][:proto]
+        - if ::Settings.product.proto
           = li_link(:count => @record.event_logs.count,
             :text          => _("ESX Logs"),
             :id            => @record.id,
@@ -71,76 +70,76 @@
 
     = miq_accordion_panel(_("Relationships"), false, "host_rel") do
       %ul.nav.nav-pills.nav-stacked
-        - if role_allows(:feature => "ems_infra_show") && !@record.ext_management_system.nil?
+        - if role_allows?(:feature => "ems_infra_show") && !@record.ext_management_system.nil?
           %li
             = link_to("#{ui_lookup(:table => "ext_management_systems")}: #{@record.ext_management_system.name}",
               ems_infra_path(@record.ext_management_system),
-              :title => _("Show this %s parent %s") % ["#{host_title}'s", ui_lookup(:table => "ems_infra")])
+              :title => _("Show this parent %{provider} for this %{host}") % {:host => host_title, :provider => ui_lookup(:table => "ems_infra")})
 
-        - if role_allows(:feature => "ems_cluster_show") && !@record.ems_cluster.nil?
+        - if role_allows?(:feature => "ems_cluster_show") && !@record.ems_cluster.nil?
           - cluster_title = title_for_cluster
           %li
             = link_to("#{cluster_title}: #{@record.ems_cluster.name}",
               {:controller => "ems_cluster", :action => 'show', :id => @record.ems_cluster.id.to_s},
-              :title => _("Show %s parent %s") % ["#{host_title}'s", cluster_title])
+              :title => _("Show parent %{cluster} for this %{host}") % {:host => host_title, :cluster => cluster_title})
 
-        - if role_allows(:feature => "storage_show_list")
+        - if role_allows?(:feature => "storage_show_list")
           = li_link(:count => @record.number_of(:storages),
             :record_id     => @record.id,
             :tables        => 'storages',
             :display       => 'storages',
             :action        => 'show')
 
-        - if role_allows(:feature => "resource_pool_show_list")
+        - if role_allows?(:feature => "resource_pool_show_list")
           = li_link(:count => @record.number_of(:resource_pools),
             :text          => _("Resource Pools"),
             :record_id     => @record.id,
             :display       => 'resource_pools',
             :title         => _("Show Resource Pools"))
 
-        - if role_allows(:feature => "vm_show_list")
+        - if role_allows?(:feature => "vm_show_list")
           = li_link(:count => @record.number_of(:vms),
             :text          => _("VMs"),
             :record_id     => @record.id,
             :display       => 'vms',
             :title         => _("Show all VMs"))
 
-        - if role_allows(:feature => "miq_template_show_list")
+        - if role_allows?(:feature => "miq_template_show_list")
           = li_link(:count => @record.number_of(:miq_templates),
             :text          => _("Templates"),
             :record_id     => @record.id,
             :display       => 'miq_templates',
             :title         => _("Show all Templates"))
 
-        - if role_allows(:feature => "host_drift")
+        - if role_allows?(:feature => "host_drift")
           = li_link(:count => @record.number_of(:drift_states),
             :text          => _("Drift History"),
             :action        => 'drift_history',
             :record_id     => @record.id,
             :title         => _("Show %{host} drift history") % {:host => host_title})
 
-    - if get_vmdb_config[:product][:storage]
+    - if ::Settings.product.storage
       = miq_accordion_panel(_("Storage Relationships"), false, "host_inf_rel") do
         %ul.nav.nav-pills.nav-stacked
-          - if role_allows(:feature => "ontap_storage_system_show_list")
+          - if role_allows?(:feature => "ontap_storage_system_show_list")
             = li_link(:count => @record.storage_systems_size,
               :record_id     => @record.id,
               :tables        => 'ontap_storage_system',
               :display       => 'ontap_storage_systems')
 
-          - if role_allows(:feature => "ontap_storage_volume_show_list")
+          - if role_allows?(:feature => "ontap_storage_volume_show_list")
             = li_link(:count => @record.storage_volumes_size,
               :record_id     => @record.id,
               :tables        => 'ontap_storage_volume',
               :display       => 'ontap_storage_volumes')
 
-          - if role_allows(:feature => "ontap_logical_disk_show_list")
+          - if role_allows?(:feature => "ontap_logical_disk_show_list")
             = li_link(:count => @record.logical_disks.count,
               :record_id     => @record.id,
               :tables        => 'ontap_logical_disk',
               :display       => 'ontap_logical_disks')
 
-          - if role_allows(:feature => "ontap_file_share_show_list")
+          - if role_allows?(:feature => "ontap_file_share_show_list")
             = li_link(:count => @record.file_shares_size,
               :record_id     => @record.id,
               :tables        => 'ontap_file_share',

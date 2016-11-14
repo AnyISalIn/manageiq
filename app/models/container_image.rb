@@ -2,6 +2,8 @@ class ContainerImage < ApplicationRecord
   include ComplianceMixin
   include MiqPolicyMixin
   include ScanningMixin
+  include TenantIdentityMixin
+
 
   DOCKER_IMAGE_PREFIX = "docker://"
 
@@ -16,6 +18,9 @@ class ContainerImage < ApplicationRecord
   has_one :operating_system, :through => :computer_system
   has_one :openscap_result, :dependent => :destroy
   has_many :openscap_rule_results, :through => :openscap_result
+
+  serialize :exposed_ports, Hash
+  serialize :environment_variables, Hash
 
   # Needed for scanning & tagging action
   delegate :my_zone, :to => :ext_management_system
@@ -53,7 +58,7 @@ class ContainerImage < ApplicationRecord
   end
 
   def scan
-    ext_management_system.scan_job_create(self.class.name, id)
+    ext_management_system.scan_job_create(self)
   end
 
   def perform_metadata_scan(ost)
@@ -62,14 +67,6 @@ class ContainerImage < ApplicationRecord
     # TODO: update smart state infrastructure with a better name
     # than scan_via_miq_vm
     scan_via_miq_vm(miq_cnt_group, ost)
-  end
-
-  def tenant_identity
-    if ext_management_system
-      ext_management_system.tenant_identity
-    else
-      User.super_admin.tap { |u| u.current_group = Tenant.root_tenant.default_miq_group }
-    end
   end
 
   def raise_creation_event
@@ -93,6 +90,10 @@ class ContainerImage < ApplicationRecord
       "security.manageiq.org/failed-policy" => causing_policy,
       "images.openshift.io/deny-execution"  => "true"
     )
+  end
+
+  def openscap_failed_rules_summary
+    openscap_rule_results.where(:result => "fail").group(:severity).count.symbolize_keys
   end
 
   alias_method :perform_metadata_sync, :sync_stashed_metadata

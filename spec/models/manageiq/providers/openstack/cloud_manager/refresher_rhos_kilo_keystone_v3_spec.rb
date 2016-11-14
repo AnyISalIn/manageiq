@@ -13,23 +13,24 @@ describe ManageIQ::Providers::Openstack::CloudManager::Refresher do
       with_cassette(@environment, @ems) do
         EmsRefresh.refresh(@ems)
         EmsRefresh.refresh(@ems.network_manager)
+        EmsRefresh.refresh(@ems.cinder_manager)
+        EmsRefresh.refresh(@ems.swift_manager)
       end
 
       assert_common
+
+      expect_sync_cloud_tenants_with_tenants_is_queued
     end
   end
 
   context "when configured with skips" do
-    before(:each) do
-      stub_settings(
-        :ems_refresh => {:openstack => {:inventory_ignore => [:cloud_volumes, :cloud_volume_snapshots]}}
-      )
-    end
 
     it "will not parse the ignored items" do
       with_cassette(@environment, @ems) do
         EmsRefresh.refresh(@ems)
         EmsRefresh.refresh(@ems.network_manager)
+        EmsRefresh.refresh(@ems.cinder_manager)
+        EmsRefresh.refresh(@ems.swift_manager)
       end
 
       assert_with_skips

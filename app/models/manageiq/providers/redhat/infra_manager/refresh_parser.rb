@@ -111,8 +111,8 @@ module ManageIQ::Providers::Redhat::InfraManager::RefreshParser
         ipmi_address = host_inv.attributes.fetch_path(:power_management, :address)
       end
 
+      host_os_version = host_inv[:os][:version] if host_inv[:os]
       ems_ref = ManageIQ::Providers::Redhat::InfraManager.make_ems_ref(host_inv[:href])
-
       new_result = {
         :type             => 'ManageIQ::Providers::Redhat::InfraManager::Host',
         :ems_ref          => ems_ref,
@@ -123,6 +123,8 @@ module ManageIQ::Providers::Redhat::InfraManager::RefreshParser
         :uid_ems          => host_inv[:id],
         :vmm_vendor       => 'redhat',
         :vmm_product      => host_inv[:type],
+        :vmm_version      => extract_host_version(host_os_version),
+        :vmm_buildnumber  => (host_os_version[:build] if host_os_version),
         :connection_state => connection_state,
         :power_state      => power_state,
 
@@ -139,6 +141,14 @@ module ManageIQ::Providers::Redhat::InfraManager::RefreshParser
       result_uids[mor] = new_result
     end
     return result, result_uids, lan_uids, switch_uids, guest_device_uids, scsi_lun_uids
+  end
+
+  def self.extract_host_version(host_os_version)
+    return unless host_os_version && host_os_version[:major]
+
+    version = host_os_version[:major]
+    version = "#{version}.#{host_os_version[:minor]}" if host_os_version[:minor]
+    version
   end
 
   def self.host_inv_to_ip(inv, hostname = nil)
@@ -194,6 +204,12 @@ module ManageIQ::Providers::Redhat::InfraManager::RefreshParser
       result[:cpu_cores_per_socket] = hdw.fetch_path(:topology, :cores) || 1
       result[:cpu_sockets]          = hdw.fetch_path(:topology, :sockets) || 1
       result[:cpu_total_cores]      = result[:cpu_sockets] * result[:cpu_cores_per_socket]
+    end
+
+    hw_info = inv[:hardware_information]
+    unless hw_info.blank?
+      result[:manufacturer] = hw_info[:manufacturer]
+      result[:model] = hw_info[:product_name]
     end
 
     result
@@ -324,9 +340,21 @@ module ManageIQ::Providers::Redhat::InfraManager::RefreshParser
   def self.host_inv_to_os_hash(inv, hostname)
     return nil if inv.nil?
 
-    result = {:name => hostname}
-    result[:product_name] = 'linux'
-    result
+    {
+      :name         => hostname,
+      :product_type => 'linux',
+      :product_name => extract_host_os_name(inv),
+      :version      => extract_host_os_full_version(inv[:os])
+    }
+  end
+
+  def self.extract_host_os_full_version(host_os)
+    host_os[:version][:full_version] if host_os && host_os[:version]
+  end
+
+  def self.extract_host_os_name(host_inv)
+    host_os = host_inv[:os]
+    host_os && host_os[:type] || host_inv[:type]
   end
 
   def self.vm_inv_to_hashes(inv, _storage_inv, storage_uids, cluster_uids, host_uids, lan_uids)
@@ -373,19 +401,13 @@ module ManageIQ::Providers::Redhat::InfraManager::RefreshParser
 
       ems_ref = ManageIQ::Providers::Redhat::InfraManager.make_ems_ref(vm_inv[:href])
 
-      new_result = {
-        :type              => template ? "ManageIQ::Providers::Redhat::InfraManager::Template" : "ManageIQ::Providers::Redhat::InfraManager::Vm",
-        :ems_ref           => ems_ref,
-        :ems_ref_obj       => ems_ref,
-        :uid_ems           => vm_inv[:id],
+      new_result = create_vm_hash(template, ems_ref, vm_inv[:id], URI.decode(vm_inv[:name]))
+
+      additional = {
         :memory_reserve    => vm_memory_reserve(vm_inv),
-        :name              => URI.decode(vm_inv[:name]),
-        :vendor            => "redhat",
         :raw_power_state   => raw_power_state,
-        :location          => "#{vm_inv[:id]}.ovf",
         :boot_time         => boot_time,
         :connection_state  => 'connected',
-        :template          => template,
         :host              => host,
         :ems_cluster       => ems_cluster,
         :storages          => storages,
@@ -395,6 +417,7 @@ module ManageIQ::Providers::Redhat::InfraManager::RefreshParser
         :custom_attributes => vm_inv_to_custom_attribute_hashes(vm_inv),
         :snapshots         => vm_inv_to_snapshot_hashes(vm_inv),
       }
+      new_result.merge!(additional)
 
       # Attach to the cluster's default resource pool
       ems_cluster[:ems_children][:resource_pools].first[:ems_children][:vms] << new_result if ems_cluster && !template
@@ -403,6 +426,19 @@ module ManageIQ::Providers::Redhat::InfraManager::RefreshParser
       result_uids[mor] = new_result
     end
     return result, result_uids
+  end
+
+  def self.create_vm_hash(template, ems_ref, vm_id, name)
+    {
+      :type        => template ? "ManageIQ::Providers::Redhat::InfraManager::Template" : "ManageIQ::Providers::Redhat::InfraManager::Vm",
+      :ems_ref     => ems_ref,
+      :ems_ref_obj => ems_ref,
+      :uid_ems     => vm_id,
+      :vendor      => "redhat",
+      :name        => name,
+      :location    => "#{vm_id}.ovf",
+      :template    => template,
+    }
   end
 
   def self.vm_inv_to_hardware_hash(inv)
@@ -506,7 +542,8 @@ module ManageIQ::Providers::Redhat::InfraManager::RefreshParser
           :size            => (device[:provisioned_size] || device[:size]).to_i,
           :size_on_disk    => device[:actual_size] ? device[:actual_size].to_i : 0,
           :disk_type       => device[:sparse] == true ? 'thin' : 'thick',
-          :mode            => 'persistent'
+          :mode            => 'persistent',
+          :bootable        => device[:bootable]
         }
 
         new_result[:storage] = storage_uids[storage_mor] unless storage_mor.nil?

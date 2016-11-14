@@ -1,10 +1,7 @@
 class MiddlewareTopologyService < TopologyService
   include UiServiceMixin
 
-  def initialize(provider_id)
-    @provider_id = provider_id
-    @providers = retrieve_providers(ManageIQ::Providers::MiddlewareManager, @provider_id)
-  end
+  @provider_class = ManageIQ::Providers::MiddlewareManager
 
   def build_topology
     topo_items = {}
@@ -12,9 +9,16 @@ class MiddlewareTopologyService < TopologyService
 
     entity_relationships = {
       :MiddlewareManager => {
+        :MiddlewareDomains => {
+          :MiddlewareServerGroups => {
+            :MiddlewareServers => nil
+          }
+        },
         :MiddlewareServers => {
           :MiddlewareDeployments => nil,
-          :MiddlewareDatasources => nil
+          :MiddlewareDatasources => nil,
+          :MiddlewareMessagings  => nil,
+          :lives_on              => {:Host => nil}
         }}}
 
     preloaded = @providers.includes(:middleware_server => [:middleware_deployment, :middleware_datasource])
@@ -23,7 +27,14 @@ class MiddlewareTopologyService < TopologyService
       topo_items, links = build_recursive_topology(entity, entity_relationships[:MiddlewareManager], topo_items, links)
     end
 
-    populate_topology(topo_items, links, build_kinds, icons)
+    # filter out the redundant edges from ems to server, if there is also path ems -> domain -> sg -> server
+    # this ensures the graph will remain a tree (instead of more general DAG)
+    to_delete = links.select { |e| e[:target].match(/^MiddlewareServer[[:digit:]]/) && e[:source].match(/ServerGro/) }
+                     .map { |e| e[:target] }
+
+    filtered_links = links.select { |e| !e[:source].match(/^MiddlewareManager/) || !to_delete.include?(e[:target]) }
+
+    populate_topology(topo_items, filtered_links, build_kinds, icons)
   end
 
   def entity_display_type(entity)
@@ -48,15 +59,21 @@ class MiddlewareTopologyService < TopologyService
     data[:status] = 'Unknown'
     data[:display_kind] = entity_display_type(entity)
     data[:icon] = entity.decorate.try(:item_image) unless glyph? entity
+    if entity.kind_of?(Vm)
+      data[:status] = entity.power_state.capitalize
+      data[:provider] = entity.ext_management_system.name
+    end
     data
   end
 
   def glyph?(entity)
-    [MiddlewareDatasource, MiddlewareDeployment].any? { |klass| entity.kind_of? klass }
+    [MiddlewareDatasource, MiddlewareDeployment, Vm, MiddlewareDomain, MiddlewareServerGroup, MiddlewareMessaging]
+      .any? { |klass| entity.kind_of? klass }
   end
 
   def build_kinds
-    kinds = [:MiddlewareServer, :MiddlewareDeployment, :MiddlewareDatasource, :MiddlewareManager]
+    kinds = [:MiddlewareDeployment, :MiddlewareDatasource, :MiddlewareDomain, :MiddlewareManager, :Vm,
+             :MiddlewareServer, :MiddlewareServerGroup, :MiddlewareMessaging]
     build_legend_kinds(kinds)
   end
 end

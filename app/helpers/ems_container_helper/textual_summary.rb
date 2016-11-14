@@ -1,5 +1,7 @@
 module EmsContainerHelper::TextualSummary
   include TextualMixins::TextualRefreshStatus
+  include TextualMixins::TextualAuthenticationsStatus
+  include TextualMixins::TextualMetricsStatus
   #
   # Groups
   #
@@ -14,31 +16,12 @@ module EmsContainerHelper::TextualSummary
     items.concat(%i(container_projects))
     items.concat(%i(container_routes)) if @ems.respond_to?(:container_routes)
     items.concat(%i(container_services container_replicators container_groups containers container_nodes
-                    container_image_registries container_images volumes container_builds))
+                    container_image_registries container_images volumes container_builds container_templates))
     items
   end
 
   def textual_group_status
-    textual_authentications + %i(refresh_status)
-  end
-
-  def textual_authentications
-    authentications = @ems.authentications
-    return [{:label => _("Default Authentication"), :title => t = _("None"), :value => t}] if authentications.blank?
-
-    authentications.collect do |auth|
-      label =
-        case auth.authtype
-        when "default" then _("Default")
-        when "bearer" then _("Bearer")
-        when "hawkular" then _("Hawkular")
-        else; _("<Unknown>")
-        end
-
-      {:label => _("%{label} Authentication") % {:label => label},
-       :value => auth.status || _("None"),
-       :title => auth.status_details}
-    end
+    textual_authentications_status + %i(authentications_status metrics_status refresh_status)
   end
 
   def textual_group_component_statuses
@@ -100,7 +83,7 @@ module EmsContainerHelper::TextualSummary
   def textual_topology
     {:label => _('Topology'),
      :image => 'topology',
-     :link  => url_for(:controller => 'container_topology', :action => 'show', :id => @ems.id),
+     :link  => polymorphic_path(@ems, :display => 'topology'),
      :title => _("Show topology")}
   end
 
@@ -108,7 +91,7 @@ module EmsContainerHelper::TextualSummary
     count_of_volumes = @ems.number_of(:persistent_volumes)
     label = ui_lookup(:tables => "volume")
     h     = {:label => label, :image => "container_volume", :value => count_of_volumes}
-    if count_of_volumes > 0 && role_allows(:feature => "persistent_volume_show_list")
+    if count_of_volumes > 0 && role_allows?(:feature => "persistent_volume_show_list")
       h[:link]  = ems_container_path(@ems.id, :display => 'persistent_volumes')
       h[:title] = _("Show all %{label}") % {:label => label}
     end
@@ -122,5 +105,11 @@ module EmsContainerHelper::TextualSummary
       :value => @ems.connection_configurations.hawkular.endpoint.hostname},
      {:label => _('Hawkular API Port'),
       :value => @ems.connection_configurations.hawkular.endpoint.port}]
+  end
+
+  def textual_miq_custom_attributes
+    attrs = @record.custom_attributes
+    return nil if attrs.blank?
+    attrs.collect { |a| {:label => a.name.tr("_", " "), :value => a.value} }
   end
 end

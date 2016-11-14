@@ -1,5 +1,8 @@
 module MiqAeMethodService
   class MiqAeServiceExtManagementSystem < MiqAeServiceModelBase
+    require_relative "mixins/miq_ae_service_inflector_mixin"
+    include MiqAeServiceInflectorMixin
+
     expose :storages,             :association => true
     expose :hosts,                :association => true
     expose :vms,                  :association => true
@@ -14,6 +17,7 @@ module MiqAeMethodService
     expose :authentication_userid
     expose :authentication_password
     expose :authentication_password_encrypted
+    expose :authentication_key
     expose :refresh, :method => :refresh_ems
     expose :provider, :association => true
   end

@@ -19,8 +19,6 @@ describe ExtManagementSystem do
   let(:all_types_and_descriptions) do
     {
       "ansible_tower_configuration" => "Ansible Tower Configuration",
-      "atomic"                      => "Atomic",
-      "atomic_enterprise"           => "Atomic Enterprise",
       "azure"                       => "Azure",
       "azure_network"               => "Azure Network",
       "ec2"                         => "Amazon EC2",
@@ -32,13 +30,19 @@ describe ExtManagementSystem do
       "hawkular"                    => "Hawkular",
       "kubernetes"                  => "Kubernetes",
       "openshift"                   => "OpenShift Origin",
-      "openshift_enterprise"        => "OpenShift Enterprise",
+      "openshift_enterprise"        => "OpenShift Container Platform",
       "openstack"                   => "OpenStack",
       "openstack_infra"             => "OpenStack Platform Director",
       "openstack_network"           => "OpenStack Network",
+      "physical_infra_manager"      => "PhysicalInfraManager", # TODO: (julian) remove once we have a physical_infra_manager implementation
+      "nuage_network"               => "Nuage Network Manager",
       "rhevm"                       => "Red Hat Enterprise Virtualization Manager",
       "scvmm"                       => "Microsoft System Center VMM",
       "vmwarews"                    => "VMware vCenter",
+      "vmware_cloud"                => "VMware vCloud",
+      "vmware_cloud_network"        => "VMware Cloud Network",
+      "cinder"                      => "Cinder ",
+      "swift"                       => "Swift ",
     }
   end
 
@@ -63,10 +67,6 @@ describe ExtManagementSystem do
 
     it "permissions.tmpl.yml should contain all EMS types" do
       types = YAML.load_file(Rails.root.join("config/permissions.tmpl.yml"))
-      # atomic is no longer in the list of permissions, because they should be faded out
-      # and new container managers should be openshift. Until they are fully removed from the
-      # codebase: https://github.com/ManageIQ/manageiq/issues/8612
-      types += %w(ems-type:atomic ems-type:atomic_enterprise)
       stub_vmdb_permission_store_with_types(types) do
         expect(described_class.supported_types_and_descriptions_hash).to eq(all_types_and_descriptions)
       end
@@ -89,6 +89,26 @@ describe ExtManagementSystem do
       ems = FactoryGirl.build(:ems_vmware, :ipaddress => nil)
       expect(ems.default_endpoint.ipaddress).to be_nil
     end
+  end
+
+  it "#total_storages" do
+    storage1 = FactoryGirl.create(:storage)
+    storage2 = FactoryGirl.create(:storage)
+
+    ems = FactoryGirl.create(:ems_vmware)
+    FactoryGirl.create(
+      :host_vmware,
+      :storages              => [storage1, storage2],
+      :ext_management_system => ems
+    )
+
+    FactoryGirl.create(
+      :host_vmware,
+      :storages              => [storage2],
+      :ext_management_system => ems
+    )
+
+    expect(ems.total_storages).to eq 2
   end
 
   context "#hostname / #hostname=" do
@@ -132,6 +152,84 @@ describe ExtManagementSystem do
     it "will contain multiple endpoints" do
       expected_endpoints = ["example.org", "amqp.example.org"]
       expect(ems.hostnames).to match_array(expected_endpoints)
+    end
+  end
+
+  context "with multiple endpoints using connection_configurations" do
+    let(:ems) do
+      FactoryGirl.build("ems_openstack",
+                        :hostname                  => "example.org",
+                        :connection_configurations => [{:endpoint => {:role     => "amqp",
+                                                                      :hostname => "amqp.example.org"}}])
+    end
+
+    it "will contain seperate ampq endpoint" do
+      expect(ems.default_endpoint.hostname).to eq "example.org"
+      expect(ems.connection_configuration_by_role("amqp").endpoint.hostname).to eq "amqp.example.org"
+    end
+
+    it "will contain multiple endpoints" do
+      expected_endpoints = ["example.org", "amqp.example.org"]
+      expect(ems.hostnames).to match_array(expected_endpoints)
+    end
+  end
+
+  context "with multiple endpoints using connection_configurations (string keys)" do
+    let(:ems) do
+      FactoryGirl.build("ems_openstack",
+                        "hostname"                  => "example.org",
+                        "connection_configurations" => [{"endpoint" => {"role"     => "amqp",
+                                                                        "hostname" => "amqp.example.org"}}])
+    end
+
+    it "will contain seperate ampq endpoint" do
+      expect(ems.default_endpoint.hostname).to eq "example.org"
+      expect(ems.connection_configuration_by_role("amqp").endpoint.hostname).to eq "amqp.example.org"
+    end
+
+    it "will contain multiple endpoints" do
+      expected_endpoints = ["example.org", "amqp.example.org"]
+      expect(ems.hostnames).to match_array(expected_endpoints)
+    end
+  end
+
+  context "with multiple endpoints using explicit authtype" do
+    let(:ems) do
+      FactoryGirl.build(:ems_openshift,
+                        :connection_configurations => [{:endpoint       => {:role     => "default",
+                                                                            :hostname => "openshift.example.org"},
+                                                        :authentication => {:role     => "bearer",
+                                                                            :auth_key => "SomeSecret"}},
+                                                       {:endpoint       => {:role     => "hawkular",
+                                                                            :hostname => "openshift.example.org"},
+                                                        :authentication => {:role     => "hawkular",
+                                                                            :auth_key => "SomeSecret"}}])
+    end
+
+    it "will contain the bearer authentication as default" do
+      expect(ems.connection_configuration_by_role("default").authentication.authtype).to eq("bearer")
+    end
+    it "will contain the hawkular authentication as hawkular" do
+      expect(ems.connection_configuration_by_role("hawkular").authentication.authtype).to eq("hawkular")
+    end
+  end
+
+  context "with multiple endpoints using implicit default authtype" do
+    let(:ems) do
+      FactoryGirl.build(:ems_openshift,
+                        :connection_configurations => [{:endpoint       => {:role     => "default",
+                                                                            :hostname => "openshift.example.org"},
+                                                        :authentication => {:auth_key => "SomeSecret"}},
+                                                       {:endpoint       => {:role     => "hawkular",
+                                                                            :hostname => "openshift.example.org"},
+                                                        :authentication => {:auth_key => "SomeSecret"}}])
+    end
+
+    it "will contain the default authentication (bearer) for default endpoint" do
+      expect(ems.connection_configuration_by_role("default").authentication.authtype).to eq("bearer")
+    end
+    it "will contain the hawkular authentication for the hawkular endpoint" do
+      expect(ems.connection_configuration_by_role("hawkular").authentication.authtype).to eq("hawkular")
     end
   end
 
@@ -196,7 +294,7 @@ describe ExtManagementSystem do
 
     %w(total_vms_on total_vms_off total_vms_unknown total_vms_never total_vms_suspended).each do |vcol|
       it "should have virtual column #{vcol} " do
-        expect(described_class).to have_virtual_column "#{vcol}", :integer
+        expect(described_class).to have_virtual_column vcol.to_s, :integer
       end
     end
 
@@ -229,78 +327,6 @@ describe ExtManagementSystem do
   end
 
   context "validates" do
-    before do
-      Zone.seed
-    end
-
-    context "within the same sub-classes" do
-      described_class.leaf_subclasses.each do |ems|
-        next if ems == ManageIQ::Providers::Amazon::CloudManager # Amazon is tested in ems_amazon_spec.rb
-        # TODO(lsmola) NetworkManager, test this if NetworkManager becomes not dependent on cloud manager
-        next if [ManageIQ::Providers::Openstack::NetworkManager,
-                 ManageIQ::Providers::Amazon::NetworkManager,
-                 ManageIQ::Providers::Azure::NetworkManager,
-                 ManageIQ::Providers::Google::NetworkManager].include? ems
-        t = ems.name.underscore
-
-        context t do
-          it "duplicate name" do
-            expect { FactoryGirl.create(t, :name => "ems_1") }.to_not raise_error
-            expect { FactoryGirl.create(t, :name => "ems_1") }.to     raise_error(ActiveRecord::RecordInvalid)
-          end
-
-          if ems.new.hostname_required?
-            it "duplicate hostname" do
-              expect { FactoryGirl.create(t, :hostname => "ems_1") }.to_not raise_error
-              expect { FactoryGirl.create(t, :hostname => "ems_1") }.to     raise_error(ActiveRecord::RecordInvalid)
-              expect { FactoryGirl.create(t, :hostname => "EMS_1") }.to     raise_error(ActiveRecord::RecordInvalid)
-            end
-
-            it "blank hostname" do
-              expect { FactoryGirl.create(t, :hostname => "") }.to raise_error(ActiveRecord::RecordInvalid)
-            end
-
-            it "nil hostname" do
-              expect { FactoryGirl.create(t, :hostname => nil) }.to raise_error(ActiveRecord::RecordInvalid)
-            end
-          end
-        end
-      end
-    end
-
-    context "across sub-classes, from vmware to" do
-      before do
-        @ems_vmware = FactoryGirl.create(:ems_vmware)
-      end
-
-      described_class.leaf_subclasses.collect do |ems|
-        t = ems.name.underscore
-        # TODO(lsmola) NetworkManager, test this when we have a standalone NetworkManager
-        next if [ManageIQ::Providers::Openstack::NetworkManager,
-                 ManageIQ::Providers::Amazon::NetworkManager,
-                 ManageIQ::Providers::Azure::NetworkManager,
-                 ManageIQ::Providers::Google::NetworkManager].include? ems
-
-        context t do
-          it "duplicate name" do
-            expect do
-              FactoryGirl.create(t, :name => @ems_vmware.name)
-            end.to raise_error(ActiveRecord::RecordInvalid)
-          end
-
-          it "duplicate hostname" do
-            manager = FactoryGirl.build(t, :hostname => @ems_vmware.hostname)
-
-            if manager.hostname_required?
-              expect { manager.save! }.to raise_error(ActiveRecord::RecordInvalid)
-            else
-              expect { manager.save! }.to_not raise_error
-            end
-          end
-        end
-      end
-    end
-
     context "across tenants" do
       before do
         tenant1  = Tenant.seed

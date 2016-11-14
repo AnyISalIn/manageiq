@@ -2,8 +2,631 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased - as of Sprint 48 end 2016-10-24
+
+### [Added](https://github.com/ManageIQ/manageiq/issues?q=milestone%3A%22Sprint+48+Ending+Oct+24%2C+2016%22+label%3Aenhancement)
+
+- Automate
+  - Reset domain priorities at startup and restore
+  - Set default entry points for non-generic catalog items
+  - Model: Schema change for Cloud Orchestration Retirement class
+  - Automation method that will choose VDC networks available in the given
+cloud provider
+  - Provisioning
+    - Show shared networks in the OpenStack provisioning dialog
+    - Reconnect orchestration stack with its template at post-provisioning
+  - Domain Import
+    - Rake task to import an Automate Model stored in a  Git Repository
+    - Allow for setting up self signed certificate in Import Screen
+    - REST API Git refresh and import
+    - Route the REST API import call to the correct server with the Git Owner Server role
+  - Added Automate $evm.create_notification method
+  - Retirement
+    - Allow VM's with unknown power state to retire.
+    - Allow archived/orphaned VM's to retire
+    - Added checks and logging for amazon retirement
+  - Service Model
+    - Added cinder backup/restore actions
+    - RBAC for service models
+  - Scheduling Automate Tasks via the rails console
+- Platform
+  - Configure kerberos to do dns_lookups for external authentication
+  - Add additional cloud objects to RBAC filter
+  - Chargeback
+    - Add Vm Guid to report fields for ChargebackVm reports
+    - Enable custom attributes for chargeback reports
+    - Add monthly/hourly/weekly in rates for 'per time' types
+    - Calculation changes taking into account averages and maximums per selected interval in report(monthly, weekly, daily)
+  - Logging: Add the ability to use a different disk for storing log files
+  - Tenancy: Introduce service for sharing resources across tenants
+- Providers
+  - Allow Vm to show floating and fixed ip addresses
+  - Containers
+    - Persist Container Templates
+    - UI: Add Container Templates
+  - Google Compute Engine: Support for parsing Google health checks during refresh
+  - OpenStack
+    - Cloud
+      - UI: Cloud volume backup
+      - CRUD for OpenStack Cloud tenants
+      - Enable Image Snapshots
+      - CRUD for OpenStack Host Aggregates
+    - Infra
+      - Enable node start and stop
+      - Node destroy deletes node from Ironic
+      - Add Ironic Controls
+      - Set boot image for registered hosts
+  - Storage: Cinder backup
+- REST API
+  - Service power operations
+  - Add custom attributes to provider
+  - Service Dialog Create
+  - Support for /api/requests creation and edits
+- SmartState: Add /etc/redhat-access-insights/machine-id to the sample VM analysis profile
+- User Interface
+  - Dashboard view for Infrastructure views
+  - Conversion of Middleware Provider form to Angular
+  - Add human name for Google & Azure load balancers
+  - Ability to get to details of Ansible jobs
+  - Add UI for generating authorization keys for remote regions
+  - Disable tenant edit from cloud tenant mapping
+  - Topology for Cloud Manager
+  - Topology for Infra provider
+
+### [Changed](https://github.com/ManageIQ/manageiq/issues?q=milestone%3A%22Sprint+48+Ending+Oct+24%2C+2016%22+label%3Aenhancement)
+
+- Performance
+  - Speed up RBAC when no vm in tree in Virtual Machine Explorer
+  - Speed-up lookup for min/max storage_used metric
+  - Add option to hide VMs in trees
+- Platform: Set appliance "system" memory/swap information
+- Providers
+  - Google Cloud Platform: Use standard health states
+  - Microsoft SCVMM: Set  default security protocol to ssl
+  - Network: Use RESTful routes
+
+
+### [Fixed](https://github.com/ManageIQ/manageiq/issues?q=milestone%3A%22Sprint+48+Ending+Oct+24%2C+2016%22+label%3bugs)
+
+Notable fixes include:
+
+- Automate
+  - Broken ordering ae_domains for a root tenant.
+  - Model: Added missing ServiceTemplateProvisionRequest_denied and ServiceTemplateProvisionRequest_pending instances so that Denied Service requests will properly generate emails.
+  - Validate user roles against domain edit before allowing copy/edit on any objects under it
+  - Provisioning: Stop appending the `_` character as part of the enforced VM naming.
+  - Fixed case where user can't add alerts.
+  - Fixed issue where alerts don't send SNMP v1 traps
+- Platform
+  - Chargeback: Fix Group by tag in chargeback report
+  - Replication
+    - Add repmgr tables to replication excludes
+    - Don't consider tables that are always excluded during the schema check
+    - Fixed bug in settings/access control where tenants from remote regions
+are displayed in the tenant list view and in the tenant selection when adding/editing a group
+- Providers
+  - Containers: Ability to add a container provider with a port other than 8443
+  - Azure: Show 'Memory (MB)' chart for azure instance
+- User Interface
+  - Enable Provision VMs button via relationships
+  - Missing reset button for Job Template Service Dialog
+  - Display the number of access control elements based on user permission
+
+
+## Unreleased - as of Sprint 47 end 2016-10-03
+
+### [Added](https://github.com/ManageIQ/manageiq/issues?q=milestone%3A%22Sprint+47+Ending+Oct+3%2C+2016%22+label%3Aenhancement)
+
+- Automate
+  - Provisioning
+    - Filter networks and floating_ips for OpenStack provisioning
+    - Added Google pre and post provisioning methods
+    - Enabled support for vApp provisioning service
+    - Backend support to enable VMware provisioning through selection of a DRS-enabled cluster instead of a host
+    - Set VM storage profile in provisioning
+  - Services
+    - Log properly dynamic dialog field script error
+    - Back-end support for Power Operations on Services
+      - Service Items: Pass start/stop commands to associated resources.
+      - Service Bundles: Honor bundle resource configuration for start/stop actions
+  - Added top_level_namespace to miq_ae_namespace model to support filtering for pluggable providers
+  - Created service_connections table to support connecting services together along with metadata
+  - Generic Objects
+    - Process Generic Object method call via automate
+    - Methods content stored in Automate
+    - Generic Object Definition model contains the method name only (Parameters defined in automate)
+    - Methods can return data to caller
+    - Methods can be overridden by domain ordering
+- Platform
+  - Centralized Administration
+    - VM power operations
+    - VM retirement
+    - Leverages new ManageIQ API Client gem
+  - Chargeback
+    - Generate monthly report for a Service
+Instance method on Service class
+    - Daily schedule generates report for each Service
+    - Enables SUI display of Service costs over last 30 days
+    - Containers
+      - Added image tag names for Containers in vim performance state.
+      - Added a 'fixed_compute_metric' column to chargeback
+      - Added rate assigning by tags to container images
+      - Chargeback vm group by tag
+  - Notifications
+    - Dynamic substitution in notification messages
+    - Generate for Lifecycle events
+  - Tenancy
+    - Mapping Cloud Tenants to ManageIQ Tenants
+      - Prevent deleting mapped tenants from cloud provider
+      - Added checkbox "Tenant Mapping Enabled" to Openstack Manager
+    - Ad hoc sharing of resources across tenants
+      - Backend modeling completed
+      - Implementation in progress
+- Providers
+  - Core
+    - Override default http proxy
+    - Default reasons for supported features
+    - Known features are discoverable
+    - Every known feature is unsupported by default
+    - `supports :reboot_guest`
+  - Generate a csv of features supported across all models
+  - Containers
+    - Allow policies to prevent Container image scans
+    - Chargeback rates based on container image tags
+    - Keep pod-container relationship after disconnection
+  - Google Compute Engine: Load Balancer refresh
+  - Middleware (Hawkular)
+    - Change labels in middleware topology
+    - Added "Server State" into Middleware Server Details
+    - Enabled search for Middleware entities
+    - Users can add Middleware Datasources and JDBC Drivers
+    - Metrics for JMS Topics and Queues
+  - Microsoft Cloud (Azure)
+    - Load Balancer inventory collection for Azure
+    - Pagination support in armrest gem
+  - Microsoft Infrastructure (SCVMM)
+    - Set CPU sockets and cores per socket
+  - Network
+    - Nuage policy groups added
+    - Load balancer service type actions for reconfigure, retirement, provisioning
+    - UI for creating subnets
+  - OpenStack
+    - Add hardware state for Hosts
+    - Map Flavors to Cloud Tenants during Openstack Cloud refresh
+    - Cinder backup/restore actions added to model
+    - UI to register Ironic nodes through Mistral
+  - Red Hat Enterprise Virtualization
+    - Report manufacturer and product info for RHEVM hosts
+  - Storage
+    - New Swift Storage Manager
+    - New Cinder Storage Manager
+    - Initial User Interface support for Storage Managers
+  - VMware Cloud
+    - Cloud orchestration stack operation: Create and delete stack
+    - Collect virtual datacenters as availability zones
+    - Event Catcher
+  - VMware Infrastructure: Datastores are filtered by Storage Profiles in provisioning
+- REST API
+  - Version bumped to 2.3.0 in preparation for Euwe release
+  - New /api/automate primary collection
+  - Enhanced to return additional product information for the About modal
+  - Bulk queries now support referencing resources by attributes
+  - Added ability to delete one’s own notifications
+  - Publish Blueprint API
+  - Update Blueprint API to store bundle info in ui_properties
+  - CRUD for Service create and orchestration template
+  - Api for refreshing automate domain from git
+  - Allow compressed IDs in resource references
+- Service UI
+  - Create picture
+  - Generic requests OPTION method
+  - Delete dialogs API
+  - Updated the “update” API for blueprints to be more efficient
+  - Cockpit integration
+  - Added About modal
+- SmartState
+  - Containers: Settings for proxy environment variables
+- User Interface
+  - Add GUID validation for certain Azure fields in Cloud Provider screen
+  - OpenStack: Register new Ironic nodes through Mistral
+  - Timelines resdesigned
+  - vSphere Distributed Switches tagging
+  - Patternfly Labels for OpenSCAP Results
+  - Operations UI Notifications
+
+
+
+
+### [Changed](https://github.com/ManageIQ/manageiq/issues?q=milestone%3A%22Sprint+47+Ending+Oct+3%2C+2016%22+label%3Aenhancement)
+
+- Automate:
+  - Changed Automate import to enable system domains
+  - Google schema changes in Cloud Provision Method class
+- Performance: Do not reload miq server in tree builder
+- Providers: vSphere Host storage device inventory collection improvements
+- REST API: Update API CLI to support the HTTP OPTIONS method.
+- User Interface
+  - Updated PatternFly to v3.11.0
+  - Summary Screen styling updates
+
+### [Fixed](https://github.com/ManageIQ/manageiq/issues?q=milestone%3A%22Sprint+47+Ending+Oct+3%2C+2016%22+label%3bugs)
+
+Notable fixes include:
+
+- Automate
+  - Fixed problem with request_pending email method
+  - Set User.current_user in Automation Engine to fix issue where provisioning resources were not being assigned to the correct tenant
+- Platform
+  - Use correct adjustment in chargeback reports
+  - Replication: Fix typo prevention full error message
+  - Tenancy: User friendly tenant names
+- Providers
+    - Openstack: Catch unauthorized exception in refresh
+    - Middleware: Fix operation timeout parameter fetch
+    - Red Hat Enterprise Virtualization: Access VM Cluster relationship correctly
+- Provisioning: VMware Infrastructure: sysprep_product_id field is no longer required
+- REST API
+  - API: Fix creation of Foreman provider
+  - Ensure api config references only valid miq_product_features
+- SmartState: Update logging and job error message when getting the service account for Containers
+- User Interface
+  - Add missing Searchbar and Advanced Search button
+  - Containers: Download to PDF/CSV/Text - don't download deleted containers
+  - Allow bring VM out of retirement from detail page
+  - Inconsitent menues in Middleware Views
+  - Save Authentication status on a Save
+  - User friendly tenant names
+  - RBAC:List only those VMs that the user has access to in planning
+
+## Unreleased - as of Sprint 46 end 2016-09-12
+
+### [Added](https://github.com/ManageIQ/manageiq/issues?q=milestone%3A%22Sprint+46+Ending+Sep+12%2C+2016%22+label%3Aenhancement)
+
+- Automate
+  - Import Rake task `OVERWRITE` argument: Setting  `OVERWRITE=true` removes the target domain prior to import
+  - New `extend_retires_on` method: Used by Automate methods to set a retirement date to specified number of days from today, or from a future date.
+  - Service model updates
+    - MiqAeServiceHardware
+    - MiqAeServicePartition
+    - MiqAeServiceVolume
+- Platform
+  - Centralized Administration
+    - Server to server authentication
+    - Invoke tasks on remote regions
+    - Leverage new API client (WIP)
+  - Chargeback
+    - Support for generating chargeback for services
+    - Will be used in Service UI for showing the cost of a service
+  - Database Maintenance
+    - Hourly reindex: High Churn Tables
+    - Periodic full vacuum
+    - Configure in appliance console
+  - Notification Backend
+    - Model for asynchronous notifications
+    - Authentication token generation for web sockets
+    - API for notification drawer
+  - PostgreSQL High Availability
+    - DB Cluster - Primary, Standbys
+    - Uses [repmgr](http://www.repmgr.org/) (replication)
+    - Failover
+      - Primary to Standby
+      - Appliance connects to new primary DB
+  - Tenancy: Mapping Cloud Tenants to ManageIQ Tenants
+    - Post refresh hook on OpenStack provider
+    - Create provider base tenant under a root tenant
+    - Cloud Tenant tree generated under provider base tenant
+    - Create / Update / Delete
+- Providers
+  - Containers
+    - Reports: Pods for images per project, Pods per node
+    - Deployment wizard
+  - Google Compute Engine: Provision Preemptible VMs
+  - Hawkular  
+    - JMS support (entities, topology)
+    - Reports for Transactions (in App servers)
+    - Support micro-lifecycle for Middleware-deployments
+    - Middleware provider now uses restful routes
+  - Microsoft Azure
+    - Handle new events: Create Security Group, VM Capture
+    - Provider-specific logging
+  - Networking
+    - Allow port ranges for Load Balancers
+    - Load Balancer user interface
+  - OpenStack
+    - Collect inventory for cloud volume backups
+    - Show topology for undercloud
+    - Associate/Disassociate Floating IPs
+  - Red Hat Enterprise Virtualization
+    - Get Host OS version and type
+    - Disk Management in VM Reconfigure
+  - VMware: Filter Storage by Profile
+  - vCloud
+    - Collect status of vCloud Orchestration Stacks
+    - Add Network Manager
+    - Collect networking inventory
+- REST API
+  - Token manager supports for web sockets
+  - Added querying for cockpit support
+  - Added support for Bulk queries
+  - Added support for UI notification drawer
+  - API entrypoint returns details about the appliance via server_info
+  - Blueprint updates now supports removal of the Service Catalog or Service Dialog from a Blueprint
+- Service Broker: Service UI (name change from Self Service UI)
+  - Renamed due to expanding number of use cases
+  - Adding in Arbitration Rules UI
+- User Interface
+  - Added mandatory Subscription field to Microsoft Azure Discovery screen
+  - Added Notifications Drawer and Toast Notifications List
+  - Added support for vSphere Distributed Switches
+  - Added support to show child/parent relations of Orchestration Stacks
+  - Added Middleware Messaging entities to topology chart
+
+### [Changed](https://github.com/ManageIQ/manageiq/issues?q=milestone%3A%22Sprint+46+Ending+Sep+12%2C+2016%22+label%3Aenhancement)
+
+- Automate: Description for Datastore Reset action now includes list of target domains
+- Performance
+  - Page rendering
+    - Compute -> Infrastructure -> Virtual Machines: 9% faster, 32% fewer rows tested on 3k active vms and 3k archived vms
+    - Services -> My Services: 60% faster, 98% fewer queries, 32% fewer db rows returned
+  - `Ownershipmixin`
+    - Filtering now done in SQL
+    - 99.5% faster (93.8s -> 0.5s) testing
+      - VMs / All VMs / VMs I Own
+      - VMs / All VMs / VMs in My LDAP Group
+- User Interface: Dynatree replaced with bootstrap-treeview
+
+## Unreleased - as of Sprint 45 end 2016-08-22
+
+### [Added](https://github.com/ManageIQ/manageiq/issues?q=milestone%3A%22Sprint+45+Ending+Aug+22%2C+2016%22+label%3Aenhancement)
+
+- Automate
+  - Enhanced messaging for provisioning: Displayed elements
+    - ManageIQ Server name
+    - Name of VM/Service being provisioned
+    - Current Automate state machine step
+    - Status message
+    - Provision Task Message
+    - Retry count (when applicable)
+  - New method `taggable?` to programmatically determine if a Service Model class or instance is taggable.
+  - Generic Objects: Model updates
+    - Associations
+    - Tagging
+    - Service Methods: `add_to_service / remove_from_service`
+  - Git Automate support
+    - Branch/Tag support
+    - Contents are locked and can be copied to other domains for editing
+    - Editable properties
+      - Enabled/Disabled
+      - Priority
+      - Removal of Domain
+    - Dedicated Server Role to store the repository
+- Platform
+  - PostgreSQL High Availability
+    - Primary/Standby DB config in Appliance Console
+    - Database-only appliance config in Appliance Console
+    - Failover Monitor
+  - Tenancy
+    - Groundwork in preparation for supporting multiple entitlements
+    - ApplicationHelper#role_allows and User#role_allows? combined and moved to RBAC
+    - Post refresh hook to queue mapping of Cloud Tenants
+  - Database maintenance scripts added to appliance
+- Providers
+  - Containers: Models for container deployments
+  - Google Compute Engine
+    - Preemptible Instances
+    - Retirement support
+  - Hawkular    
+    - Alerts
+       - Link miq alerts and hawkular events on the provider
+       - Convert ManageIQ alerts/profiles to hawkular group triggers/members of group triggers
+       - Sync the provider when ManageIQ alerts and alert profiles are created/updated
+   - Added entities: Domains and Server Groups including their visualization in topology
+   - Datasource entity now has deletion operation
+   - Support more event types for datasource and deployment
+   - Cross linking to VMs added to topology
+  - Microsoft Azure: Added memory and disk utilization metrics
+  - OpenStack
+    - Host Aggregates
+    - Region Support
+  - Red Hat Enterprise Virtualization: Snapshot support
+  - VMware vSphere: Storage profiles
+- REST API
+  - Support for compressed ids in inbound requests
+  - CRUD support for Arbitration Rules
+- Service Broker
+  - Service Designer: Blueprint API is 90% done, edit and publish are still in development
+  - Arbitration Profiles
+      - Collection of pre-defined settings
+      - Work in conjunction with the Arbitration Engine
+  - Rules Engine: API completed
+- SmartState: Deployed new MiqDiskCache module for use with Microsoft Azure
+    - Scan time reduced from >20 minutes to <5 minutes
+    - Microsoft Azure backed read requests reduced from >7000 requests to <1000
+- User Interface
+  - I18n support for UI plugins
+  - Arbitration Profiles management for Service Broker
+  - Re-check Authentication button added to Provider list views
+  - Provisioning button added to the Templates & Images list and summary screens
+  - Subtype option added to Generic Catalog Items
+  - About modal added to OPS UI
+
+### [Changed](https://github.com/ManageIQ/manageiq/issues?q=milestone%3A%22Sprint+45+Ending+Aug+22%2C+2016%22+label%3Aenhancement)
+
+- Performance: Page rendering performance
+  - Services -> Workloads -> All VMs page load time reduced from 93,770ms to 524ms (99%) with a test of 20,000 VMs
+- Platform
+  - Upgrade ruby 2.2.5 to 2.3.1
+  - Configure Rails web server - Puma or Thin
+    - Puma is still the default
+    - Planning on adding additional servers
+
+### [Fixes](https://github.com/ManageIQ/manageiq/issues?q=milestone%3A%22Sprint+45+Ending+Aug+22%2C+2016%22+label%3A"technical+debt")
+
+Notable fixes include:
+- Microsoft Azure: Fix proxy for template lookups
+- VMware vSphere: Block duplicate events
+- REST API
+  - Hide internal Tenant Groups from /api/groups
+  - Raise 403 Forbidden for deleting read-only groups
+  - API Request logging
+
+## Unreleased - as of Sprint 44 end 2016-08-1
+
+### [Added](https://github.com/ManageIQ/manageiq/issues?q=milestone%3A%22Sprint+44+Ending+Aug+1%2C+2016%22+label%3Aenhancement)
+
+- Automate
+  - Simulation: RBAC filtering applied to Object Attributes
+  - Service Provisioning: Exposed number_of_vms when building the provision request for a service
+  - Service Dialogs: Support for “visible” flag for dynamic fields
+  - Expose Compliance and ComplianceDetail models
+  - New associations on VmOrTemplate and Host models:
+    - `expose :compliances`
+    - `expose :last_compliance`
+  - New Service Models
+    - Compliance: `expose :compliance_details`
+    - ComplianceDetail: `expose :compliance`, `expose :miq_policy`
+  - Generic Object: Service models created for GenericObject and GenericObjectDefinition
+- Platform
+  - PostgreSQL High Availability
+    - Added [repmgr](http://repmgr.org/)  to support automatic failover
+    - Maintain list of active standby database servers
+    - Added [pg-dsn_parser](https://github.com/ManageIQ/pg-dsn_parser) for converting DSN to a hash
+  - Tenancy: Added parent_id to CloudTenant as prerequisite for mapping OpenStack tenants to ManageIQ tenants
+  - Watermark reports updated to be based on max of daily max value instead of max of average value
+  - Nice values added to worker processes
+-  Providers
+  - Google Compute Engine: Metrics
+  - Hawkular
+    - Operations: Add Deployment, Start/stop deployment
+    - Performance reports for datasources
+    - Collect more metrics for datasource
+  - Kubernetes: Cross-linking with OpenStack instances
+  - Microsoft Azure: Support floating IPs during provisioning
+  - Nuage: Inventory of Managed Cloud Subnets
+  - Red Hat Enterprise Virtualization: v4 API
+  - VMware vSphere: Storage Profiles modeling and inventory
+  - VMware vCloud: Initial PRs for modeling and inventory
+- REST API
+  - Support for arbitrary resource paths
+  - Work started on [ManageIQ API Client](https://github.com/ManageIQ/manageiq-api-client)
+  - Support for Arbitration Profiles
+  - Support for Cloud Networks queries
+  - Support for Arbitration Settings
+  - Updated /api/users to support edits of user settings
+- User Interface
+  - Both UIs updated to latest PatternFly and Angular PatternFly
+  - Self Service UI language selections separated from Operations UI
+  - Internationalization
+    - Virtual Columns
+    - Toolbars
+    - Removed string interpolation (for better localization)
+    - Changed to use gettext’s pluralization
+  - Ansible Tower Jobs moved to the Configuration tab (from Clouds/Stacks)
+  - Interactivity added to C3 charts on C&U screens  
+
+### [Changed](https://github.com/ManageIQ/manageiq/issues?q=milestone%3A%22Sprint+44+Ending+Aug+1%2C+2016%22+label%3Aenhancement)
+
+- Automate
+  - Simulation: Updated defaults
+    - Entry-point: `/System/Process/Request` (Previous value of “Automation”)
+    - Execute Method: Enabled
+  - Infrastructure Provision: Updated memory values for VM provisioning dialogs to 1, 2, 4, 8, 12, 16, 32 GB
+- Performance: Reduced the time and memory required to schedule Capacity and Utilization data collection.
+- Platform: Expression refactoring and cleanup with relative dates and times
+- Providers: Hawkular
+  - Upgrade of Hawkular gem to 2.3.0
+  - Skip unreachable middleware providers when reporting
+  - Add re-checking authentication status functionality/button
+- User Interface
+  - Converted to TreeBuilder - Snapshot, Policy, Policy RSOP, C&U Build Datastores and Clusters/Hosts, Automate Results
+  - CodeMirror version updated (used for text/yaml editors)
+
+### [Removed](https://github.com/ManageIQ/manageiq/issues?q=milestone%3A%22Sprint+44+Ending+Aug+1%2C+2016%22+label%3Aenhancement)
+
+- Platform
+  - Removed rubyrep
+  - Removed hourly checking of log growth and rotation if > 1gb
+- User Interface: Explorer Presenter RJS removal
+
+## Unreleased - as of Sprint 43 end 2016-07-11
+
+### [Added](https://github.com/ManageIQ/manageiq/issues?q=milestone%3A%22Sprint+43+Ending+July+11%2C+2016%22+label%3Aenhancement)
+
+- Automate
+  - Service resolution based on Provision Order
+  - Added /System/Process/MiqEvent instance
+  - Added Provider refresh call to Amazon retire state machine in Pre-Retirement state
+  - Service Dialogs: Added ‘Visible’ flag to all dialog fields
+  - Class Schema allows for EMS, Host, Policy, Provision, Request, Server, Storage, and VM(or Template) datatypes
+    - Value is id of the objects
+    - If object is not found, the attribute is not defined.
+  - Null Coalescing Operator
+    - Multiple String values separated by “||”
+    - Evaluated on new attribute data type “Null Coalescing”
+    - Order dependent, left to right evaluation
+    - First non-blank value is used
+    - Skip and warn about missing objects
+- Platform: Custom attributes support in reporting and expressions
+  - Selectable as a column
+  - Usable in report filters and charts
+- Providers
+  - Amazon: Public Images Filter
+  - Networking
+    - Separate Google Network Manager
+    - NFV: VNFD Templates and VNF Stacks
+  - Hawkular
+    - Deployment entity operations: Undeploy, redeploy
+    - Server operations: Reload, suspend, resume
+    - Live metrics for datasources and transactions
+    - Performance reports for middleware servers
+    - Support for alert profiles and alert automated expressions for middleware server
+    - Crosslink middleware servers with RHEV VMs
+    - Collect and display deployment status
+    - Datasources topology view
+- REST API
+  - Support for report schedules
+  - Support for approving or denying service requests
+  - Support for OpenShift Container Deployments
+  - Support for Virtual Templates
+- Service Broker
+  - Started work on Service Broker to allow ManageIQ to select VM for you based on criteria (cloud, cost, or performance)
+  - Added API backend for Resourceless Servers
+  - Added datastore for the default settings for resourceless servers
+- SmartState: Generalized disk LRU caching module
+  - Caching module can be used by any disk module, eliminating duplication.
+  - Can be inserted “higher” in the IO path.
+  - Configurable caching parameters (memory vs performance)
+  - Will be employed to address Azure performance and throttling issues.
+  - Other disk modules converted over time.
+- User Interface
+  - Settings moved to top right navigation header
+  - C3 Charts fully implemented - chart interaction coming soon!
+  - Tagging for Ansible Tower job templates
+  - Live Search added to bootstrap selects
+  - Self Service UI Order History with detail
+
+### [Changed](https://github.com/ManageIQ/manageiq/issues?q=milestone%3A%22Sprint+43+Ending+July+11%2C+2016%22+label%3Aenhancement)
+
+- Automate: Generic Object: Model refactoring/cleanup, use PostgreSQL jsonb column
+- Performance
+  - Capacity and Utlization improvements included reduced number of SQL queries and number of objects
+  - Improved tag processing for Alert Profiles
+  - UI Performance: specific pages targeted resulted in up to 98% reduction in rendering for those pages
+- Platform: PostgreSQL upgraded to 9.5 needed for HA feature
+- Providers:
+  - Pluggability: Began extraction of Amazon Provider into separate repository
+  - Hawkular
+      - Upgraded to hawkular gem version 2.2.1
+      - Refactor infrastructure for easier configuration
+  - Ansible: Automate method updated to pass JobTemplate “Extra Variables” defined in the Provision Task
+- User Interface
+  - Default Filters tree converted to TreeBuilder - more on the way
+  - Cloud Key Pair form converted to AngularJS (Dana - UX team)
+  - Toolbars:Cleaned up partials, YAML -> classes
+  - Provider Forms: Credentials Validation improvements
+
 ## Unreleased - as of Sprint 42 end 2016-06-20
-   
+
 ### [Added](https://github.com/ManageIQ/manageiq/issues?q=milestone%3A%22Sprint+42+Ending+June+20%2C+2016%22+label%3Aenhancement)
 
 - Providers
@@ -22,7 +645,7 @@ All notable changes to this project will be documented in this file.
   - Limited menu when running inside a container
   - Removed menu items that are not applicable when running inside a container
 - Automate
-  - Engine: Allow arguments in method calls during substitution 
+  - Engine: Allow arguments in method calls during substitution
   - Policy: Built-in policy to prevent retired VM from starting on a resume power operation
   - Service Model: Expose provision_priority value
   - Retirement: Restored retirement logic to verify that VM was provisioned or contains Lifecycle tag before processing
@@ -43,15 +666,15 @@ All notable changes to this project will be documented in this file.
   - Updated /api entrypoint so collection list is sorted
 
 ### [Fixes](https://github.com/ManageIQ/manageiq/issues?q=milestone%3A%22Sprint+42+Ending+June+20%2C+2016%22+label%3A"bug")
- 
+
 Notable fixes include:
 
 - Providers
   - Hawkular: Fixes for LiveMetrics
   - VMware: Fix for adding multiple disks
-  
+
 ## Unreleased - as of Sprint 41 end 2016-05-30
-   
+
 ### [Changed](https://github.com/ManageIQ/manageiq/issues?q=milestone%3A%22Sprint+41+Ending+May+30%2C+2016%22+label%3Aenhancement)
 
 - REST API: API CLI moved to tools/rest_api.rb
@@ -60,7 +683,7 @@ Notable fixes include:
   - Optimization and enhancement of event fetching
 
 ### [Removed](https://github.com/ManageIQ/manageiq/issues?q=milestone%3A%22Sprint+41+Ending+May+30%2C+2016%22+label%3A"technical debt")
- 
+
 - REST API: gems/cfme_client removed
 
 ## Unreleased - as of Sprint 40 end 2016-05-09
@@ -70,7 +693,7 @@ Notable fixes include:
 - REST API
   - Post Darga versioning updated to v2.3.0-pre
   - Added GET role identifiers
-   
+
 ### [Changed](https://github.com/ManageIQ/manageiq/issues?q=milestone%3A%22Sprint+40+Ending+May+9%2C+2016%22+label%3Aenhancement)
 
 - Platform
@@ -99,7 +722,7 @@ Notable fixes include:
 - Switchboard events for OpenStack
     - New Events: compute.instance.reboot.end, compute.instance.reset.end, compute.instance.snapshot.start
     - Policy Event updates: compute.instance.snapshot.end, compute.instance.suspend
-- Service Model 
+- Service Model
   - Added “networks” relationship to Hardware model
   - Support where method, find_by, and find_by!
   - Azure VM retirement modeling added
@@ -141,7 +764,7 @@ Notable fixes include:
   - New classes Settings and Vmdb::Settings
   - `VMDB::Config` is deprecated
   - `config/*.tmpl.yml` -> `config/settings.yml`
-  - Locally override with `config/settings.local.yml` or `config/settings/development.local.yml` 
+  - Locally override with `config/settings.local.yml` or `config/settings/development.local.yml`
 - Replication (pglogical)
     - Replacement of rubyrep with pglogical
     - New MiqPglogical class: provides generic functionality for remote and global regions
@@ -183,18 +806,18 @@ and before subscription is enabled
     - Cloud Cross Linking
     - Pod Network Metrics
     - Persistent Volume Claims
-    - Seed for policies, policy sets, policy contents and conditions 
+    - Seed for policies, policy sets, policy contents and conditions
     - Auto-tagging from kubernetes labels (backend only)
     - MiqAction to annotate container images as non-secure at
     - Multiple endpoint support OpenShift
-- Google Compute Engine 
+- Google Compute Engine
   - Inventory
   - Power Operations
   - Provisioning
   - Events
   - Better OS identification for VMs
   - Allow custom flavors
-- Hawkular 
+- Hawkular
   - First Middleware provider
   - Inventory and topology
   - Event Catcher and power operations to reload and stop Middleware servers
@@ -215,10 +838,10 @@ and before subscription is enabled
   - Clustered datastores
   - Add/remove disk methods for reconfigure
 - Red Hat Enterprise Virtualization: Targeted refresh process
-- Red Hat OpenStack 
+- Red Hat OpenStack
   - Instance Evacuation
   - Better neutron modeling
-  - Ceilometer events 
+  - Ceilometer events
   - cleanup SSL support
   - VM operations
   - Memory metrics
@@ -242,7 +865,7 @@ and before subscription is enabled
   - Microsoft Azure
 - Services Back End
   - Service Order (Cart) created for each Service Request based on current user and tenant.
-- VMware 
+- VMware
   - Clustered Datastores in Provisioning
   - Distributed Switches referenced from database during provisioning workflow
 - Google Compute Engine: Added Google Auto-Placement methods
@@ -269,7 +892,7 @@ and before subscription is enabled
 - Automation Requests approve and deny actions
 
 ### SmartState
-- Microsoft SCVMM: new 
+- Microsoft SCVMM: new
   - Virtual hard disks residing on Hyper-V servers
   - VHD, and newer VHDX disk formats
   - Snapshotted disks
@@ -320,8 +943,8 @@ and before subscription is enabled
 - Topology Status Colors
 - Vertical navigation menus
 - VM Reconfigure - add/remove disks
-- Orderable Orchestration Templates - create and copy 
-- Explorer for Datastore Clusters for VMware vSphere 5+ 
+- Orderable Orchestration Templates - create and copy
+- Explorer for Datastore Clusters for VMware vSphere 5+
 - Template/Image compliance policy checking (previously only allowed for VMs/Instances)
 - New UI for replication configuration
 - OpenStack - Cloud Volumes Add/Delete/Update/Attach/Detach
@@ -329,7 +952,7 @@ and before subscription is enabled
 - Support for Ansible Tower Jobs
 - Support to add Service Dialog for a Job Template & display Surveys on summary screen
 - Support added for Evacuate Openstack VMs
-   
+
 ## Removed
 
 - Providers: Removed Amazon SDK v1
@@ -371,7 +994,7 @@ and before subscription is enabled
   - Performance capture failure on cloud platforms caused by orphan VMs
   - Reduction in base size of workers
   - Reduction in memory used by EmsRefresh
-- Platform 
+- Platform
   - Updated to Rails 5 (using Rails master branch until stable branch is cut)
   - Appliance OS updated to CentOS 7.2 build 1511
   - oVirt-metrics gem fixed for Rails 5
@@ -424,7 +1047,7 @@ and before subscription is enabled
   - Ability to report on Performance
   - Host Socket and Total VMs metrics
   - Watermark reports available out-of-the-box
-- Google Cloud Engine
+- Google Compute Engine
   - New Provider
   - Ability to validate authentication
 

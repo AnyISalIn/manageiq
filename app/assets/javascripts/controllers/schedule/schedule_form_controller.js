@@ -65,9 +65,18 @@ ManageIQ.angular.app.controller('scheduleFormController', ['$http', '$scope', 's
         $scope.scheduleModel.time_zone    = data.schedule_time_zone;
         $scope.scheduleModel.uri          = data.uri;
         $scope.scheduleModel.uri_prefix   = data.uri_prefix;
+        $scope.scheduleModel.starting_object = data.starting_object;
+        $scope.scheduleModel.instance_names  = data.instance_names;
+        $scope.scheduleModel.target_classes  = data.target_classes;
+        $scope.scheduleModel.targets         = data.targets;
+        $scope.scheduleModel.instance_name   = data.instance_name;
+        $scope.scheduleModel.object_message  = data.object_message;
+        $scope.scheduleModel.object_request  = data.object_request;
+        $scope.scheduleModel.target_class    = data.target_class;
+        $scope.scheduleModel.target_id       = data.target_id;
+        $scope.scheduleModel.attrs           = data.attrs;
 
         $scope.setTimerType();
-
 
         $scope.timer_items        = timerOptionService.getOptions($scope.scheduleModel.timer_typ);
 
@@ -134,6 +143,13 @@ ManageIQ.angular.app.controller('scheduleFormController', ['$http', '$scope', 's
     if (serializeFields === undefined) {
       miqService.miqAjaxButton(url);
     } else {
+      if ($scope.scheduleModel.action_typ === 'automation_request') {
+        // should ignore list of targets as this list can be really long no need to send that up to server
+        var moreUrlParams = $.param(miqService.serializeModelWithIgnoredFields($scope.scheduleModel, ["targets"]));
+        if (moreUrlParams) {
+          url += '&' + decodeURIComponent(moreUrlParams);
+        }
+      }
       miqService.miqAjaxButton(url, serializeFields);
     }
   };
@@ -153,6 +169,8 @@ ManageIQ.angular.app.controller('scheduleFormController', ['$http', '$scope', 's
       type = __('Datastore Selection');
     } else if ($scope.scheduleModel.action_typ === 'db_backup') {
       type = __('Database Backup Selection');
+    } else if ($scope.scheduleModel.action_typ === 'automation_request') {
+      type = __('Automate Tasks Selection');
     }
 
     return type;
@@ -172,6 +190,10 @@ ManageIQ.angular.app.controller('scheduleFormController', ['$http', '$scope', 's
     return $scope.scheduleModel.action_typ === 'db_backup';
   };
 
+  $scope.automateRequest = function() {
+    return $scope.scheduleModel.action_typ === 'automation_request';
+  };
+
   $scope.sambaBackup = function() {
     return $scope.dbBackup() && $scope.scheduleModel.log_protocol === 'Samba';
   };
@@ -181,12 +203,38 @@ ManageIQ.angular.app.controller('scheduleFormController', ['$http', '$scope', 's
       $scope.scheduleModel.log_protocol = 'Network File System';
       $scope.scheduleModel.uri_prefix = 'nfs';
       $scope.scheduleModel.filter_typ = null;
+    } else if ($scope.automateRequest()) {
+      miqService.sparkleOn();
+      $http.post('/ops/automate_schedules_set_vars/' + scheduleFormId).success(function(data) {
+        $scope.scheduleModel.instance_names  = data.instance_names;
+        $scope.scheduleModel.target_classes  = data.target_classes;
+        $scope.scheduleModel.targets         = data.targets;
+        $scope.scheduleModel.starting_object = data.starting_object;
+        $scope.scheduleModel.instance_name   = data.instance_name;
+        $scope.scheduleModel.object_message  = data.object_message;
+        $scope.scheduleModel.object_request  = data.object_request;
+        $scope.scheduleModel.target_class    = data.tagert_class;
+        $scope.scheduleModel.target_id       = data.target_id;
+        $scope.scheduleModel.targets         = [];
+        $scope.scheduleModel.filter_typ      = null;
+        $scope.scheduleModel.attrs           = data.attrs;
+        miqService.sparkleOff();
+      });
     } else {
       $scope.scheduleModel.filter_typ = 'all';
     }
     $scope.scheduleModel.filter_value = '';
 
     $scope.filterValuesEmpty = true;
+  };
+
+  $scope.targetClassChanged = function() {
+    miqService.sparkleOn();
+    $http.post('/ops/fetch_target_ids/?target_class=' + $scope.scheduleModel.target_class).success(function(data) {
+      $scope.scheduleModel.target_id = data.target_id;
+      $scope.scheduleModel.targets = data.targets;
+      miqService.sparkleOff();
+    });
   };
 
   $scope.filterTypeChanged = function() {
@@ -245,23 +293,26 @@ ManageIQ.angular.app.controller('scheduleFormController', ['$http', '$scope', 's
   $scope.resetClicked = function() {
     $scope.$broadcast('resetClicked');
     $scope.scheduleModel = angular.copy( $scope.modelCopy );
-    if($scope.dbBackup())
-        $scope.filterValuesEmpty = true;
 
-      if(!$scope.dbBackup() && $scope.scheduleModel.filter_typ &&
-          ($scope.form.action_typ.$untouched && $scope.form.filter_typ.$untouched)) {
-        // AJAX-less Reset
-        $scope.toggleValueForWatch('filterValuesEmpty', false);
-      }
+    if ($scope.dbBackup()) {
+      $scope.filterValuesEmpty = true;
+    }
 
-    if(!$scope.dbBackup() && $scope.scheduleModel.filter_typ &&
-      ($scope.form.action_typ.$touched || $scope.form.filter_typ.$touched)) {
+    var filter_touched = $scope.angularForm.action_typ.$touched || (typeof $scope.angularForm.filter_typ != 'undefined' && $scope.angularForm.filter_typ.$touched);
+    if (!$scope.dbBackup() && !$scope.automateRequest() && $scope.scheduleModel.filter_typ && !filter_touched) {
+      // AJAX-less Reset
+      $scope.toggleValueForWatch('filterValuesEmpty', false);
+    }
+
+    if (!$scope.dbBackup() && !!$scope.automateRequest() && $scope.scheduleModel.filter_typ && filter_touched) {
       $scope.filterTypeChanged();
     }
-    if($scope.scheduleModel.timer_typ && $scope.form.timer_typ.$touched) {
+
+    if ($scope.scheduleModel.timer_typ && $scope.angularForm.timer_typ.$touched) {
       $scope.setTimerType();
       $scope.timer_items = timerOptionService.getOptions($scope.scheduleModel.timer_typ);
     }
+
     $scope.angularForm.$setUntouched(true);
     $scope.angularForm.$setPristine(true);
     miqService.miqFlash("warn", __("All changes have been reset"));
@@ -277,74 +328,52 @@ ManageIQ.angular.app.controller('scheduleFormController', ['$http', '$scope', 's
   };
 
   $scope.filterValueRequired = function(value) {
-    return !$scope.filterValuesEmpty &&
-      ($scope.isModelValueNil(value));
+    return !$scope.filterValuesEmpty && !value;
   };
 
   $scope.dbRequired = function(value) {
-    return $scope.dbBackup() &&
-      ($scope.isModelValueNil(value));
+    return $scope.dbBackup() && !value;
   };
 
   $scope.sambaRequired = function(value) {
-    return $scope.sambaBackup() &&
-      ($scope.isModelValueNil(value));
-  };
-
-  $scope.isModelValueNil = function(value) {
-    return value == null || value == '';
+    return $scope.sambaBackup() && !value;
   };
 
   $scope.isBasicInfoValid = function() {
-    if($scope.angularForm.depot_name.$valid &&
+    return ($scope.angularForm.depot_name.$valid &&
       $scope.angularForm.uri.$valid &&
       $scope.angularForm.log_userid.$valid &&
       $scope.angularForm.log_password.$valid &&
-      $scope.angularForm.log_verify.$valid)
-      return true;
-    else
-      return false;
+      $scope.angularForm.log_verify.$valid);
   };
 
   $scope.setTimerType = function() {
-    if ($scope.scheduleModel.timer_typ == "Once")
-      $scope.timerTypeOnce = true;
-    else {
-      $scope.timerTypeOnce = false;
+    $scope.timerTypeOnce = $scope.scheduleModel.timer_typ == "Once";
+  };
+
+  $scope.toggleValueForWatch = function(watchValue, initialValue) {
+    if ($scope[watchValue] == initialValue) {
+      $scope[watchValue] = "NO-OP";
+    } else if ($scope[watchValue] == "NO-OP") {
+      $scope[watchValue] = initialValue;
     }
   };
 
-  $scope.toggleValueForWatch =   function(watchValue, initialValue) {
-    if($scope[watchValue] == initialValue)
-      $scope[watchValue] = "NO-OP";
-    else if($scope[watchValue] == "NO-OP")
-      $scope[watchValue] = initialValue;
+  $scope.canValidate = function() {
+    return $scope.isBasicInfoValid() && $scope.validateFieldsDirty();
   };
 
-  $scope.canValidate = function () {
-    if ($scope.isBasicInfoValid() && $scope.validateFieldsDirty())
-      return true;
-    else
-      return false;
-  }
+  $scope.canValidateBasicInfo = function() {
+    return $scope.isBasicInfoValid();
+  };
 
-  $scope.canValidateBasicInfo = function () {
-    if ($scope.isBasicInfoValid())
-      return true;
-    else
-      return false;
-  }
-
-  $scope.validateFieldsDirty = function () {
-    if ($scope.angularForm.depot_name.$dirty ||
+  $scope.validateFieldsDirty = function() {
+    return ($scope.angularForm.depot_name.$dirty ||
         $scope.angularForm.uri.$dirty ||
         $scope.angularForm.log_userid.$dirty ||
         $scope.angularForm.log_password.$dirty ||
-        $scope.angularForm.log_verify.$dirty)
-      return true;
-    else
-      return false;
-  }
+        $scope.angularForm.log_verify.$dirty);
+  };
 
   init();
 }]);

@@ -10,7 +10,7 @@ shared_examples "logs_collect" do |type|
       :active_tab       => "diagnostics_roles_servers"
     }
     controller.instance_variable_set(:@sb, sb_hash)
-    allow(MiqServer).to receive(:my_server).with(true).and_return(server)
+    allow(MiqServer).to receive(:my_server).and_return(server)
   end
 
   it "not running" do
@@ -59,7 +59,7 @@ describe OpsController do
   render_views
   context "#tree_select" do
     it "renders zone list for diagnostics_tree root node" do
-      set_user_privileges
+      stub_user(:features => :all)
       EvmSpecHelper.create_guid_miq_server_zone
       MiqRegion.seed
 
@@ -73,7 +73,7 @@ describe OpsController do
 
   context "#log_collection_form_fields" do
     it "renders log_collection_form_fields" do
-      set_user_privileges
+      stub_user(:features => :all)
       EvmSpecHelper.create_guid_miq_server_zone
       MiqRegion.seed
 
@@ -92,7 +92,7 @@ describe OpsController do
 
   context "#set_credentials" do
     it "uses params[:log_password] to set the creds hash if it exists" do
-      set_user_privileges
+      stub_user(:features => :all)
       EvmSpecHelper.create_guid_miq_server_zone
       MiqRegion.seed
 
@@ -106,7 +106,7 @@ describe OpsController do
     end
 
     it "uses stored password to set the creds hash" do
-      set_user_privileges
+      stub_user(:features => :all)
       EvmSpecHelper.create_guid_miq_server_zone
       MiqRegion.seed
 
@@ -123,9 +123,8 @@ describe OpsController do
   end
 
   context "::Diagnostics" do
-    let(:user) { FactoryGirl.create(:user) }
+    let!(:user) { stub_user(:features => :all) }
     before do
-      set_user_privileges user
       EvmSpecHelper.local_miq_server
       MiqRegion.seed
       _guid, @miq_server, @zone = EvmSpecHelper.remote_guid_miq_server_zone
@@ -142,7 +141,7 @@ describe OpsController do
       post :restart_server
 
       expect(response.body).to include("flash_msg_div")
-      expect(response.body).to include("CFME Appliance restart initiated successfully")
+      expect(response.body).to include("%{product} Appliance restart initiated successfully" % {:product => I18n.t('product.name')})
     end
 
     it "#delete_server returns successful message" do
@@ -168,12 +167,28 @@ describe OpsController do
     describe '#delete_server' do
       context "server does exist" do
         it 'deletes server and refreshes screen' do
+          server = FactoryGirl.create(:miq_server, :zone => @zone)
           sb_hash = {
             :trees            => {:diagnostics_tree => {:active_node => "z-#{@zone.id}"}},
             :active_tree      => :diagnostics_tree,
             :diag_selected_id => @miq_server_to_delete.id,
             :active_tab       => "diagnostics_roles_servers"
           }
+          @server_role = FactoryGirl.create(
+            :server_role,
+            :name              => "smartproxy",
+            :description       => "SmartProxy",
+            :max_concurrent    => 1,
+            :external_failover => false,
+            :role_scope        => "zone"
+          )
+          @assigned_server_role = FactoryGirl.create(
+            :assigned_server_role,
+            :miq_server_id  => server.id,
+            :server_role_id => @server_role.id,
+            :active         => true,
+            :priority       => 1
+          )
           controller.instance_variable_set(:@sb, sb_hash)
           controller.instance_variable_set(:@_params, :pressed => "zone_delete_server")
           expect(controller).to receive :render
@@ -183,7 +198,7 @@ describe OpsController do
           flash_array = assigns(:flash_array)
 
           diag_selected_id = controller.instance_variable_get(:@sb)[:diag_selected_id]
-          expect(diag_selected_id).to eq(nil)
+          expect(diag_selected_id).not_to eq(@miq_server_to_delete.id)
           expect(flash_array.size).to eq 1
           expect(flash_array.first[:message]).to match(/Server .*: Delete successful/)
         end
@@ -198,8 +213,8 @@ describe OpsController do
 
           expect(assigns(:flash_array)).to eq [
             {
-              message: 'EVM Server no longer exists',
-              level: :error
+              :message => 'EVM Server no longer exists',
+              :level   => :error
             }
           ]
         end
@@ -207,15 +222,15 @@ describe OpsController do
 
       context "server doesn't exist" do
         it 'should set the flash saying that server no longer exists' do
-          controller.instance_variable_set(:@sb, { diag_selected_id: -100500 })
+          controller.instance_variable_set(:@sb, :diag_selected_id => -100500)
           expect(controller).to receive :refresh_screen
 
           controller.send(:delete_server)
 
           expect(assigns(:flash_array)).to eq [
             {
-              message: 'The selected EVM Server was deleted',
-              level: :success
+              :message => 'The selected EVM Server was deleted',
+              :level   => :success
             }
           ]
         end
@@ -223,7 +238,7 @@ describe OpsController do
 
       context "server does exist, but something goes wrong during deletion" do
         it 'should set the flash saying that server no longer exists' do
-          controller.instance_variable_set(:@sb, { diag_selected_id: @miq_server.id })
+          controller.instance_variable_set(:@sb, { :diag_selected_id => @miq_server.id })
           expect(controller).to receive :refresh_screen
           expect_any_instance_of(MiqServer).to receive(:destroy).and_raise 'boom'
 

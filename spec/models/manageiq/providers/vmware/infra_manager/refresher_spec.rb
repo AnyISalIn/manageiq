@@ -31,6 +31,7 @@ describe ManageIQ::Providers::Vmware::InfraManager::Refresher do
     assert_specific_cluster
     assert_specific_storage
     assert_specific_storage_cluster
+    assert_specific_storage_profile
     assert_specific_host
     assert_specific_vm
     assert_cpu_layout
@@ -195,6 +196,7 @@ describe ManageIQ::Providers::Vmware::InfraManager::Refresher do
     expect(Vm.count).to eq(92)
     expect(MiqTemplate.count).to eq(9)
     expect(Storage.count).to eq(50)
+    expect(StorageProfile.count).to eq(6)
 
     expect(CustomAttribute.count).to eq(3)
     expect(CustomizationSpec.count).to eq(2)
@@ -228,6 +230,7 @@ describe ManageIQ::Providers::Vmware::InfraManager::Refresher do
     expect(@ems.vms_and_templates.size).to eq(101)
     expect(@ems.vms.size).to eq(92)
     expect(@ems.miq_templates.size).to eq(9)
+    expect(@ems.storage_profiles.size).to eq(6)
 
     expect(@ems.customization_specs.size).to eq(2)
     cspec = @ems.customization_specs.find_by_name("Win2k8Template")
@@ -335,6 +338,19 @@ describe ManageIQ::Providers::Vmware::InfraManager::Refresher do
     expect(@storage_cluster.children).to include(@child_storage)
   end
 
+  def assert_specific_storage_profile
+    @storage_profile = StorageProfile.find_by(:name => "Virtual SAN Default Storage Policy")
+    expect(@storage_profile).to have_attributes(
+      :ems_id       => @ems.id,
+      :ems_ref      => "aa6d5a82-1c88-45da-85d3-3d74b91a5bad",
+      :name         => "Virtual SAN Default Storage Policy",
+      :profile_type => "REQUIREMENT"
+    )
+
+    expect(@storage_profile.storages).to include(@storage)
+    expect(@storage.storage_profiles).to include(@storage_profile)
+  end
+
   def assert_specific_host
     @host = ManageIQ::Providers::Vmware::InfraManager::Host.find_by_name("VI4ESXM1.manageiq.com")
     expect(@host).to have_attributes(
@@ -393,7 +409,7 @@ describe ManageIQ::Providers::Vmware::InfraManager::Refresher do
     expect(dvswitch).to have_attributes(
       :uid_ems           => 'dvs-119',
       :name              => 'DC1_DVS',
-      :ports             => 0,
+      :ports             => 26,
       :allow_promiscuous => nil,
       :forged_transmits  => nil,
       :mac_changes       => nil,

@@ -8,7 +8,7 @@ class ApplicationHelper::Toolbar::DiagnosticsZoneCenter < ApplicationHelper::Too
   ])
   button_group('ldap_domain_vmdb', [
     select(
-      :support_vmdb_choice,
+      :zone_configuration_choice,
       'fa fa-cog fa-lg',
       t = N_('Configuration'),
       t,
@@ -25,7 +25,8 @@ class ApplicationHelper::Toolbar::DiagnosticsZoneCenter < ApplicationHelper::Too
                           :server_name => @record.name,
                           :server_id   => @record.id
                         }
-                      end
+                      end,
+          :klass => ApplicationHelper::Button::ZoneDeleteServer
         ),
         button(
           :zone_role_start,
@@ -44,7 +45,8 @@ class ApplicationHelper::Toolbar::DiagnosticsZoneCenter < ApplicationHelper::Too
                           :server_name             => @record.miq_server.name,
                           :server_id               => @record.miq_server.id
                         }
-                      end
+                      end,
+          :klass => ApplicationHelper::Button::RolePowerOptions
         ),
         button(
           :zone_role_suspend,
@@ -63,7 +65,8 @@ class ApplicationHelper::Toolbar::DiagnosticsZoneCenter < ApplicationHelper::Too
                           :server_name             => @record.miq_server.name,
                           :server_id               => @record.miq_server.id
                         }
-                      end
+                      end,
+          :klass => ApplicationHelper::Button::RolePowerOptions
         ),
         button(
           :zone_demote_server,
@@ -76,7 +79,9 @@ class ApplicationHelper::Toolbar::DiagnosticsZoneCenter < ApplicationHelper::Too
             }
           end,
           N_('Demote Server'),
-          :confirm => N_("Do you want to demote this Server to secondary?  This will leave no primary Server for this Role.")),
+          :confirm => N_("Do you want to demote this Server to secondary?  This will leave no primary Server for this Role."),
+          :klass => ApplicationHelper::Button::ServerLevelOptions
+        ),
         button(
           :zone_promote_server,
           'product product-migrate fa-lg',
@@ -88,11 +93,13 @@ class ApplicationHelper::Toolbar::DiagnosticsZoneCenter < ApplicationHelper::Too
             }
           end,
           N_('Promote Server'),
-          :confirm => N_("Do you want to promote this Server to primary?  This will replace any existing primary Server for this Role.")),
+          :confirm => N_("Do you want to promote this Server to primary?  This will replace any existing primary Server for this Role."),
+          :klass => ApplicationHelper::Button::ServerLevelOptions
+        ),
       ]
     ),
     select(
-      :support_vmdb_choice,
+      :zone_collect_logs_choice,
       'fa fa-filter fa-lg',
       N_('Collect Logs'),
       N_('Collect'),

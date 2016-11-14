@@ -19,12 +19,17 @@ class ApplicationHelper::Toolbar::EmsNetworkCenter < ApplicationHelper::Toolbar:
           :confirm => N_("Refresh relationships and power states for all items related to this Network Provider?")),
         separator,
         button(
+          :ems_network_edit,
+          'pficon pficon-edit fa-lg',
+          t = N_('Edit this Network Provider'),
+          t),
+        button(
           :ems_network_delete,
           'pficon pficon-delete fa-lg',
-          t = N_('Remove this Network Provider from the VMDB'),
+          t = N_('Remove this Network Provider'),
           t,
           :url_parms => "&refresh=y",
-          :confirm   => N_("Warning: This Network Provider and ALL of its components will be permanently removed from the Virtual Management Database.  Are you sure you want to remove this Network Provider?")),
+          :confirm   => N_("Warning: This Network Provider and ALL of its components will be permanently removed!")),
       ]
     ),
   ])

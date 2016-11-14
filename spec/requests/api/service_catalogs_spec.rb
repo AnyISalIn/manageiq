@@ -18,7 +18,7 @@
 #
 # - Refresh dialog fields       /api/service_catalogs/:id/service_templates/:id action "refresh_dialog_fields"
 #
-describe ApiController do
+describe "Service Catalogs API" do
   def sc_templates_url(id, st_id = nil)
     st_base = "#{service_catalogs_url(id)}/service_templates"
     st_id ? "#{st_base}/#{st_id}" : st_base
@@ -55,10 +55,17 @@ describe ApiController do
       run_post(service_catalogs_url, gen_request(:add, "name" => "sample service catalog"))
 
       expect(response).to have_http_status(:ok)
-      expect_result_resource_keys_to_be_like_klass("results", "id", Integer)
-      expect_results_to_match_hash("results", [{"name" => "sample service catalog"}])
+      expected = {
+        "results" => [
+          a_hash_including(
+            "id"   => kind_of(Integer),
+            "name" => "sample service catalog"
+          )
+        ]
+      }
+      expect(response.parsed_body).to include(expected)
 
-      sc_id = response_hash["results"].first["id"]
+      sc_id = response.parsed_body["results"].first["id"]
 
       expect(ServiceTemplateCatalog.find(sc_id)).to be_truthy
     end
@@ -69,10 +76,17 @@ describe ApiController do
       run_post(service_catalogs_url, "name" => "sample service catalog")
 
       expect(response).to have_http_status(:ok)
-      expect_result_resource_keys_to_be_like_klass("results", "id", Integer)
-      expect_results_to_match_hash("results", [{"name" => "sample service catalog"}])
+      expected = {
+        "results" => [
+          a_hash_including(
+            "id"   => kind_of(Integer),
+            "name" => "sample service catalog"
+          )
+        ]
+      }
+      expect(response.parsed_body).to include(expected)
 
-      sc_id = response_hash["results"].first["id"]
+      sc_id = response.parsed_body["results"].first["id"]
 
       expect(ServiceTemplateCatalog.find(sc_id)).to be_truthy
     end
@@ -83,10 +97,15 @@ describe ApiController do
       run_post(service_catalogs_url, gen_request(:add, [{"name" => "sc1"}, {"name" => "sc2"}]))
 
       expect(response).to have_http_status(:ok)
-      expect_result_resource_keys_to_be_like_klass("results", "id", Integer)
-      expect_results_to_match_hash("results", [{"name" => "sc1"}, {"name" => "sc2"}])
+      expected = {
+        "results" => a_collection_containing_exactly(
+          a_hash_including("id" => kind_of(Integer), "name" => "sc1"),
+          a_hash_including("id" => kind_of(Integer), "name" => "sc2")
+        )
+      }
+      expect(response.parsed_body).to include(expected)
 
-      results = response_hash["results"]
+      results = response.parsed_body["results"]
       sc_id1, sc_id2 = results.first["id"], results.second["id"]
       expect(ServiceTemplateCatalog.find(sc_id1)).to be_truthy
       expect(ServiceTemplateCatalog.find(sc_id2)).to be_truthy
@@ -109,7 +128,7 @@ describe ApiController do
       expect(response).to have_http_status(:ok)
       expect_results_to_match_hash("results", [{"name" => "sc", "description" => "sc description"}])
 
-      sc_id = response_hash["results"].first["id"]
+      sc_id = response.parsed_body["results"].first["id"]
 
       expect(ServiceTemplateCatalog.find(sc_id)).to be_truthy
       expect(ServiceTemplateCatalog.find(sc_id).service_templates.pluck(:id)).to match_array([st1.id, st2.id])
@@ -330,7 +349,7 @@ describe ApiController do
       run_get sc_templates_url(sc.id, st1.id)
 
       expect(response).to have_http_status(:ok)
-      expect(response_hash).to_not include_actions("order")
+      expect(response.parsed_body).to_not include_actions("order")
     end
 
     it "returns order action for orderable service templates" do
@@ -343,7 +362,7 @@ describe ApiController do
       run_get sc_templates_url(sc.id, st1.id)
 
       expect(response).to have_http_status(:ok)
-      expect(response_hash).to include_actions("order")
+      expect(response.parsed_body).to include_actions("order")
     end
 
     it "rejects order requests without appropriate role" do
@@ -456,9 +475,16 @@ describe ApiController do
 
       run_post(sc_templates_url(sc.id, st1.id), gen_request(:refresh_dialog_fields, "fields" => %w(text1)))
 
-      expect_single_action_result(:success => true, :message => /refreshing dialog fields/i)
-      expect_hash_to_have_keys(response_hash, %w(success href service_template_id service_template_href result))
-      expect_hash_to_have_keys(response_hash["result"], %w(text1))
+      expected = {
+        "success"               => true,
+        "message"               => a_string_matching(/refreshing dialog fields/i),
+        "href"                  => anything,
+        "service_template_id"   => anything,
+        "service_template_href" => anything,
+        "result"                => hash_including("text1")
+      }
+      expect(response.parsed_body).to include(expected)
+      expect(response).to have_http_status(:ok)
     end
   end
 end

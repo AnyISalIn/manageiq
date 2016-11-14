@@ -18,14 +18,14 @@ describe JsHelper do
   context '#tree_lock' do
     it 'returns js to lock tree' do
       expect(tree_lock('bar', true).gsub(/^\s+/, '')).to eq(<<-JS.strip_heredoc)
-        $('#barbox').dynatree('disable');
+        miqTreeObject('bar').disableAll({silent: true, keepState: true});
         miqDimDiv('\#bar_div', true);
       JS
     end
 
     it 'returns js to unlock tree' do
       expect(tree_lock('bar', false).gsub(/^\s+/, '')).to eq(<<-JS.strip_heredoc)
-        $('#barbox').dynatree('enable');
+        miqTreeObject('bar').enableAll({silent: true, keepState: true});
         miqDimDiv('\#bar_div', false);
       JS
     end
@@ -34,12 +34,6 @@ describe JsHelper do
   context '#javascript_focus' do
     it 'returns js to focus on an element' do
       expect(javascript_focus('foo')).to eq("$('#foo').focus();")
-    end
-  end
-
-  context '#javascript_focus_if_exists' do
-    it 'returns js to check for the existence of an element and focus on the element if it exists' do
-      expect(javascript_focus_if_exists('foo')).to eq("if ($('#foo').length) $('#foo').focus();")
     end
   end
 
@@ -54,18 +48,6 @@ describe JsHelper do
     it 'returns js to to add or remove the dimmed class on the element' do
       expect(javascript_dim('foo', true)).to eq("miqDimDiv('\#foo', true);")
       expect(javascript_dim('foo', false)).to eq("miqDimDiv('\#foo', false);")
-    end
-  end
-
-  context '#javascript_add_class' do
-    it 'returns js to add a class on the element' do
-      expect(javascript_add_class('foo', 'bar')).to eq("$('\#foo').addClass('bar');")
-    end
-  end
-
-  context '#javascript_del_class' do
-    it 'returns js to remove a class on the element' do
-      expect(javascript_del_class('foo', 'bar')).to eq("$('\#foo').removeClass('bar');")
     end
   end
 
@@ -109,7 +91,7 @@ describe JsHelper do
     it 'returns js to check the provided input element of type checkbox' do
       expect(javascript_checked(
         'foo'
-      )).to eq("if ($('#foo').prop('type') == 'checkbox') {$('#foo').prop('checked', 'checked');}")
+      )).to eq("if ($('#foo').prop('type') == 'checkbox') {$('#foo').prop('checked', true);}")
     end
   end
 

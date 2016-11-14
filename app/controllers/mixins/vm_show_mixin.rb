@@ -6,7 +6,7 @@ module VmShowMixin
     @lastaction = "explorer"
     @timeline = @timeline_filter = true    # need to set these to load timelines on vm show screen
     if params[:menu_click]              # Came in from a chart context menu click
-      @_params[:id] = x_node.split("_").last.split("-").last
+      @_params[:id] = parse_nodetype_and_id(x_node).last
       @explorer = true
       perf_menu_click                    # Handle the menu action
       return
@@ -87,11 +87,6 @@ module VmShowMixin
       @add_nodes = {}
       @add_nodes[tree_name.to_sym] = nodes if nodes # Set nodes that need to be added, if any
     end
-  end
-
-  # Add the children of a node that is being expanded (autoloaded), called by generic tree_autoload method
-  def tree_add_child_nodes(id)
-    TreeBuilder.tree_add_child_nodes(@sb, x_tree[:klass_name], id)
   end
 
   def show_record(id = nil)

@@ -1,5 +1,6 @@
 class ResourcePool < ApplicationRecord
   include VirtualTotalMixin
+  include TenantIdentityMixin
 
   acts_as_miq_taggable
 
@@ -32,14 +33,6 @@ class ResourcePool < ApplicationRecord
   virtual_total  :v_total_vms,             :all_vms,          :uses => :all_relationships
   virtual_total  :v_total_miq_templates,   :all_miq_templates, :uses => :all_relationships
 
-  def tenant_identity
-    if ext_management_system
-      ext_management_system.tenant_identity
-    else
-      User.super_admin.tap { |u| u.current_group = Tenant.root_tenant.default_miq_group }
-    end
-  end
-
   def hidden?
     is_default?
   end
@@ -50,7 +43,7 @@ class ResourcePool < ApplicationRecord
 
   # Resource Pool relationship methods
   def resource_pools
-    children(:of_type => 'ResourcePool').sort_by { |c| c.name.downcase }
+    children(:of_type => 'ResourcePool')
   end
 
   alias_method :add_resource_pool, :set_child
@@ -67,7 +60,7 @@ class ResourcePool < ApplicationRecord
 
   # VM relationship methods
   def vms_and_templates
-    children(:of_type => 'VmOrTemplate').sort_by { |c| c.name.downcase }
+    children(:of_type => 'VmOrTemplate')
   end
   alias_method :direct_vms_and_templates, :vms_and_templates
 
@@ -122,7 +115,7 @@ class ResourcePool < ApplicationRecord
 
   # All RPs under this RP and all child RPs
   def all_resource_pools
-    descendants(:of_type => 'ResourcePool').sort_by { |r| r.name.downcase }
+    descendants(:of_type => 'ResourcePool')
   end
 
   # Parent relationship methods
@@ -154,8 +147,11 @@ class ResourcePool < ApplicationRecord
 
   # Overridden from AggregationMixin to provide hosts related to this RP
   def all_hosts
-    p = parent_cluster_or_host
-    p.kind_of?(Host) ? [p] : p.all_hosts
+    if p = parent_cluster_or_host
+      p.kind_of?(Host) ? [p] : p.all_hosts
+    else
+      []
+    end
   end
 
   def all_host_ids

@@ -2,6 +2,10 @@ class MiqProductFeature < ApplicationRecord
   acts_as_tree
 
   has_and_belongs_to_many :miq_user_roles, :join_table => :miq_roles_features
+  has_many :miq_product_features_shares
+  has_many :shares, :through => :miq_product_features_shares
+
+  virtual_delegate :identifier, :to => :parent, :prefix => true, :allow_nil => true
 
   validates_presence_of   :identifier
   validates_uniqueness_of :identifier
@@ -17,6 +21,9 @@ class MiqProductFeature < ApplicationRecord
   ]
 
   FEATURE_TYPE_ORDER = ["view", "control", "admin", "node"]
+  REQUIRED_ATTRIBUTES = [:identifier].freeze
+  OPTIONAL_ATTRIBUTES = [:name, :feature_type, :description, :children, :hidden, :protected].freeze
+  ALLOWED_ATTRIBUTES = (REQUIRED_ATTRIBUTES + OPTIONAL_ATTRIBUTES).freeze
 
   def self.feature_yaml(path = FIXTURE_PATH)
     "#{path}.yml".freeze
@@ -28,10 +35,6 @@ class MiqProductFeature < ApplicationRecord
 
   def self.feature_parent(identifier)
     features[identifier.to_s].try(:[], :parent)
-  end
-
-  def self.parent_for_feature(identifier)
-    find_by_identifier(feature_parent(identifier))
   end
 
   def self.feature_children(identifier, sort = true)
@@ -68,12 +71,21 @@ class MiqProductFeature < ApplicationRecord
 
   def self.features
     @feature_cache ||= begin
-      includes(:parent, :children).each_with_object({}) do |f, h|
-        child_idents = f.children.collect(&:identifier)
-        parent_ident = f.parent.identifier if f.parent
+      # create hash with parent identifier and details
+      features = select(:id, :identifier).select(*DETAIL_ATTRS)
+                                         .select(arel_attribute(:parent_identifier).as("parent_identifier"))
+                                         .each_with_object({}) do |f, h|
+        parent_ident = f.parent_identifier
         details      = DETAIL_ATTRS.each_with_object({}) { |a, dh| dh[a] = f.send(a) }
-        h[f.identifier] = {:parent => parent_ident, :children => child_idents, :details => details}
+        h[f.identifier] = {:parent => parent_ident, :children => [], :details => details}
       end
+      # populate the children based upon parent identifier
+      features.each do |identifier, n|
+        if (parent = n[:parent])
+          features[parent][:children] << identifier
+        end
+      end
+      features
     end
   end
 

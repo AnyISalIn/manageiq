@@ -1,10 +1,9 @@
-include CompressedIds
-
 describe StorageController do
+  include CompressedIds
 
   let(:storage) { FactoryGirl.create(:storage, :name => 'test_storage1') }
   let(:storage_cluster) { FactoryGirl.create(:storage_cluster, :name => 'test_storage_cluster1') }
-  before { set_user_privileges }
+  before { stub_user(:features => :all) }
 
   context "#button" do
     it "when VM Right Size Recommendations is pressed" do
@@ -81,7 +80,7 @@ describe StorageController do
         command = button.split('_', 2)[1]
         allow_any_instance_of(Host).to receive(:is_available?).with(command).and_return(true)
 
-        controller.instance_variable_set(:@_params, :pressed => button, :miq_grid_checks => "#{host.id}")
+        controller.instance_variable_set(:@_params, :pressed => button, :miq_grid_checks => host.id.to_s)
         controller.instance_variable_set(:@lastaction, "show_list")
         allow(controller).to receive(:show_list)
         expect(controller).to receive(:render)
@@ -138,7 +137,7 @@ describe StorageController do
         allow(controller).to receive(:current_page).and_return(2)
         get :explorer, :params => {:page => '2'}
         expect(response.status).to eq(200)
-        expect(response.body).to include("<li>\n<span>\nShowing 6-7 of 7 items\n<input name='limitstart' type='hidden' value='0'>\n</span>\n</li>")
+        expect(response.body).to include("<li>\n<span>\n6-7 of 7\n<input name='limitstart' type='hidden' value='0'>\n</span>\n</li>")
       end
 
       it "it handles x_button tagging" do
@@ -157,8 +156,10 @@ describe StorageController do
         allow(Classification).to receive(:find_assigned_entries).and_return([@tag1, @tag2])
         post :x_button, :params => {:miq_grid_checks => to_cid(datastore.id), :pressed => "storage_tag", :format => :js}
         expect(response.status).to eq(200)
-        expect(response.body).to include('<h3>\n1 Datastore Being Tagged\n<\/h3>')
-        expect(response.body).to include("Name: #{datastore.name} | Datastores Type: ")
+
+        main_content = JSON.parse(response.body)['updatePartials']['main_div']
+        expect(main_content).to include("<h3>\n1 Datastore Being Tagged\n<\/h3>")
+        expect(main_content).to include("Name: #{datastore.name} | Datastores Type: ")
       end
 
       it 'can Perform a datastore Smart State Analysis from the datastore summary page' do
@@ -204,6 +205,19 @@ describe StorageController do
         flash_messages = assigns(:flash_array)
         expect(flash_messages.first[:message]).to_not include("Datastores no longer exists")
       end
+
+      it 'can render datastore details' do
+        tree_node_id = TreeBuilder.build_node_id(storage)
+        session[:sandboxes] = {} # no prior data in @sb
+        session[:exp_parms] = {:controller => 'storage',
+                               :action     => 'show',
+                               :id         => tree_node_id}
+
+        get :explorer
+        expect(response.status).to eq(200)
+        expect(response.body).to_not be_empty
+        expect(response).to render_template('shared/summary/_textual')
+      end
     end
 
     context "#tree_select" do
@@ -227,11 +241,10 @@ describe StorageController do
   end
 
   context "#tags_edit" do
+    let!(:user) { stub_user(:features => :all) }
     before(:each) do
       EvmSpecHelper.create_guid_miq_server_zone
       @ds = FactoryGirl.create(:storage, :name => "Datastore-01")
-      user = FactoryGirl.create(:user, :userid => 'testuser')
-      set_user_privileges user
       allow(@ds).to receive(:tagged_with).with(:cat => user.userid).and_return("my tags")
       classification = FactoryGirl.create(:classification, :name => "department", :description => "Department")
       @tag1 = FactoryGirl.create(:classification_tag,

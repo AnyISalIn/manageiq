@@ -19,7 +19,7 @@
             :maxlength         => MAX_DESC_LEN,
             :class             => "form-control",
             "data-miq_observe" => observe_with_interval)
-          = _("(Default: %s)") % h(get_vmdb_config[:smtp][:from])
+          = _("(Default: %{email_from})") % {:email_from => h(::Settings.smtp.from)}
       .form-group
         %label.control-label.col-md-2
           = _('To E-mail Address')
@@ -67,16 +67,13 @@
     .form-horizontal
       .form-group
         .col-md-8
-          #action_tags_treebox
-          = render(:partial => "layouts/dynatree",
+          #action_tags_treebox.treeview-pf-hover.treeview-pf-select
+          = render(:partial => "layouts/tree",
             :locals         => {:tree_id   => "action_tags_treebox",
               :tree_name                   => "action_tags_tree",
-              :json_tree                   => @cat_tree,
+              :bs_tree                     => @cat_tree,
               :click_url                   => "/miq_policy/action_tag_pressed/",
-              :onclick                     => "miqOnClickTagCat",
-              :enable_tree_images          => false,
-              :exp_tree                    => false,
-              :open_close_all_on_dbl_click => true})
+              :onclick                     => "miqOnClickTagCat"})
   - when "create_snapshot"
     %h3
       = _("Snapshot Settings")
@@ -306,7 +303,7 @@
         %label.control-label.col-md-2
           = _("Categories")
         .col-md-8
-          %table
+          %table.table.table-borderless
             - @edit[:cats].each_slice(3) do |cats|
               %tr
                 - cats.each do |cat|
@@ -322,7 +319,7 @@
         %label.control-label.col-md-2
           = _("Categories")
         .col-md-8
-          %table
+          %table.table.table-borderless
             - @edit[:cats].each_slice(3) do |cats|
               %tr
                 - cats.each do |cat|

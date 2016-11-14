@@ -1,10 +1,7 @@
 class ContainerTopologyService < TopologyService
   include UiServiceMixin
 
-  def initialize(provider_id)
-    @provider_id = provider_id
-    @providers = retrieve_providers(ManageIQ::Providers::ContainerManager, @provider_id)
-  end
+  @provider_class = ManageIQ::Providers::ContainerManager
 
   def build_topology
     topo_items = {}
@@ -53,7 +50,7 @@ class ContainerTopologyService < TopologyService
     data.merge!(:status       => entity_status(entity),
                 :display_kind => entity_display_type(entity))
 
-    if entity.kind_of?(Host) || entity.kind_of?(Vm)
+    if (entity.kind_of?(Host) || entity.kind_of?(Vm)) && entity.ext_management_system.present?
       data.merge!(:provider => entity.ext_management_system.name)
     end
 
@@ -64,14 +61,15 @@ class ContainerTopologyService < TopologyService
     if entity.kind_of?(Host) || entity.kind_of?(Vm)
       status = entity.power_state.capitalize
     elsif entity.kind_of?(ContainerNode)
-      status = 'Unknown'
-      entity.container_conditions.each do |condition|
-        if condition.try(:name) == 'Ready' && condition.try(:status) == 'True'
-          status = condition.name
-        else
-          status = 'NotReady'
-        end
-      end
+      node_ready_status = entity.container_conditions.find_by_name('Ready').try(:status)
+      status = case node_ready_status
+               when 'True'
+                 'Ready'
+               when 'False'
+                 'NotReady'
+               else
+                 'Unknown'
+               end
     elsif entity.kind_of?(ContainerGroup)
       status = entity.phase
     elsif entity.kind_of?(Container)
@@ -79,7 +77,7 @@ class ContainerTopologyService < TopologyService
     elsif entity.kind_of?(ContainerReplicator)
       status = (entity.current_replicas == entity.replicas) ? 'OK' : 'Warning'
     elsif entity.kind_of?(ManageIQ::Providers::ContainerManager)
-      status = entity.authentications.empty? ? 'Unknown' : entity.authentications.first.status.capitalize
+      status = entity.authentications.empty? ? 'Unknown' : entity.default_authentication.status.capitalize
     else
       status = 'Unknown'
     end

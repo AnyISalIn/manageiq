@@ -97,6 +97,8 @@
       :read_timeout: 1.hour
   :ems_kubernetes:
     :miq_namespace: management-infra
+  :ems_amazon:
+    :disabled_regions: []
 :ems_events:
   :history:
     :keep_ems_events: 6.months
@@ -127,16 +129,14 @@
     :refresh_interval: 15.minutes
   :openshift:
     :refresh_interval: 15.minutes
-  :atomic:
-    :refresh_interval: 15.minutes
   :openshift_enterprise:
-    :refresh_interval: 15.minutes
-  :atomic_enterprise:
     :refresh_interval: 15.minutes
   :raise_vm_snapshot_complete_if_created_within: 15.minutes
   :refresh_interval: 24.hours
   :scvmm:
     :refresh_interval: 15.minutes
+  :vmware_cloud:
+    :get_public_images: false
 :event_handling:
   :bottleneck_event_groups:
     :Capacity:
@@ -188,6 +188,11 @@
       - VmCreatedEvent
       - VmDeployedEvent
       - VmRegisteredEvent
+      - aggregate.addhost.end
+      - aggregate.create.end
+      - aggregate.removehost.end
+      - aggregate.updateprop.end
+      - aggregate.updatemetadata.end
       - image.update
       - image.create
       - image.upload
@@ -217,10 +222,16 @@
       :name: Creation/Addition
     :application:
       :critical:
+      - hawkular_datasource.error
+      - hawkular_datasource_remove.error
       - hawkular_deployment.error
+      - hawkular_deployment_remove.error
       - hawkular_event.critical
       :detail:
+      - hawkular_datasource.ok
+      - hawkular_datasource_remove.ok
       - hawkular_deployment.ok
+      - hawkular_deployment_remove.ok
       - hawkular_event
       :name: Application
     :configuration:
@@ -312,6 +323,7 @@
       - GceOperationDone_compute.instances.delete
       - VmDisconnectedEvent
       - VmRemovedEvent
+      - aggregate.delete.end
       - image.delete
       - orchestration.stack.delete.end
       - orchestration.stack.delete.error
@@ -583,10 +595,19 @@
       - NETWORK_UPDATE_TEMPLATE_INTERFACE_FAILED
       - NETWORK_UPDATE_VM_INTERFACE
       - NETWORK_UPDATE_VM_INTERFACE_FAILED
+      - network.create.end
+      - network.delete.end
       - network.floating_ip.allocate
       - network.floating_ip.deallocate
       - network.floating_ip.associate
       - network.floating_ip.disassociate
+      - network.update.end
+      - router.create.end
+      - router.delete.end
+      - router.update.end
+      - subnet.create.end
+      - subnet.delete.end
+      - subnet.update.end
       - POD_HOSTPORTCONFLICT
       :detail: []
       :name: Network
@@ -823,6 +844,14 @@
       - USER_UPDATE_STORAGE_DOMAIN_FAILED
       - USER_UPDATE_STORAGE_POOL
       - USER_UPDATE_STORAGE_POOL_FAILED
+      - backup.create.start
+      - backup.create.end
+      - backup.restore.start
+      - backup.restore.end
+      - snapshot.create.start
+      - snapshot.create.end
+      - snapshot.delete.end
+      - snapshot.update.end
       - volume.create.end
       - volume.delete.end
       - POD_OUTOFDISK
@@ -895,10 +924,21 @@
 :host_scan:
   :queue_timeout: 20.minutes
 :http_proxy:
-  :host:
-  :password:
-  :port:
-  :user:
+  :default:
+    :host:
+    :password:
+    :port:
+    :user:
+  :azure:
+    :host:
+    :password:
+    :port:
+    :user:
+  :ec2:
+    :host:
+    :password:
+    :port:
+    :user:
 :ldap_synchronization:
   :ldap_synchronization_schedule: "0 2 * * *"
 :log:
@@ -925,6 +965,10 @@
   :level_rails: info
   :level_aws: info
   :level_aws_in_evm: error
+  :level_lenovo: info
+  :level_lenovo_in_evm: error
+  :level_azure: warn
+  :level_azure_in_evm: error
   :level_mw: info
   :level_mw_in_evm: error
   :level_kube: info
@@ -968,6 +1012,100 @@
     :purge_window_size: 1000
 :product:
   :maindb: ExtManagementSystem
+  :container_deployment_wizard: false
+:replication:
+  :exclude_tables:
+    - ar_internal_metadata
+    - assigned_server_roles
+    - audit_events
+    - binary_blobs
+    - binary_blob_parts
+    - chargeback_rate_details
+    - chargeback_rates
+    - conditions
+    - conditions_miq_policies
+    - custom_buttons
+    - customization_specs
+    - database_backups
+    - event_logs
+    - file_depots
+    - jobs
+    - log_files
+    - metrics
+    - metrics_00
+    - metrics_01
+    - metrics_02
+    - metrics_03
+    - metrics_04
+    - metrics_05
+    - metrics_06
+    - metrics_07
+    - metrics_08
+    - metrics_09
+    - metrics_10
+    - metrics_11
+    - metrics_12
+    - metrics_13
+    - metrics_14
+    - metrics_15
+    - metrics_16
+    - metrics_17
+    - metrics_18
+    - metrics_19
+    - metrics_20
+    - metrics_21
+    - metrics_22
+    - metrics_23
+    - metric_rollups
+    - miq_actions
+    - miq_ae_classes
+    - miq_ae_fields
+    - miq_ae_instances
+    - miq_ae_methods
+    - miq_ae_namespaces
+    - miq_ae_values
+    - miq_ae_workspaces
+    - miq_alert_statuses
+    - miq_alerts
+    - miq_databases
+    - miq_enterprises
+    - miq_event_definitions
+    - miq_globals
+    - miq_policies
+    - miq_policy_contents
+    - miq_product_features
+    - miq_queue
+    - miq_roles_features
+    - miq_report_result_details
+    - miq_report_results
+    - miq_reports
+    - miq_searches
+    - miq_sets
+    - miq_schedules
+    - miq_shortcuts
+    - miq_tasks
+    - miq_user_roles
+    - miq_widgets
+    - miq_widget_contents
+    - miq_workers
+    - notifications
+    - notification_recipients
+    - notification_types
+    - repl_events
+    - repl_monitor
+    - repl_nodes
+    - rss_feeds
+    - scan_items
+    - schema_migrations
+    - server_roles
+    - sessions
+    - vim_performance_states
+    - vim_performance_tag_values
+    - vmdb_database_metrics
+    - vmdb_databases
+    - vmdb_indexes
+    - vmdb_metrics
+    - vmdb_tables
 :reporting:
   :format_by_class:
     :Fixnum:
@@ -999,7 +1137,7 @@
   :mks_version: 2.1.0.0
   :monitor_poll: 5.seconds
   :name: EVM
-  :rails_server: thin
+  :rails_server: puma
   :remote_console_type: VMRC
   :role: database_operations,event,reporting,scheduler,smartstate,ems_operations,ems_inventory,user_interface,websocket,web_services,automate
   :server_dequeue_frequency: 5.seconds
@@ -1022,7 +1160,7 @@
 :session:
   :interval: 60
   :memcache_server: 127.0.0.1:11211
-  :memcache_server_opts: "-l 127.0.0.1"
+  :memcache_server_opts: "-l 127.0.0.1 -I 1M"
   :show_login_info: true
   :timeout: 3600
 :smartproxy_deploy:
@@ -1094,7 +1232,7 @@
       :gc_interval: 15.minutes
       :heartbeat_freq: 10.seconds
       :heartbeat_timeout: 2.minutes
-      :memory_threshold: 200.megabytes
+      :memory_threshold: 400.megabytes
       :nice_delta: 10
       :parent_time_threshold: 3.minutes
       :poll: 3.seconds
@@ -1104,11 +1242,12 @@
       :starting_timeout: 10.minutes
     :ems_refresh_core_worker:
       :poll: 1.seconds
-      :memory_threshold: 400.megabytes
       :nice_delta: 1
       :thread_shutdown_timeout: 10.seconds
     :event_catcher:
       :defaults:
+        :flooding_events_per_minute: 30
+        :flooding_monitor_enabled: false
         :ems_event_page_size: 100
         :ems_event_thread_shutdown_timeout: 10.seconds
         :memory_threshold: 2.gigabytes
@@ -1117,8 +1256,16 @@
       :event_catcher_redhat:
         :poll: 15.seconds
       :event_catcher_vmware:
+        :flooding_monitor_enabled: true
         :poll: 1.seconds
         :ems_event_max_wait: 60
+      :event_catcher_vmware_cloud:
+        :poll: 15.seconds
+        :duration: 10.seconds
+        :capacity: 50
+        :amqp_port: 5672
+        :amqp_heartbeat: 30
+        :amqp_recovery_attempts: 4
       :event_catcher_openstack:
         :poll: 15.seconds
         :topics:
@@ -1171,17 +1318,19 @@
         :poll: 1.seconds
       :event_catcher_openshift:
         :poll: 1.seconds
-      :event_catcher_atomic:
-        :poll: 1.seconds
       :event_catcher_openshift_enterprise:
         :poll: 1.seconds
       :event_catcher_atomic_enterprise:
         :poll: 1.seconds
+      :event_catcher_cinder:
+        :poll: 10.seconds
+      :event_catcher_swift:
+        :poll: 10.seconds
     :queue_worker_base:
       :defaults:
         :cpu_usage_threshold: 100.percent
         :dequeue_method: :drb
-        :memory_threshold: 400.megabytes
+        :memory_threshold: 500.megabytes
         :poll_method: :normal
         :queue_timeout: 10.minutes
       :ems_metrics_collector_worker:
@@ -1191,8 +1340,7 @@
           :poll_method: :escalate
         :ems_metrics_collector_worker_azure: {}
         :ems_metrics_collector_worker_amazon: {}
-        :ems_metrics_collector_worker_atomic: {}
-        :ems_metrics_collector_worker_atomic_enterprise: {}
+        :ems_metrics_collector_worker_google: {}
         :ems_metrics_collector_worker_kubernetes:
           :metrics_port: 5000
           :metrics_path: "/hawkular/metrics"
@@ -1205,7 +1353,7 @@
         :ems_metrics_collector_worker_vmware: {}
       :ems_metrics_processor_worker:
         :count: 2
-        :memory_threshold: 400.megabytes
+        :memory_threshold: 600.megabytes
         :nice_delta: 7
         :poll_method: :escalate
       :ems_refresh_worker:
@@ -1219,8 +1367,6 @@
         :ems_refresh_worker_amazon: {}
         :ems_refresh_worker_amazon_network: {}
         :ems_refresh_worker_ansible_tower_configuration: {}
-        :ems_refresh_worker_atomic: {}
-        :ems_refresh_worker_atomic_enterprise: {}
         :ems_refresh_worker_azure: {}
         :ems_refresh_worker_azure_network: {}
         :ems_refresh_worker_foreman_configuration: {}
@@ -1235,8 +1381,13 @@
         :ems_refresh_worker_openstack: {}
         :ems_refresh_worker_openstack_infra: {}
         :ems_refresh_worker_openstack_network: {}
+        :ems_refresh_worker_nuage_network: {}
         :ems_refresh_worker_redhat: {}
         :ems_refresh_worker_vmware: {}
+        :ems_refresh_worker_vmware_cloud: {}
+        :ems_refresh_worker_vmware_cloud_network: {}
+        :ems_refresh_worker_cinder: {}
+        :ems_refresh_worker_swift: {}
       :event_handler:
         :cpu_usage_threshold: 0.percent
         :nice_delta: 7
@@ -1249,6 +1400,7 @@
         :poll_method: :normal
         :queue_timeout: 60.minutes
       :priority_worker:
+        :memory_threshold: 600.megabytes
         :count: 2
         :nice_delta: 1
         :poll: 1.seconds
@@ -1270,107 +1422,8 @@
         :poll: 10.seconds
         :poll_method: :normal
         :queue_timeout: 120.minutes
-    :replication_worker:
-      :memory_threshold: 400.megabytes
-      :poll: 1.seconds
-      :replication:
-        :destination:
-          :database: vmdb_production
-          :username: root
-        :exclude_tables:
-        - ar_internal_metadata
-        - assigned_server_roles
-        - audit_events
-        - binary_blobs
-        - binary_blob_parts
-        - chargeback_rate_details
-        - chargeback_rates
-        - conditions
-        - conditions_miq_policies
-        - custom_buttons
-        - customization_specs
-        - database_backups
-        - event_logs
-        - file_depots
-        - jobs
-        - log_files
-        - metrics
-        - metrics_00
-        - metrics_01
-        - metrics_02
-        - metrics_03
-        - metrics_04
-        - metrics_05
-        - metrics_06
-        - metrics_07
-        - metrics_08
-        - metrics_09
-        - metrics_10
-        - metrics_11
-        - metrics_12
-        - metrics_13
-        - metrics_14
-        - metrics_15
-        - metrics_16
-        - metrics_17
-        - metrics_18
-        - metrics_19
-        - metrics_20
-        - metrics_21
-        - metrics_22
-        - metrics_23
-        - metric_rollups
-        - miq_actions
-        - miq_ae_classes
-        - miq_ae_fields
-        - miq_ae_instances
-        - miq_ae_methods
-        - miq_ae_namespaces
-        - miq_ae_values
-        - miq_ae_workspaces
-        - miq_alert_statuses
-        - miq_alerts
-        - miq_databases
-        - miq_enterprises
-        - miq_event_definitions
-        - miq_globals
-        - miq_groups
-        - miq_policies
-        - miq_policy_contents
-        - miq_product_features
-        - miq_queue
-        - miq_roles_features
-        - miq_report_result_details
-        - miq_report_results
-        - miq_reports
-        - miq_searches
-        - miq_sets
-        - miq_schedules
-        - miq_shortcuts
-        - miq_tasks
-        - miq_user_roles
-        - miq_widgets
-        - miq_widget_contents
-        - miq_workers
-        - rss_feeds
-        - scan_items
-        - schema_migrations
-        - server_roles
-        - sessions
-        - vim_performance_states
-        - vim_performance_tag_values
-        - vmdb_database_metrics
-        - vmdb_databases
-        - vmdb_indexes
-        - vmdb_metrics
-        - vmdb_tables
-        :options:
-          :replication_trace: false
-          :debug_sql: false
-          :heartbeat_threshold: 300
-          :database_connection_timeout: 15
     :schedule_worker:
-      :authentication_check_interval: 1.day
+      :authentication_check_interval: 1.hour
       :db_diagnostics_interval: 30.minutes
       :ems_events_purge_interval: 1.day
       :evm_snapshot_delete_delay_for_job_not_found: 1.hour
@@ -1381,9 +1434,10 @@
       :job_timeout_interval: 60.seconds
       :log_active_configuration_interval: 1.days
       :log_database_statistics_interval: 1.days
-      :memory_threshold: 300.megabytes
+      :memory_threshold: 500.megabytes
       :nice_delta: 3
       :orchestration_stack_retired_interval: 10.minutes
+      :load_balancer_retired_interval: 10.minutes
       :performance_collection_interval: 3.minutes
       :performance_collection_start_delay: 5.minutes
       :performance_realtime_purging_interval: 15.minutes
@@ -1399,6 +1453,8 @@
       :storage_file_collection_interval: 1.days
       :storage_file_collection_time_utc: 21600
       :vm_retired_interval: 10.minutes
+      :chargeback_generation_time_utc: 01:00:00
+      :chargeback_generation_interval: 1.day
     :smis_refresh_worker:
       :memory_threshold: 1.gigabytes
       :nice_delta: 3

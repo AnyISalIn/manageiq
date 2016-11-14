@@ -94,7 +94,7 @@ class MiqLdap
       return selected_host if selected_host
     end
 
-    raise Net::LDAP::LdapError.new("unable to establish a connection to server")
+    raise Net::LDAP::Error.new("unable to establish a connection to server")
   end
 
   def bind(username, password)
@@ -214,7 +214,7 @@ class MiqLdap
             ref_res = handle._search(opts.merge(:base => dn), seen)
             _log.debug("Referral: #{ref}, returned [#{ref_res.length}] objects")
             res += ref_res
-          rescue Net::LDAP::LdapError => err
+          rescue Net::LDAP::Error => err
             _log.warn("Unable to chase referral [#{ref}] because #{err.message}")
           end
         end
@@ -267,11 +267,11 @@ class MiqLdap
   end
 
   def is_dn?(str)
-    str =~ /^([a-z|0-9|A-Z]+ *=[^,]+[,| ]*)+$/ ? true : false
+    !!(str =~ /^([a-z|0-9|A-Z]+ *=[^,]+[,| ]*)+$/)
   end
 
   def domain_username?(str)
-    str =~ /^([a-zA-Z][a-zA-Z0-9.-]+)\\.+$/ ? true : false
+    !!(str =~ /^([a-zA-Z][a-zA-Z0-9.-]+)\\.+$/)
   end
 
   def fqusername(username)
@@ -435,24 +435,24 @@ class MiqLdap
   end
 
   def self.default_bind_timeout
-    value = VMDB::Config.new("vmdb").config[:authentication][:bind_timeout] || DEFAULT_BIND_TIMEOUT
+    value = ::Settings.authentication.bind_timeout || DEFAULT_BIND_TIMEOUT
     value = value.to_i_with_method if value.respond_to?(:to_i_with_method)
     value
   end
 
   def self.default_search_timeout
-    value = VMDB::Config.new("vmdb").config[:authentication][:search_timeout] || DEFAULT_SEARCH_TIMEOUT
+    value = ::Settings.authentication.search_timeout || DEFAULT_SEARCH_TIMEOUT
     value = value.to_i_with_method if value.respond_to?(:to_i_with_method)
     value
   end
 
   def self.using_ldap?
-    VMDB::Config.new("vmdb").config[:authentication][:mode].include?('ldap')
+    ::Settings.authentication.mode.include?('ldap')
   end
 
   def self.resolve_ldap_host?
     if @resolve_ldap_host.nil?
-      @resolve_ldap_host = VMDB::Config.new("vmdb").config[:authentication][:resolve_ldap_host]
+      @resolve_ldap_host = ::Settings.authentication.resolve_ldap_host
       @resolve_ldap_host = false if @resolve_ldap_host.nil?
     end
 

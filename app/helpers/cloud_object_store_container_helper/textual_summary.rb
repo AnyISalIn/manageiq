@@ -7,7 +7,12 @@ module CloudObjectStoreContainerHelper::TextualSummary
   end
 
   def textual_group_relationships
-    %i(ems cloud_tenant cloud_object_store_objects)
+    %i(parent_ems_cloud ems cloud_tenant cloud_object_store_objects)
+  end
+
+  def textual_parent_ems_cloud
+    label = ui_lookup(:model => "ManageIQ::Providers::CloudManager")
+    textual_link(@record.ext_management_system.try(:parent_manager), :label => _("Parent #{label}"))
   end
 
   def textual_key
@@ -26,7 +31,7 @@ module CloudObjectStoreContainerHelper::TextualSummary
     cloud_tenant = @record.cloud_tenant if @record.respond_to?(:cloud_tenant)
     label = ui_lookup(:table => "cloud_tenant")
     h = {:label => label, :image => "cloud_tenant", :value => (cloud_tenant.nil? ? "None" : cloud_tenant.name)}
-    if cloud_tenant && role_allows(:feature => "cloud_tenant_show")
+    if cloud_tenant && role_allows?(:feature => "cloud_tenant_show")
       h[:title] = _("Show this Cloud Object Store's parent %{parent}") % {:parent => label}
       h[:link]  = url_for(:controller => 'cloud_tenant', :action => 'show', :id => cloud_tenant)
     end
@@ -37,7 +42,7 @@ module CloudObjectStoreContainerHelper::TextualSummary
     label = ui_lookup(:tables => "cloud_object_store_object")
     num = @record.number_of(:cloud_object_store_objects)
     h = {:label => label, :image => "cloud_object_store_object", :value => num}
-    if num > 0 && role_allows(:feature => "cloud_object_store_object_show_list")
+    if num > 0 && role_allows?(:feature => "cloud_object_store_object_show_list")
       h[:title] = _("Show this Cloud Object Store's child %{children}") % {:children => label}
       h[:link]  = url_for(:action => 'show', :id => @record, :display => 'cloud_object_store_objects')
     end

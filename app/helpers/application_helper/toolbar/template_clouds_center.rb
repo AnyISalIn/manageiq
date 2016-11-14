@@ -54,10 +54,10 @@ class ApplicationHelper::Toolbar::TemplateCloudsCenter < ApplicationHelper::Tool
         button(
           :image_delete,
           'pficon pficon-delete fa-lg',
-          t = N_('Remove selected items from the VMDB'),
+          t = N_('Remove selected items'),
           t,
           :url_parms => "main_div",
-          :confirm   => N_("Warning: The selected items and ALL of their components will be permanently removed from the Virtual Management Database.  Are you sure you want to remove the selected items?"),
+          :confirm   => N_("Warning: The selected items and ALL of their components will be permanently removed!"),
           :enabled   => false,
           :onwhen    => "1+"),
         separator,
@@ -77,6 +77,24 @@ class ApplicationHelper::Toolbar::TemplateCloudsCenter < ApplicationHelper::Tool
           :url_parms => "main_div",
           :enabled   => false,
           :onwhen    => "1+"),
+      ]
+    ),
+  ])
+  button_group('image_lifecycle', [
+    select(
+      :image_lifecycle_choice,
+      'pficon pficon-add-circle-o fa-lg',
+      t = N_('Lifecycle'),
+      t,
+      :items => [
+        button(
+          :image_miq_request_new,
+          'product product-clone fa-lg',
+          N_('Select a single Image to Provision Instances'),
+          N_('Provision Instances using selected Image'),
+          :url_parms => "main_div",
+          :enabled   => false,
+          :onwhen    => "1"),
       ]
     ),
   ])

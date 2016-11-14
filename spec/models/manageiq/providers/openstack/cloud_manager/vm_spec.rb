@@ -1,25 +1,52 @@
 describe ManageIQ::Providers::Openstack::CloudManager::Vm do
-  describe "vm actions" do
-    let(:ems) { FactoryGirl.create(:ems_openstack) }
-    let(:tenant) { FactoryGirl.create(:cloud_tenant_openstack, :ext_management_system => ems) }
-    let(:vm) do
+  let(:ems) { FactoryGirl.create(:ems_openstack) }
+  let(:tenant) { FactoryGirl.create(:cloud_tenant_openstack, :ext_management_system => ems) }
+  let(:vm) do
+    FactoryGirl.create(:vm_openstack,
+                       :ext_management_system => ems,
+                       :name                  => 'test',
+                       :ems_ref               => 'one_id',
+                       :cloud_tenant          => tenant)
+  end
+
+  let(:handle) do
+    double.tap do |handle|
+      allow(ems).to receive(:connect).with(:service => 'Compute', :tenant_name => tenant.name).and_return(handle)
+    end
+  end
+
+  before do
+    handle
+  end
+
+  describe "with more tenants" do
+    let(:other_tenant) { FactoryGirl.create(:cloud_tenant_openstack, :ext_management_system => ems) }
+    let(:other_vm) do
       FactoryGirl.create(:vm_openstack,
                          :ext_management_system => ems,
-                         :name                  => 'test',
-                         :ems_ref               => 'one_id',
-                         :cloud_tenant          => tenant)
+                         :name                  => 'other_test',
+                         :ems_ref               => 'other_id',
+                         :cloud_tenant          => other_tenant)
     end
-
-    let(:handle) do
-      double.tap do |handle|
-        allow(ems).to receive(:connect).with({}).and_return(handle)
+    let(:other_handle) do
+      double.tap do |other_handle|
+        allow(ems).to receive(:connect).with(:service => 'Compute', :tenant_name => other_tenant.name).and_return(other_handle)
       end
     end
 
     before do
-      handle
+      other_handle
     end
 
+    it "uses proper tenant for connection" do
+      expect(handle).to receive(:pause_server)
+      expect(other_handle).to receive(:pause_server)
+      vm.raw_pause
+      other_vm.raw_pause
+    end
+  end
+
+  describe "vm actions" do
     context "#live_migrate" do
       it "live migrates with default options" do
         expect(handle).to receive(:live_migrate_server).with(vm.ems_ref, nil, false, false)
@@ -57,8 +84,46 @@ describe ManageIQ::Providers::Openstack::CloudManager::Vm do
         expect(vm.power_state).to eq 'migrating'
       end
 
-      it "checks evacuation is_available?" do
-        expect(vm.is_available?(:evacuate)).to eq true
+      it "returns true for querying vm if the evacuate operation is supported" do
+        expect(vm.supports_evacuate?).to eq true
+      end
+    end
+
+    context "associate floating ip" do
+      it "associates with floating ip" do
+        service = double
+        allow(ems).to receive(:connect).and_return(service)
+        expect(service).to receive(:associate_address).with(vm.ems_ref, '10.10.10.10')
+        vm.associate_floating_ip('10.10.10.10')
+      end
+
+      it "checks associate_floating_ip is_available? when floating ips are available" do
+        expect(vm.cloud_tenant).to receive(:floating_ips).and_return([1]) # fake a floating ip being available
+        expect(vm.supports_associate_floating_ip?).to eq true
+      end
+
+      it "checks associate_floating_ip is_available? when floating ips are not available" do
+        expect(vm.cloud_tenant).to receive(:floating_ips).and_return([])
+        expect(vm.supports_associate_floating_ip?).to eq false
+      end
+    end
+
+    context "disassociate floating ip" do
+      it "disassociates from floating ip" do
+        service = double
+        allow(ems).to receive(:connect).and_return(service)
+        expect(service).to receive(:disassociate_address).with(vm.ems_ref, '10.10.10.10')
+        vm.disassociate_floating_ip('10.10.10.10')
+      end
+
+      it "checks disassociate_floating_ip is_available? when floating ips are associated with the instance" do
+        expect(vm).to receive(:floating_ips).and_return([1]) # fake a floating ip being associated
+        expect(vm.supports_disassociate_floating_ip?).to eq true
+      end
+
+      it "checks disassociate_floating_ip is_available? when no floating ips are associated with the instance" do
+        expect(vm).to receive(:floating_ips).and_return([])
+        expect(vm.supports_disassociate_floating_ip?).to eq false
       end
     end
   end
@@ -134,7 +199,7 @@ describe ManageIQ::Providers::Openstack::CloudManager::Vm do
     it "initiate resize process" do
       service = double
       allow(ems).to receive(:connect).and_return(service)
-      expect(vm.validate_resize[:available]).to be_truthy
+      expect(vm.supports_resize?).to be_truthy
       expect(vm.validate_resize_confirm).to be false
       expect(service).to receive(:resize_server).with(vm.ems_ref, flavor.ems_ref)
       expect(MiqQueue).to receive(:put)
@@ -145,7 +210,7 @@ describe ManageIQ::Providers::Openstack::CloudManager::Vm do
       vm.raw_power_state = 'VERIFY_RESIZE'
       service = double
       allow(ems).to receive(:connect).and_return(service)
-      expect(vm.validate_resize[:available]).to be_falsey
+      expect(vm.supports_resize?).to be_falsey
       expect(vm.validate_resize_confirm).to be true
       expect(service).to receive(:confirm_resize_server).with(vm.ems_ref)
       vm.resize_confirm
@@ -155,7 +220,7 @@ describe ManageIQ::Providers::Openstack::CloudManager::Vm do
       vm.raw_power_state = 'VERIFY_RESIZE'
       service = double
       allow(ems).to receive(:connect).and_return(service)
-      expect(vm.validate_resize[:available]).to be_falsey
+      expect(vm.supports_resize?).to be_falsey
       expect(vm.validate_resize_revert).to be true
       expect(service).to receive(:revert_resize_server).with(vm.ems_ref)
       vm.resize_revert

@@ -2,6 +2,25 @@ require 'ancestry'
 
 class Service < ApplicationRecord
   DEFAULT_PROCESS_DELAY_BETWEEN_GROUPS = 120
+  DEFAULT_POWER_STATE_DELAY = 60
+  DEFAULT_POWER_STATE_RETRIES = 3
+
+  ACTION_RESPONSE = {
+    "Power On"   => :start,
+    "Power Off"  => :stop,
+    "Shutdown"   => :shutdown_guest,
+    "Suspend"    => :suspend,
+    "Do Nothing" => nil
+  }.freeze
+
+  POWER_STATE_MAP = {
+    :start          => "on",
+    :stop           => "off",
+    :suspend        => "off",
+    :shutdown_guest => "off"
+  }.freeze
+
+  include VirtualTotalMixin
 
   has_ancestry :orphan_strategy => :destroy
 
@@ -19,12 +38,14 @@ class Service < ApplicationRecord
   virtual_has_many   :all_service_children
   virtual_has_many   :vms
   virtual_has_many   :all_vms
-  virtual_column     :v_total_vms,            :type => :integer,  :uses => :vms
+  virtual_has_many   :power_states, :uses => :all_vms
+  virtual_total      :v_total_vms, :vms
 
   virtual_has_one    :custom_actions
   virtual_has_one    :custom_action_buttons
   virtual_has_one    :provision_dialog
   virtual_has_one    :user
+  virtual_has_one    :chargeback_report
 
   before_validation :set_tenant_from_group
 
@@ -38,13 +59,20 @@ class Service < ApplicationRecord
   include NewWithTypeStiMixin
   include ProcessTasksMixin
   include TenancyMixin
+  include SupportsFeatureMixin
 
   include_concern 'RetirementManagement'
   include_concern 'Aggregation'
 
   virtual_column :has_parent,                               :type => :boolean
+  virtual_column :power_state,                              :type => :string
+  virtual_column :power_status,                             :type => :string
 
   validates_presence_of :name
+
+  supports :reconfigure do
+    unsupported_reason_add(:reconfigure, _("Reconfigure unsupported")) unless validate_reconfigure
+  end
 
   def add_resource(rsc, options = {})
     if rsc.kind_of?(Vm) && !rsc.service.nil?
@@ -56,6 +84,18 @@ class Service < ApplicationRecord
   alias parent_service parent
   alias_attribute :service, :parent
   virtual_belongs_to :service
+
+  def power_states
+    vms.map(&:power_state)
+  end
+
+  def power_state
+    options[:power_state]
+  end
+
+  def power_status
+    options[:power_status]
+  end
 
   def service_id
     parent_id
@@ -104,34 +144,99 @@ class Service < ApplicationRecord
     all_vms
   end
 
+  def last_index
+    @last_index ||= last_group_index
+  end
+
   def start
     raise_request_start_event
-    queue_group_action(:start)
+    queue_group_action(:start, 0, 1, delay_for_action(0, :start))
   end
 
   def stop
     raise_request_stop_event
-    queue_group_action(:stop, last_group_index, -1)
+    queue_group_action(:stop, last_index, -1, delay_for_action(last_index, :stop))
   end
 
   def suspend
-    queue_group_action(:suspend, last_group_index, -1)
+    update_progress(:power_status => 'suspending')
+    queue_group_action(:suspend, last_index, -1, delay_for_action(last_index, :stop))
   end
 
   def shutdown_guest
-    queue_group_action(:shutdown_guest, last_group_index, -1)
+    queue_group_action(:shutdown_guest, last_index, -1, delay_for_action(last_index, :stop))
+  end
+
+  def calculate_power_state(action)
+    if power_states_match?(action)
+      status = { :power_state  => POWER_STATE_MAP[action],
+                 :power_status => action.to_s + '_complete' }
+      update_progress(status) { |x| modify_power_state_delay(x) }
+    else
+      update_progress(:increment => true) { |x| modify_power_state_delay(x) } unless timed_out?
+      delay = combined_group_delay(action) + DEFAULT_POWER_STATE_DELAY
+      queue_power_calculation(delay, action) unless timed_out?
+      update_progress(:power_state => "timeout") { |x| modify_power_state_delay(x) } if timed_out?
+    end
+  end
+
+  def timed_out?
+    options[:delayed].to_i >= DEFAULT_POWER_STATE_RETRIES
+  end
+
+  def modify_power_state_delay(opts)
+    cloned_options = options.dup
+    case opts.keys.first
+    when :reset
+      cloned_options[:delayed] = nil
+    when :increment
+      cloned_options[:delayed] = (cloned_options[:delayed].to_i + opts[:increment])
+    end
+    update_attributes(:options => cloned_options)
+  end
+
+  def power_states_match?(action)
+    vm_power_states.uniq == map_power_states(action)
+  end
+
+  def map_power_states(action)
+    action_name = "#{action}_action"
+    service_resources.map(&action_name.to_sym).uniq.map { |x| Service::ACTION_RESPONSE[x] }.map { |x| Service::POWER_STATE_MAP[x] }
+  end
+
+  def vm_power_states
+    [].tap do |power_state|
+      power_states.each { |state| power_state << state }
+    end
+  end
+
+  def update_progress(hash = {})
+    increment = hash.keys.include?(:increment) ? hash.delete(:increment) : nil
+    hash.keys.each do |attribute|
+      options[attribute] = hash[attribute]
+      update_attributes(:options => options)
+    end
+    if block_given?
+      complete = hash[:power_status] && hash[:power_status].match("_complete")
+      timed_out = hash[:power_state] && hash[:power_state].match("timeout")
+      yield(:reset => true) if complete || timed_out
+      yield(:increment => 1) if increment
+    end
   end
 
   def process_group_action(action, group_idx, direction)
     each_group_resource(group_idx) do |svc_rsc|
       begin
         rsc = svc_rsc.resource
+        rsc_action = service_action(action, svc_rsc)
         rsc_name =  "#{rsc.class.name}:#{rsc.id}" + (rsc.respond_to?(:name) ? ":#{rsc.name}" : "")
-        if rsc.respond_to?(action)
-          _log.info "Processing action <#{action}> for Service:<#{name}:#{id}>, RSC:<#{rsc_name}}> in Group Idx:<#{group_idx}>"
-          rsc.send(action)
+        if rsc_action.nil?
+          _log.info "Not Processing action for Service:<#{name}:#{id}>, RSC:<#{rsc_name}}> in Group Idx:<#{group_idx}>"
+        elsif rsc.respond_to?(rsc_action)
+          _log.info "Processing action <#{rsc_action}> for Service:<#{name}:#{id}>, RSC:<#{rsc_name}}> in Group Idx:<#{group_idx}>"
+          rsc.send(rsc_action)
         else
-          _log.info "Skipping action <#{action}> for Service:<#{name}:#{id}>, RSC:<#{rsc.class.name}:#{rsc.id}> in Group Idx:<#{group_idx}>"
+          _log.info "Skipping action <#{rsc_action}> for Service:<#{name}:#{id}>, RSC:<#{rsc.class.name}:#{rsc.id}> in Group Idx:<#{group_idx}>"
         end
       rescue => err
         _log.error "Error while processing Service:<#{name}> Group Idx:<#{group_idx}>  Resource<#{rsc_name}>.  Message:<#{err}>"
@@ -141,36 +246,51 @@ class Service < ApplicationRecord
     # Setup processing for the next group
     next_grp_idx = next_group_index(group_idx, direction)
     if next_grp_idx.nil?
+      queue_power_calculation(combined_group_delay(action), action)
       raise_final_process_event(action)
     else
       queue_group_action(action, next_grp_idx, direction, delay_for_action(next_grp_idx, action))
     end
   end
 
-  def queue_group_action(action, group_idx = 0, direction = 1, deliver_delay = 0)
-    # Verify that the VMs attached to this service have not been converted to templates
-    validate_resources
-
+  def queue_group_action(action, group_idx, direction, deliver_delay)
     nh = {
       :class_name  => self.class.name,
       :instance_id => id,
       :method_name => "process_group_action",
-      :role        => "ems_operations",
-      :task_id     => "#{self.class.name.underscore}_#{id}",
       :args        => [action, group_idx, direction]
     }
     nh[:deliver_on] = deliver_delay.seconds.from_now.utc if deliver_delay > 0
-    first_vm = vms.first
-    nh[:zone] = first_vm.ext_management_system.zone.name unless first_vm.nil?
+    nh[:zone] = my_zone if my_zone
     MiqQueue.put(nh)
     true
   end
 
-  def validate_resources
-    # self.each_group_resource do |svc_rsc|
-    #   rsc = svc_rsc.resource
-    #   raise "Unsupported resource type #{rsc.class.name}" if rsc.kind_of?(VmOrTemplate) && rsc.template? == true
-    # end
+  def queue_power_calculation(delay, action)
+    return if parent_service
+    calculate_power = {
+      :class_name  => self.class.name,
+      :instance_id => id,
+      :method_name => "calculate_power_state",
+      :role        => "ems_operations",
+      :task_id     => "#{self.class.name.underscore}_#{id}",
+      :deliver_on  => delay.seconds.from_now.utc,
+      :args        => [action]
+    }
+
+    MiqQueue.put(calculate_power)
+  end
+
+  def my_zone
+    first_vm = vms.first
+    first_vm.ext_management_system.zone.name unless first_vm.nil?
+  end
+
+  def service_action(requested, service_resource)
+    method = "#{requested}_action"
+    response = service_resource.try(method)
+
+    response.nil? ? requested : ACTION_RESPONSE[response]
   end
 
   def validate_reconfigure
@@ -190,6 +310,7 @@ class Service < ApplicationRecord
   end
 
   def raise_request_start_event
+    update_progress(:power_status => 'starting')
     MiqEvent.raise_evm_event(self, :request_service_start)
   end
 
@@ -198,6 +319,7 @@ class Service < ApplicationRecord
   end
 
   def raise_request_stop_event
+    update_progress(:power_status => 'stopping')
     MiqEvent.raise_evm_event(self, :request_service_stop)
   end
 
@@ -209,10 +331,6 @@ class Service < ApplicationRecord
     MiqEvent.raise_evm_event(self, :service_provisioned)
   end
 
-  def v_total_vms
-    vms.size
-  end
-
   def set_tenant_from_group
     self.tenant_id = miq_group.tenant_id if miq_group
   end
@@ -221,5 +339,51 @@ class Service < ApplicationRecord
     user = evm_owner
     user = User.super_admin.tap { |u| u.current_group = miq_group } if user.nil? || !user.miq_group_ids.include?(miq_group_id)
     user
+  end
+
+  def chargeback_report
+    report_result = MiqReportResult.find_by(:name => chargeback_report_name)
+    if report_result.nil?
+      {:results => []}
+    else
+      {:results => report_result.result_set}
+    end
+  end
+
+  def self.queue_chargeback_reports(options = {})
+    Service.all.each do |s|
+      s.queue_chargeback_report_generation(options) unless s.vms.empty?
+    end
+  end
+
+  def chargeback_report_name
+    "Chargeback-Vm-Monthly-#{name}"
+  end
+
+  def generate_chargeback_report(options = {})
+    _log.info "Generation of chargeback report for service #{name} started..."
+    MiqReportResult.where(:name => chargeback_report_name).destroy_all
+    report = MiqReport.new(chargeback_yaml)
+    report.queue_generate_table(options)
+    _log.info "Report #{chargeback_report_name} generated"
+  end
+
+  def chargeback_yaml
+    yaml = YAML.load_file(File.join(Rails.root, "product/chargeback/chargeback_vm_monthly.yaml"))
+    yaml["db_options"][:options][:service_id] = id
+    yaml["title"] = chargeback_report_name
+    yaml
+  end
+
+  def queue_chargeback_report_generation(options = {})
+    MiqQueue.put(
+      :role        => "reporting",
+      :class_name  => self.class.name,
+      :instance_id => id,
+      :method_name => "generate_chargeback_report",
+      :priority    => MiqQueue::NORMAL_PRIORITY,
+      :args        => options
+    )
+    _log.info "Added to queue: generate_chargeback_report for service #{name}"
   end
 end

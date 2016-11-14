@@ -13,7 +13,7 @@ module Metric::Capture
   end
 
   def self.historical_days
-    (VMDB::Config.new("vmdb").config.fetch_path(:performance, :history, :initial_capture_days) || 7).to_i
+    (Settings.performance.history.initial_capture_days || 7).to_i
   end
 
   def self.historical_start_time
@@ -21,10 +21,20 @@ module Metric::Capture
   end
 
   def self.concurrent_requests(interval_name)
-    requests = VMDB::Config.new("vmdb").config.fetch_path(:performance, :concurrent_requests, interval_name.to_sym)
+    requests = Settings.performance.concurrent_requests[interval_name]
     requests ||= interval_name == 'realtime' ? 20 : 1
     requests = 20 if requests < 20 && interval_name == 'realtime'
     requests
+  end
+
+  def self.standard_capture_threshold(target)
+    target_key = target.class.base_model.to_s.underscore.to_sym
+    minutes_ago(Settings.performance.capture_threshold[target_key] || 10)
+  end
+
+  def self.alert_capture_threshold(target)
+    target_key = target.class.base_model.to_s.underscore.to_sym
+    minutes_ago(Settings.performance.capture_threshold_with_alerts[target_key] || 1)
   end
 
   def self.perf_capture_timer(zone = nil)
@@ -37,6 +47,7 @@ module Metric::Capture
     targets_by_rollup_parent = calc_targets_by_rollup_parent(targets)
     tasks_by_rollup_parent   = calc_tasks_by_rollup_parent(targets_by_rollup_parent)
     target_options = calc_target_options(zone, targets, targets_by_rollup_parent, tasks_by_rollup_parent)
+    targets = filter_perf_capture_now(targets, target_options)
     queue_captures(targets, target_options)
 
     # Purge tasks older than 4 hours
@@ -45,9 +56,10 @@ module Metric::Capture
     _log.info "Queueing performance capture...Complete"
   end
 
-  def self.perf_capture_gap(start_time, end_time, zone = nil)
+  def self.perf_capture_gap(start_time, end_time, zone_id = nil)
     _log.info "Queueing performance capture for range: [#{start_time} - #{end_time}]..."
 
+    zone = Zone.find(zone_id) if zone_id
     targets = Metric::Targets.capture_targets(zone, :exclude_storages => true)
     targets.each { |target| target.perf_capture_queue('historical', :start_time => start_time, :end_time => end_time, :zone => zone) }
 
@@ -60,31 +72,39 @@ module Metric::Capture
       :method_name => "perf_capture_gap",
       :role        => "ems_metrics_coordinator",
       :priority    => MiqQueue::HIGH_PRIORITY,
-      :args        => [start_time, end_time, zone]
+      :args        => [start_time, end_time, zone.try(:id)]
     }
-
-    zone = Zone.find(zone) if zone.kind_of?(Integer)
-    item[:zone] = zone.name if zone.kind_of?(Zone)
+    item[:zone] = zone.name if zone
 
     MiqQueue.put(item)
   end
 
-  def self.perf_capture_now?(target)
-    target.last_perf_capture_on.nil? || (target.last_perf_capture_on < capture_threshold(target))
+  def self.filter_perf_capture_now(targets, target_options)
+    targets.select do |target|
+      options = target_options[target]
+      # [:force] is set if we already determined this target needs perf capture
+      if options[:force] || perf_capture_now?(target)
+        true
+      else
+        _log.debug do
+          log_target = "#{target.class.name} name: [#{target.name}], id: [#{target.id}]"
+          "Skipping capture of #{log_target} -" +
+            "Performance last captured on [#{target.last_perf_capture_on}] is within threshold"
+        end
+        false
+      end
+    end
   end
 
-  private
-
-  def self.capture_threshold(target)
-    key, default = MiqAlert.target_needs_realtime_capture?(target) ? [:capture_threshold_with_alerts, 1] : [:capture_threshold, 10]
-
-    value = VMDB::Config.new("vmdb").config.fetch_path(:performance, key, target.class.base_model.to_s.underscore.to_sym) || default
-    value = if value.kind_of?(Fixnum) # Default unit is minutes
-              value.minutes.ago.utc
-            else
-              value.to_i_with_method.seconds.ago.utc unless value.nil?
-            end
-    value
+  # if it has not been run, or it was a very long time ago, just run it
+  # if it has been run very recently (even too recently for realtime) then skip it
+  # otherwise, it needs to be run if it is realtime, but not if it is standard threshold
+  # assumes alert capture threshold <= standard capture threshold
+  def self.perf_capture_now?(target)
+    return true  if target.last_perf_capture_on.nil?
+    return true  if target.last_perf_capture_on < standard_capture_threshold(target)
+    return false if target.last_perf_capture_on >= alert_capture_threshold(target)
+    MiqAlert.target_needs_realtime_capture?(target)
   end
 
   #
@@ -106,6 +126,7 @@ module Metric::Capture
       _log.info(msg)
     end
   end
+  private_class_method :perf_capture_health_check
 
   def self.calc_targets_by_rollup_parent(targets)
     # Collect realtime targets and group them by their rollup parent, e.g. {"EmsCluster:4"=>[Host:4], "EmsCluster:5"=>[Host:1, Host:2]}
@@ -125,6 +146,7 @@ module Metric::Capture
     end
     targets_by_rollup_parent
   end
+  private_class_method :calc_targets_by_rollup_parent
 
   def self.calc_tasks_by_rollup_parent(targets_by_rollup_parent)
     task_end_time           = Time.now.utc.iso8601
@@ -158,6 +180,7 @@ module Metric::Capture
 
     tasks_by_rollup_parent
   end
+  private_class_method :calc_tasks_by_rollup_parent
 
   def self.calc_target_options(zone, targets, targets_by_rollup_parent, tasks_by_rollup_parent)
     targets.each_with_object({}) do |target, all_options|
@@ -178,6 +201,7 @@ module Metric::Capture
       all_options[target] = options
     end
   end
+  private_class_method :calc_target_options
 
   def self.queue_captures(targets, target_options)
     # Queue the captures for each target
@@ -188,21 +212,13 @@ module Metric::Capture
 
       options = target_options[target]
 
-      if options[:force] || perf_capture_now?(target)
-        target.perf_capture_queue(interval_name, options)
-      else
-        _log.debug do
-          log_target = "#{self.class.name} name: [#{name}], id: [#{id}]"
-          "Skipping capture of #{log_target} -" +
-            "Performance last captured on [#{target.last_perf_capture_on}] is within threshold"
-        end
-      end
-
+      target.perf_capture_queue(interval_name, options)
       if !target.kind_of?(Storage) && use_historical && target.last_perf_capture_on.nil?
         target.perf_capture_queue('historical')
       end
     end
   end
+  private_class_method :queue_captures
 
   def self.perf_target_to_interval_name(target)
     case target
@@ -211,4 +227,16 @@ module Metric::Capture
     when Storage then                                  "hourly"
     end
   end
+  private_class_method :perf_target_to_interval_name
+
+  def self.minutes_ago(value)
+    if value.kind_of?(Fixnum) # Default unit is minutes
+      value.minutes.ago.utc
+    elsif value.nil?
+      nil
+    else
+      value.to_i_with_method.seconds.ago.utc
+    end
+  end
+  private_class_method :minutes_ago
 end

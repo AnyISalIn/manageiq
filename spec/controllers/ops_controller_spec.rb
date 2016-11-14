@@ -2,7 +2,7 @@ describe OpsController do
   before(:each) do
     EvmSpecHelper.create_guid_miq_server_zone
     MiqRegion.seed
-    set_user_privileges
+    stub_user(:features => :all)
   end
 
   describe 'x_button' do
@@ -45,9 +45,6 @@ describe OpsController do
     expect(response.status).to eq(200)
   end
 
-  #  def rbac_user_edit
-  #
-  # def rbac_user_set_record_vars(user)
   describe 'rbac_user_edit' do
     before do
       ApplicationController.handle_exceptions = true
@@ -286,21 +283,21 @@ describe OpsController do
     it "does not render toolbar buttons when edit is clicked" do
       post :x_button, :params => { :id => @miq_server.id, :pressed => 'log_depot_edit', :format => :js }
       expect(response.status).to eq(200)
-      expect(response.body).to include("if (miqDomElementExists('toolbar')) $('#toolbar').hide();")
+      expect(JSON.parse(response.body)['setVisibility']['toolbar']).to be false
     end
 
     it "renders toolbar buttons when cancel is clicked" do
       allow(controller).to receive(:diagnostics_set_form_vars)
       post :x_button, :params => { :id => @miq_server.id, :pressed => 'log_depot_edit', :button => "cancel", :format => :js }
       expect(response.status).to eq(200)
-      expect(response.body).to include("if (miqDomElementExists('toolbar')) $('#toolbar').show();")
+      expect(JSON.parse(response.body)['setVisibility']['toolbar']).to be
     end
 
     it "renders toolbar buttons when save is clicked" do
       allow(controller).to receive(:diagnostics_set_form_vars)
       post :x_button, :params => { :id => @miq_server.id, :pressed => 'log_depot_edit', :button => "save", :format => :js }
       expect(response.status).to eq(200)
-      expect(response.body).to include("if (miqDomElementExists('toolbar')) $('#toolbar').show();")
+      expect(JSON.parse(response.body)['setVisibility']['toolbar']).to be
     end
   end
 
@@ -324,7 +321,7 @@ describe OpsController do
         expect(response.status).to eq(200)
         expect(response.body).to_not be_empty
         expect(response.body).to include("<div id='buttons_on' style='display: none;'>")
-        expect(response.body).to include("<div id='buttons_off' style=''>\n<button name=\"button\" type=\"submit\" class=\"btn btn-primary btn-disabled\">Apply</button>")
+        expect(response.body).to include("<div id='buttons_off' style=''>\n<button name=\"button\" type=\"submit\" class=\"btn btn-primary disabled\">Apply</button>")
       end
 
       it "Apply button enabled when there are no flash errors" do
@@ -333,7 +330,7 @@ describe OpsController do
         expect(response.status).to eq(200)
         expect(response.body).to_not be_empty
         expect(response.body).to include("<div id='buttons_on' style=''>")
-        expect(response.body).to include("<div id='buttons_off' style='display: none;'>\n<button name=\"button\" type=\"submit\" class=\"btn btn-primary btn-disabled\">Apply</button>")
+        expect(response.body).to include("<div id='buttons_off' style='display: none;'>\n<button name=\"button\" type=\"submit\" class=\"btn btn-primary disabled\">Apply</button>")
       end
     end
   end

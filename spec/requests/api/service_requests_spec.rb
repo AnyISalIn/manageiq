@@ -7,7 +7,7 @@
 # - Query provision_dialog from services
 #     GET /api/services/:id?attributes=provision_dialog
 #
-describe ApiController do
+describe "Service Requests API" do
   let(:provision_dialog1)    { FactoryGirl.create(:dialog, :label => "ProvisionDialog1") }
   let(:retirement_dialog2)   { FactoryGirl.create(:dialog, :label => "RetirementDialog2") }
 
@@ -27,7 +27,7 @@ describe ApiController do
 
   def expect_result_to_have_provision_dialog
     expect_result_to_have_keys(%w(id href provision_dialog))
-    provision_dialog = response_hash["provision_dialog"]
+    provision_dialog = response.parsed_body["provision_dialog"]
     expect(provision_dialog).to be_kind_of(Hash)
     expect(provision_dialog).to have_key("label")
     expect(provision_dialog).to have_key("dialog_tabs")
@@ -37,7 +37,7 @@ describe ApiController do
   def expect_result_to_have_user_email(email)
     expect(response).to have_http_status(:ok)
     expect_result_to_have_keys(%w(id href user))
-    expect(response_hash["user"]["email"]).to eq(email)
+    expect(response.parsed_body["user"]["email"]).to eq(email)
   end
 
   describe "Service Requests query" do
@@ -103,7 +103,7 @@ describe ApiController do
       run_post(svcreq1_url, gen_request(:approve, :reason => "approve reason"))
 
       expected_msg = "Service request #{svcreq1.id} approved"
-      expect_single_action_result(:success => true, :message => expected_msg, :href => :svcreq1_url)
+      expect_single_action_result(:success => true, :message => expected_msg, :href => svcreq1_url)
     end
 
     it "supports denying a request" do
@@ -112,7 +112,7 @@ describe ApiController do
       run_post(svcreq2_url, gen_request(:deny, :reason => "deny reason"))
 
       expected_msg = "Service request #{svcreq2.id} denied"
-      expect_single_action_result(:success => true, :message => expected_msg, :href => :svcreq2_url)
+      expect_single_action_result(:success => true, :message => expected_msg, :href => svcreq2_url)
     end
 
     it "supports approving multiple requests" do
@@ -121,13 +121,22 @@ describe ApiController do
       run_post(service_requests_url, gen_request(:approve, [{"href" => svcreq1_url, "reason" => "approve reason"},
                                                             {"href" => svcreq2_url, "reason" => "approve reason"}]))
 
-      expect_multiple_action_result(2)
-      expect_result_resources_to_include_hrefs("results", :svcreqs_list)
-      expect_result_resources_to_match_key_data(
-        "results",
-        "message",
-        [/Service request #{svcreq1.id} approved/i, /Service request #{svcreq2.id} approved/i]
-      )
+      expected = {
+        "results" => a_collection_containing_exactly(
+          {
+            "message" => a_string_matching(/Service request #{svcreq1.id} approved/i),
+            "success" => true,
+            "href"    => a_string_matching(svcreq1_url)
+          },
+          {
+            "message" => a_string_matching(/Service request #{svcreq2.id} approved/i),
+            "success" => true,
+            "href"    => a_string_matching(svcreq2_url)
+          }
+        )
+      }
+      expect(response.parsed_body).to include(expected)
+      expect(response).to have_http_status(:ok)
     end
 
     it "supports denying multiple requests" do
@@ -136,13 +145,22 @@ describe ApiController do
       run_post(service_requests_url, gen_request(:deny, [{"href" => svcreq1_url, "reason" => "deny reason"},
                                                          {"href" => svcreq2_url, "reason" => "deny reason"}]))
 
-      expect_multiple_action_result(2)
-      expect_result_resources_to_include_hrefs("results", :svcreqs_list)
-      expect_result_resources_to_match_key_data(
-        "results",
-        "message",
-        [/Service request #{svcreq1.id} denied/i, /Service request #{svcreq2.id} denied/i]
-      )
+      expected = {
+        "results" => a_collection_containing_exactly(
+          {
+            "message" => a_string_matching(/Service request #{svcreq1.id} denied/i),
+            "success" => true,
+            "href"    => a_string_matching(svcreq1_url)
+          },
+          {
+            "message" => a_string_matching(/Service request #{svcreq2.id} denied/i),
+            "success" => true,
+            "href"    => a_string_matching(svcreq2_url)
+          }
+        )
+      }
+      expect(response.parsed_body).to include(expected)
+      expect(response).to have_http_status(:ok)
     end
   end
 
@@ -166,7 +184,7 @@ describe ApiController do
       run_get service_requests_url
 
       expect(response).to have_http_status(:ok)
-      expect(response_hash).to include("name" => "service_requests", "count" => 1, "subcount" => 0)
+      expect(response.parsed_body).to include("name" => "service_requests", "count" => 1, "subcount" => 0)
     end
 
     it "does not show another user's request" do
@@ -185,7 +203,7 @@ describe ApiController do
         )
       }
       expect(response).to have_http_status(:not_found)
-      expect(response_hash).to include(expected)
+      expect(response.parsed_body).to include(expected)
     end
 
     it "a user can list their own requests" do
@@ -198,7 +216,7 @@ describe ApiController do
       run_get service_requests_url
 
       expect(response).to have_http_status(:ok)
-      expect(response_hash).to include("name" => "service_requests", "count" => 1, "subcount" => 1)
+      expect(response.parsed_body).to include("name" => "service_requests", "count" => 1, "subcount" => 1)
     end
 
     it "a user can show their own request" do
@@ -211,7 +229,7 @@ describe ApiController do
       run_get service_requests_url(service_request.id)
 
       expect(response).to have_http_status(:ok)
-      expect(response_hash).to include("id"   => service_request.id,
+      expect(response.parsed_body).to include("id"   => service_request.id,
                                        "href" => a_string_matching(service_requests_url(service_request.id)))
     end
 
@@ -239,7 +257,7 @@ describe ApiController do
         )
       }
       expect(response).to have_http_status(:ok)
-      expect(response_hash).to include(expected)
+      expect(response.parsed_body).to include(expected)
     end
 
     it "an admin can see another user's request" do
@@ -258,7 +276,71 @@ describe ApiController do
         "href" => a_string_matching(service_requests_url(service_request.id))
       }
       expect(response).to have_http_status(:ok)
-      expect(response_hash).to include(expected)
+      expect(response.parsed_body).to include(expected)
+    end
+  end
+
+  context 'Service requests deletion' do
+    it 'forbids deletion without an appropriate role' do
+      api_basic_authorize
+
+      run_post(service_requests_url(service_request.id), :action => 'delete')
+
+      expect(response).to have_http_status(:forbidden)
+    end
+
+    it 'can delete a single service request resource' do
+      api_basic_authorize collection_action_identifier(:service_requests, :delete)
+
+      run_post(service_requests_url(service_request.id), :action => 'delete')
+
+      expected = {
+        'success' => true,
+        'message' => "service_requests id: #{service_request.id} deleting"
+      }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include(expected)
+    end
+
+    it 'can delete multiple service requests' do
+      service_request_2 = FactoryGirl.create(:service_template_provision_request,
+                                             :requester   => @user,
+                                             :source_id   => template.id,
+                                             :source_type => template.class.name)
+      api_basic_authorize collection_action_identifier(:service_requests, :delete)
+
+      run_post(service_requests_url, :action => 'delete', :resources => [
+                 { :id => service_request.id }, { :id => service_request_2.id }
+               ])
+
+      expected = {
+        'results' => a_collection_including(
+          a_hash_including('success' => true,
+                           'message' => "service_requests id: #{service_request.id} deleting"),
+          a_hash_including('success' => true,
+                           'message' => "service_requests id: #{service_request_2.id} deleting")
+        )
+      }
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body).to include(expected)
+    end
+
+    it 'can delete a service request via DELETE' do
+      api_basic_authorize collection_action_identifier(:service_requests, :delete)
+
+      run_delete(service_requests_url(service_request.id))
+
+      expect(response).to have_http_status(:no_content)
+    end
+
+    it 'forbids service request DELETE without an appropriate role' do
+      api_basic_authorize
+
+      run_delete(service_requests_url(service_request.id))
+
+      expect(response).to have_http_status(:forbidden)
     end
   end
 end

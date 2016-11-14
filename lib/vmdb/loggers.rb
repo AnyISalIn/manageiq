@@ -1,4 +1,4 @@
-require 'vmdb-logger'
+require 'util/vmdb-logger'
 
 Dir.glob(File.join(File.dirname(__FILE__), "loggers", "*")).each { |f| require f }
 
@@ -23,24 +23,29 @@ module Vmdb
     end
 
     def self.apply_config(config)
-      apply_config_value(config, $log,       :level)
-      apply_config_value(config, $rails_log, :level_rails)
-      apply_config_value(config, $vim_log,   :level_vim,   :level_vim_in_evm)
-      apply_config_value(config, $rhevm_log, :level_rhevm, :level_rhevm_in_evm)
-      apply_config_value(config, $aws_log,   :level_aws,   :level_aws_in_evm)
-      apply_config_value(config, $kube_log,  :level_kube,  :level_kube_in_evm)
-      apply_config_value(config, $mw_log,    :level_mw,    :level_mw_in_evm)
-      apply_config_value(config, $scvmm_log, :level_scvmm, :level_scvmm_in_evm)
-      apply_config_value(config, $api_log,   :level_api,   :level_api_in_evm)
-      apply_config_value(config, $fog_log,   :level_fog,   :level_fog_in_evm)
+      apply_config_value(config, $log,        :level)
+      apply_config_value(config, $rails_log,  :level_rails)
+      apply_config_value(config, $vim_log,    :level_vim,    :level_vim_in_evm)
+      apply_config_value(config, $rhevm_log,  :level_rhevm,  :level_rhevm_in_evm)
+      apply_config_value(config, $aws_log,    :level_aws,    :level_aws_in_evm)
+      apply_config_value(config, $kube_log,   :level_kube,   :level_kube_in_evm)
+      apply_config_value(config, $mw_log,     :level_mw,     :level_mw_in_evm)
+      apply_config_value(config, $scvmm_log,  :level_scvmm,  :level_scvmm_in_evm)
+      apply_config_value(config, $api_log,    :level_api,    :level_api_in_evm)
+      apply_config_value(config, $fog_log,    :level_fog,    :level_fog_in_evm)
+      apply_config_value(config, $azure_log,  :level_azure,  :level_azure_in_evm)
+      apply_config_value(config, $lenovo_log, :level_lenovo, :level_lenovo_in_evm)
     end
 
     private
 
     def self.create_loggers
-      if ENV.key?("CI")
-        $log     = $rails_log = $audit_log = $fog_log = $policy_log = $vim_log = $rhevm_log = Vmdb.null_logger
-        $aws_log = $kube_log = $mw_log = $scvmm_log = $api_log = $miq_ae_logger = $websocket_log = Vmdb.null_logger
+      # Intentionally setting false to enable logging so we can
+      # diagnose an Automate method failure
+      if false && ENV.key?("CI")
+        $log       = $rails_log = $audit_log = $fog_log = $policy_log = $vim_log = $rhevm_log = Vmdb.null_logger
+        $aws_log   = $kube_log = $mw_log = $scvmm_log = $api_log = $miq_ae_logger = $websocket_log = Vmdb.null_logger
+        $azure_log = $lenovo_log = Vmdb.null_logger
       else
         path_dir = Rails.root.join("log")
 
@@ -52,9 +57,11 @@ module Vmdb
         $vim_log       = MirroredLogger.new(path_dir.join("vim.log"),        "<VIM> ")
         $rhevm_log     = MirroredLogger.new(path_dir.join("rhevm.log"),      "<RHEVM> ")
         $aws_log       = MirroredLogger.new(path_dir.join("aws.log"),        "<AWS> ")
+        $lenovo_log    = MirroredLogger.new(path_dir.join("lenovo.log"),     "<LENOVO> ")
         $kube_log      = MirroredLogger.new(path_dir.join("kubernetes.log"), "<KUBERNETES> ")
         $mw_log        = MirroredLogger.new(path_dir.join("middleware.log"), "<MIDDLEWARE> ")
         $scvmm_log     = MirroredLogger.new(path_dir.join("scvmm.log"),      "<SCVMM> ")
+        $azure_log     = MirroredLogger.new(path_dir.join("azure.log"),      "<AZURE> ")
         $api_log       = MirroredLogger.new(path_dir.join("api.log"),        "<API> ")
         $websocket_log = MirroredLogger.new(path_dir.join("websocket.log"),  "<WEBSOCKET> ")
         $miq_ae_logger = MirroredLogger.new(path_dir.join("automation.log"), "<AutomationEngine> ")
@@ -72,7 +79,7 @@ module Vmdb
     private_class_method :configure_external_loggers
 
     def self.apply_config_value(config, logger, key, mirror_key = nil)
-      return if logger == Vmdb.null_logger
+      return if logger.kind_of?(Vmdb::Loggers::NullLogger)
       apply_config_value_logged(config, logger, :level, key)
       apply_config_value_logged(config, logger, :mirror_level, mirror_key) if mirror_key
     end

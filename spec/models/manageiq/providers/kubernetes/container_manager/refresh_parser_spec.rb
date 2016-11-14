@@ -24,14 +24,15 @@ describe ManageIQ::Providers::Kubernetes::ContainerManager::RefreshParser do
                                  :name             => "proj2",
                                  :ems_created_on   => "2016-03-28T15:04:13Z",
                                  :resource_version => "150569",
-                                 :labels_and_tags  => [
+                                 :labels           => [
                                    {
                                      :section => "labels",
                                      :name    => "department",
                                      :value   => "Warp-drive",
                                      :source  => "kubernetes"
                                    }
-                                 ])
+                                 ],
+                                 :tags             => [])
     end
   end
 
@@ -112,6 +113,24 @@ describe ManageIQ::Providers::Kubernetes::ContainerManager::RefreshParser do
                                        :image_ref => example_ref},
                        :registry   => {:name => "localhost", :host => "localhost", :port => "1234"}},
 
+                      # host with no port. more than one subdomain (a.b.c.com)
+                      {:image_name => "reg.access.rh.com/openshift3/image-inspector",
+                       :image      => {:name => "openshift3/image-inspector", :tag => nil, :digest => nil,
+                                       :image_ref => example_ref},
+                       :registry   => {:name => "reg.access.rh.com", :host => "reg.access.rh.com", :port => nil}},
+
+                      # host with port. more than one subdomain (a.b.c.com:1234)
+                      {:image_name => "host.access.com:1234/subname/more/names/example:tag",
+                       :image      => {:name => "subname/more/names/example", :tag => "tag", :digest => nil,
+                                       :image_ref => example_ref},
+                       :registry   => {:name => "host.access.com", :host => "host.access.com", :port => "1234"}},
+
+                      # localhost no port
+                      {:image_name => "localhost/name",
+                       :image      => {:name => "name", :tag => nil, :digest => nil,
+                                       :image_ref => example_ref},
+                       :registry   => {:name => "localhost", :host => "localhost", :port => nil}},
+
                       {:image_name => "example@sha256:1234567abcdefg",
                        :image      => {:name => "example", :tag => nil, :digest => "sha256:1234567abcdefg",
                                        :image_ref => example_ref},
@@ -124,6 +143,13 @@ describe ManageIQ::Providers::Kubernetes::ContainerManager::RefreshParser do
         expect(result_image.except(:registered_on)).to eq(ex[:image])
         expect(result_registry).to eq(ex[:registry])
       end
+    end
+  end
+
+  describe "parse_container_state" do
+    # check https://bugzilla.redhat.com/show_bug.cgi?id=1383498
+    it "handles nil input" do
+      expect(parser.send(:parse_container_state, nil)).to eq({})
     end
   end
 
@@ -645,6 +671,14 @@ describe ManageIQ::Providers::Kubernetes::ContainerManager::RefreshParser do
                                  :ext_management_system => @ems)
       end
 
+      it "cross links openstack through provider id" do
+        @node[:identity_infra] = "openstack:///openstack_id"
+        @ems = FactoryGirl.create(:ems_openstack)
+        @vm = FactoryGirl.create(:vm_openstack,
+                                 :uid_ems               => 'openstack_id',
+                                 :ext_management_system => @ems)
+      end
+
       it 'cross links with missing data in ProviderID' do
         @node[:identity_infra] = "gce:////instance_id/"
         @ems = FactoryGirl.create(:ems_google,
@@ -707,7 +741,8 @@ describe ManageIQ::Providers::Kubernetes::ContainerManager::RefreshParser do
         :identity_system            => 'uuid',
         :kubernetes_kubelet_version => nil,
         :kubernetes_proxy_version   => nil,
-        :labels_and_tags            => [],
+        :labels                     => [],
+        :tags                       => [],
         :lives_on_id                => nil,
         :lives_on_type              => nil,
         :max_container_groups       => nil,
@@ -759,7 +794,8 @@ describe ManageIQ::Providers::Kubernetes::ContainerManager::RefreshParser do
         :identity_system            => 'uuid',
         :kubernetes_kubelet_version => nil,
         :kubernetes_proxy_version   => nil,
-        :labels_and_tags            => [],
+        :labels                     => [],
+        :tags                       => [],
         :lives_on_id                => nil,
         :lives_on_type              => nil,
         :max_container_groups       => nil,
@@ -803,7 +839,8 @@ describe ManageIQ::Providers::Kubernetes::ContainerManager::RefreshParser do
           :ems_created_on       => '2016-01-01T11:10:21Z',
           :container_conditions => [],
           :identity_infra       => 'aws:///zone/aws-id',
-          :labels_and_tags      => [],
+          :labels               => [],
+          :tags                 => [],
           :lives_on_id          => nil,
           :lives_on_type        => nil,
           :max_container_groups => nil,

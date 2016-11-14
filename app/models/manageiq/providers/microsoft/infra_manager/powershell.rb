@@ -9,15 +9,14 @@ class ManageIQ::Providers::Microsoft::InfraManager
 
       def run_powershell_script(connection, script)
         log_header = "MIQ(#{self.class.name}.#{__method__})"
-        File.open(script, "r") do |file|
-          begin
-            results = connection.create_executor { |exec| exec.run_powershell_script(file) }
-            log_dos_error_results(results)
-            results
-          rescue Errno::ECONNREFUSED => err
-            $scvmm_log.error "MIQ(#{log_header} Unable to connect to SCVMM. #{err.message})"
-            raise
-          end
+        script_string = IO.read(script)
+        begin
+          results = connection.shell(:powershell).run(script_string)
+          log_dos_error_results(results)
+          results
+        rescue Errno::ECONNREFUSED => err
+          $scvmm_log.error "MIQ(#{log_header} Unable to connect to SCVMM. #{err.message})"
+          raise
         end
       end
 
@@ -32,7 +31,7 @@ class ManageIQ::Providers::Microsoft::InfraManager
 
       def log_dos_error_results(results)
         log_header = "MIQ(#{self.class.name}##{__method__})"
-        error = results.stderr
+        error = results.respond_to?(:stderr) ? parse_xml_error_string(results.stderr) : results
         $scvmm_log.error("#{log_header} #{error}") unless error.blank?
       end
 
@@ -42,10 +41,29 @@ class ManageIQ::Providers::Microsoft::InfraManager
       end
 
       def decompress_results(results)
+        results = results.stdout if results.respond_to?(:stdout)
         begin
-          ActiveSupport::Gzip.decompress(Base64.decode64(results.stdout))
+          ActiveSupport::Gzip.decompress(Base64.decode64(results))
         rescue Zlib::GzipFile::Error # Not in gzip format
-          results.stdout
+          results
+        end
+      end
+
+      # Parse an ugly XML error string into something much more readable.
+      #
+      def parse_xml_error_string(str)
+        require 'nokogiri'
+        str = str.sub("#< CLIXML\r\n", '') # Illegal, nokogiri can't cope
+        doc = Nokogiri::XML::Document.parse(str)
+        doc.remove_namespaces!
+
+        text = doc.xpath("//S").map(&:text).join
+        array = text.split(/_x\h{1,}_/) # Split on stuff like '_x000D_'
+        array.delete('') # Delete empty elements
+
+        array.inject('') do |string, element|
+          break string if element =~ /at line:\d+/i
+          string << element
         end
       end
     end
@@ -57,7 +75,7 @@ class ManageIQ::Providers::Microsoft::InfraManager
 
       _result, timings = Benchmark.realtime_block(:execution) do
         with_provider_connection do |connection|
-          results = connection.run_cmd(command)
+          results = connection.shell(:cmd).run(command)
           self.class.log_dos_error_results(results)
         end
       end
@@ -74,7 +92,8 @@ class ManageIQ::Providers::Microsoft::InfraManager
 
       _result, timings = Benchmark.realtime_block(:execution) do
         with_provider_connection do |connection|
-          results = connection.create_executor { |exec| exec.run_powershell_script(script) }
+          script_string = IO.read(script)
+          results = connection.shell(:powershell).run(script_string)
           self.class.log_dos_error_results(results)
         end
       end

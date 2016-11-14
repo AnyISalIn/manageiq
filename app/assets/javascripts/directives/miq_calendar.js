@@ -22,12 +22,13 @@ ManageIQ.angular.app.directive('miqCalendar', function() {
 
       ctrl.$parsers.push(function(value) {
         if (value) {
-          return moment.utc(value).toDate();
+          return moment.utc(value, 'MM/DD/YYYY').toDate();
         }
       });
 
-      scope.$watch(attr.ngModel, function(_value) {
-        elem.datepicker('update');
+      scope.$watch(attr.ngModel, function(value) {
+        if(value)
+          elem.datepicker('update');
       });
 
       if (attr.miqCalDateFrom) {

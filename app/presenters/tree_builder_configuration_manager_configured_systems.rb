@@ -9,7 +9,7 @@ class TreeBuilderConfigurationManagerConfiguredSystems < TreeBuilder
 
   def set_locals_for_render
     locals = super
-    locals.merge!(:autoload => true, :id_prefix => 'cs_')
+    locals.merge!(:autoload => true)
   end
 
   def root_options
@@ -39,12 +39,11 @@ class TreeBuilderConfigurationManagerConfiguredSystems < TreeBuilder
                  :image       => "folder",
                  :tip         => _("My Personal Filters"),
                  :cfmeNoClick => true)
-    count_only_or_objects(count_only, objects, nil)
+    count_only_or_objects(count_only, objects)
   end
 
   def x_get_tree_custom_kids(object, count_only, options)
-    objects = x_get_search_results(object, options[:leaf])
-    count_only ? objects.length : objects
+    count_only_or_objects(count_only, x_get_search_results(object, options[:leaf]))
   end
 
   def x_get_search_results(object, leaf)

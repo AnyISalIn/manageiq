@@ -1,20 +1,17 @@
-$LOAD_PATH << File.join(GEMS_PENDING_ROOT, "util/xml")
-$LOAD_PATH << File.join(GEMS_PENDING_ROOT, "util/win32")
-$LOAD_PATH << File.join(GEMS_PENDING_ROOT, "metadata/linux")
-
 require 'ostruct'
 require 'MiqSockUtil'
-require 'xml_utils'
+require 'xml/xml_utils'
 require 'cgi'               # Used for URL encoding/decoding
-require 'LinuxUsers'
-require 'LinuxUtils'
-
-$LOAD_PATH << File.join(GEMS_PENDING_ROOT, "metadata/ScanProfile")
-require 'HostScanProfiles'
+require 'metadata/linux/LinuxUsers'
+require 'metadata/linux/LinuxUtils'
+require 'metadata/ScanProfile/HostScanProfiles'
 
 class Host < ApplicationRecord
+  include SupportsFeatureMixin
   include NewWithTypeStiMixin
   include VirtualTotalMixin
+  include TenantIdentityMixin
+  include SupportsFeatureMixin
 
   VENDOR_TYPES = {
     # DB            Displayed
@@ -24,17 +21,17 @@ class Host < ApplicationRecord
     "openstack_infra" => "OpenStack Infrastructure",
     "unknown"         => "Unknown",
     nil               => "Unknown",
-  }
+  }.freeze
 
   HOST_DISCOVERY_TYPES = {
     'vmware' => 'esx',
     'ipmi'   => 'ipmi'
-  }
+  }.freeze
 
   HOST_CREATE_OS_TYPES = {
     'VMware ESX' => 'linux_generic',
     # 'Microsoft Hyper-V' => 'windows_generic'
-  }
+  }.freeze
 
   validates_presence_of     :name
   validates_uniqueness_of   :name
@@ -92,7 +89,8 @@ class Host < ApplicationRecord
   has_many                  :cloud_services, :dependent => :nullify
   has_many                  :host_cloud_services, :class_name => "CloudService", :foreign_key => "host_id",
                             :inverse_of => :host
-
+  has_many                  :host_aggregate_hosts, :dependent => :destroy
+  has_many                  :host_aggregates, :through => :host_aggregate_hosts
 
   serialize :settings, Hash
 
@@ -113,14 +111,13 @@ class Host < ApplicationRecord
 
   virtual_column :os_image_name,                :type => :string,      :uses => [:operating_system, :hardware]
   virtual_column :platform,                     :type => :string,      :uses => [:operating_system, :hardware]
-  virtual_column :v_owning_cluster,             :type => :string,      :uses => :ems_cluster
+  virtual_delegate :v_owning_cluster, :to => "ems_cluster.name", :allow_nil => true, :default => ""
   virtual_column :v_owning_datacenter,          :type => :string,      :uses => :all_relationships
   virtual_column :v_owning_folder,              :type => :string,      :uses => :all_relationships
-  virtual_column :total_vcpus,                  :type => :integer,     :uses => :cpu_total_cores
-  virtual_column :num_cpu,                      :type => :integer,     :uses => :hardware
-  virtual_column :cpu_total_cores,              :type => :integer,     :uses => :hardware
-  virtual_column :cpu_cores_per_socket,         :type => :integer,     :uses => :hardware
-  virtual_column :ram_size,                     :type => :integer
+  virtual_delegate :cpu_total_cores, :cpu_cores_per_socket, :to => :hardware, :allow_nil => true, :default => 0
+  virtual_delegate :num_cpu,     :to => "hardware.cpu_sockets",        :allow_nil => true, :default => 0
+  virtual_delegate :total_vcpus, :to => "hardware.cpu_total_cores",    :allow_nil => true, :default => 0
+  virtual_delegate :ram_size,    :to => "hardware.memory_mb",          :allow_nil => true, :default => 0
   virtual_column :enabled_inbound_ports,        :type => :numeric_set  # The following are not set to use anything
   virtual_column :enabled_outbound_ports,       :type => :numeric_set  # because get_ports ends up re-querying the
   virtual_column :enabled_udp_inbound_ports,    :type => :numeric_set  # database anyway.
@@ -137,7 +134,7 @@ class Host < ApplicationRecord
   virtual_column :enabled_run_level_5_services, :type => :string_set,  :uses => :host_services
   virtual_column :enabled_run_level_6_services, :type => :string_set,  :uses => :host_services
   virtual_column :last_scan_on,                 :type => :time,        :uses => :last_drift_state_timestamp
-  virtual_column :v_annotation,                 :type => :string,      :uses => :hardware
+  virtual_delegate :annotation, :to => :hardware, :prefix => "v", :allow_nil => true
   virtual_column :vmm_vendor_display,           :type => :string
   virtual_column :ipmi_enabled,                 :type => :boolean
 
@@ -182,6 +179,14 @@ class Host < ApplicationRecord
   before_create :make_smart
   after_save    :process_events
 
+  supports :reset do
+    unsupported_reason_add(:reset, _("The Host is not configured for IPMI")) if ipmi_address.blank?
+    unsupported_reason_add(:reset, _("The Host has no IPMI credentials")) if authentication_type(:ipmi).nil?
+    if authentication_userid(:ipmi).blank? || authentication_password(:ipmi).blank?
+      unsupported_reason_add(:reset, _("The Host has invalid IPMI credentials"))
+    end
+  end
+
   def self.include_descendant_classes_in_expressions?
     true
   end
@@ -190,21 +195,9 @@ class Host < ApplicationRecord
     'smartstate'
   end
 
-  def v_annotation
-    hardware.try(:annotation)
-  end
-
   def my_zone
     ems = ext_management_system
     ems ? ems.my_zone : MiqServer.my_zone
-  end
-
-  def tenant_identity
-    if ext_management_system
-      ext_management_system.tenant_identity
-    else
-      User.super_admin.tap { |u| u.current_group = Tenant.root_tenant.default_miq_group }
-    end
   end
 
   def make_smart
@@ -271,10 +264,6 @@ class Host < ApplicationRecord
     validate_ipmi('on')
   end
 
-  def validate_reset
-    validate_ipmi
-  end
-
   def validate_ipmi(pstate = nil)
     return {:available => false, :message => "The Host is not configured for IPMI"}   if ipmi_address.blank?
     return {:available => false, :message => "The Host has no IPMI credentials"}      if authentication_type(:ipmi).nil?
@@ -325,6 +314,10 @@ class Host < ApplicationRecord
     validate_unsupported("Maintenance mode is unavailable")
   end
 
+  def validate_reset
+    validate_unsupported("Reset is unavailable")
+  end
+
   def validate_unsupported(message_prefix)
     {:available => false, :message => "#{message_prefix} is not available for #{self.class.model_suffix} Host."}
   end
@@ -360,7 +353,7 @@ class Host < ApplicationRecord
       data  = event.attributes["full_data"]
       prevented = data.fetch_path(:policy, :prevented) if data
     end
-    prevented ? _log.info("#{event.attributes["message"]}") : send(*action)
+    prevented ? _log.info((event.attributes["message"]).to_s) : send(*action)
   end
 
   def ipmi_power_on
@@ -376,11 +369,10 @@ class Host < ApplicationRecord
   end
 
   def reset
-    msg = validate_reset
-    if msg[:available]
+    if supports_reset?
       check_policy_prevent("request_host_reset", "ipmi_power_reset")
     else
-      _log.warn("Cannot stop because <#{msg[:message]}>")
+      _log.warn("Cannot stop because <#{unsupported_reason(:reset)}>")
     end
   end
 
@@ -701,24 +693,19 @@ class Host < ApplicationRecord
   end
 
   def resource_pools
-    # Look for only the resource_pools at the second depth (default depth + 1)
-    rels = descendant_rels(:of_type => 'ResourcePool')
-    min_depth = rels.collect(&:depth).min
-    rels = rels.select { |r| r.depth == min_depth + 1 }
-    Relationship.resources(rels).sort_by { |r| r.name.downcase }
+    Relationship.resources(grandchild_rels(:of_type => 'ResourcePool'))
   end
 
   def resource_pools_with_default
-    # Look for only the resource_pools up to the second depth (default depth + 1)
-    rels = descendant_rels(:of_type => 'ResourcePool')
-    min_depth = rels.collect(&:depth).min
-    rels = rels.select { |r| r.depth <= min_depth + 1 }
-    Relationship.resources(rels).sort_by { |r| r.name.downcase }
+    Relationship.resources(child_and_grandchild_rels(:of_type => 'ResourcePool'))
   end
 
   # All RPs under this Host and all child RPs
   def all_resource_pools
-    descendants(:of_type => 'ResourcePool')[1..-1].sort_by { |r| r.name.downcase }
+    # descendants typically returns the default_rp first but sporadically it
+    # will not due to a bug in the ancestry gem, this means we cannot simply
+    # drop the first value and need to check is_default
+    descendants(:of_type => 'ResourcePool').select { |r| !r.is_default }.sort_by { |r| r.name.downcase }
   end
 
   def all_resource_pools_with_default
@@ -742,7 +729,7 @@ class Host < ApplicationRecord
 
   def self.save_metadata(id, dataArray)
     _log.info "for host [#{id}]"
-    host = Host.find_by_id(id)
+    host = Host.find_by(:id => id)
     data, data_type = dataArray
     if data_type.include?('yaml')
       data.replace(MIQEncode.decode(data)) if data_type.include?('b64,zlib')
@@ -814,7 +801,7 @@ class Host < ApplicationRecord
     rescue Net::SSH::HostKeyMismatch
       raise # Re-raise the error so the UI can prompt the user to allow the keys to be reset.
     rescue Exception => err
-      _log.warn("#{err.inspect}")
+      _log.warn(err.inspect)
       raise MiqException::MiqHostError, _("Unexpected response returned from system, see log for details")
     else
       true
@@ -860,7 +847,7 @@ class Host < ApplicationRecord
     host_start.upto(host_end) do|h|
       ipaddr = network_id + "." + h.to_s
 
-      unless Host.find_by_ipaddress(ipaddr).nil? # skip discover for existing hosts
+      unless Host.find_by(:ipaddress => ipaddr).nil? # skip discover for existing hosts
         _log.info "ipaddress '#{ipaddr}' exists, skipping discovery"
         next
       end
@@ -873,7 +860,7 @@ class Host < ApplicationRecord
       }
 
       # Add Windows domain credentials for HyperV WMI checks
-      default_zone = Zone.find_by_name('default')
+      default_zone = Zone.find_by(:name => 'default')
       if !default_zone.nil? && default_zone.has_authentication_type?(:windows_domain)
         discover_options[:windows_domain] = [default_zone.authentication_userid(:windows_domain), default_zone.authentication_password_encrypted(:windows_domain)]
       end
@@ -1131,8 +1118,7 @@ class Host < ApplicationRecord
           _log.log_backtrace(err)
         end
       end
-    rescue => err
-      # _log.log_backtrace(err)
+    rescue
     end
 
     Patch.refresh_patches(self, patches)
@@ -1310,7 +1296,7 @@ class Host < ApplicationRecord
 
   def quickStats
     return @qs if @qs
-    return {} unless is_vmware?
+    return {} unless supports_quick_stats?
 
     begin
       raise _("Host has no EMS, unable to get host statistics") unless ext_management_system
@@ -1333,11 +1319,6 @@ class Host < ApplicationRecord
 
   def current_memory_headroom
     ram_size - current_memory_usage
-  end
-
-  def ram_size
-    return 0 if hardware.nil?
-    hardware.memory_mb.to_i
   end
 
   def firewall_rules
@@ -1385,8 +1366,8 @@ class Host < ApplicationRecord
 
   def scan_from_queue(taskid = nil)
     unless taskid.nil?
-      task = MiqTask.find_by_id(taskid)
-      task.state_active  if task
+      task = MiqTask.find_by(:id => taskid)
+      task.state_active if task
     end
 
     log_target = "#{self.class.name} name: [#{name}], id: [#{id}]"
@@ -1455,6 +1436,12 @@ class Host < ApplicationRecord
             task.update_status("Active", "Ok", "Refreshing FS Files") if task
             Benchmark.realtime_block(:refresh_fs_files) { refresh_fs_files(ssu) }
 
+            if supports?(:refresh_network_interfaces)
+              _log.info("Refreshing network interfaces for #{log_target}")
+              task.update_status("Active", "Ok", "Refreshing network interfaces") if task
+              Benchmark.realtime_block(:refresh_network_interfaces) { refresh_network_interfaces(ssu) }
+            end
+
             # refresh_openstack_services should run after refresh_services and refresh_fs_files
             if respond_to?(:refresh_openstack_services)
               _log.info("Refreshing OpenStack Services for #{log_target}")
@@ -1507,12 +1494,7 @@ class Host < ApplicationRecord
     end
   end
 
-  # Virtual columns for owning cluster, folder and datacenter
-  def v_owning_cluster
-    o = owning_cluster
-    o ? o.name : ""
-  end
-
+  # Virtual columns for folder and datacenter
   def v_owning_folder
     o = owning_folder
     o ? o.name : ""
@@ -1676,28 +1658,12 @@ class Host < ApplicationRecord
     vms.inject(0) { |t, vm| t + (vm.memory_reserve || 0) }
   end
 
-  def total_vcpus
-    cpu_total_cores || 0
-  end
-
   def vcpus_per_core
     cores = total_vcpus
     return 0 if cores == 0
 
-    total_vm_vcpus = vms.inject(0) { |t, vm| t += (vm.num_cpu || 0) }
+    total_vm_vcpus = vms.inject(0) { |t, vm| t + (vm.num_cpu || 0) }
     (total_vm_vcpus / cores)
-  end
-
-  def num_cpu
-    hardware.nil? ? 0 : hardware.cpu_sockets
-  end
-
-  def cpu_total_cores
-    hardware.nil? ? 0 : hardware.cpu_total_cores
-  end
-
-  def cpu_cores_per_socket
-    hardware.nil? ? 0 : hardware.cpu_cores_per_socket
   end
 
   def domain
@@ -1881,5 +1847,17 @@ class Host < ApplicationRecord
     storages.where(:host_storages => {:read_only => true})
   end
 
-  include DeprecatedCpuMethodsMixin
+  def archived?
+    ems_id.nil?
+  end
+
+  def normalized_state
+    return 'archived' if archived?
+    return power_state unless power_state.nil?
+    "unknown"
+  end
+
+  def validate_destroy
+    {:available => true, :message => nil}
+  end
 end

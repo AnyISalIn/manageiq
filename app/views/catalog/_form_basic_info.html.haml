@@ -52,7 +52,22 @@
                         :class                => "selectpicker")
           :javascript
             miqSelectPickerEvent('dialog_id', '#{url}')
-
+    - if @edit[:new][:st_prov_type] == "generic"
+      .form-group
+        %label.col-md-2.control-label
+          = _('Subtype')
+        .col-md-4
+          %p.form-control-static
+            - if @record.try(:id)
+              = h(ServiceTemplate::GENERIC_ITEM_SUBTYPES[@edit[:new][:generic_subtype]])
+            - else
+              - available_subtypes = ServiceTemplate::GENERIC_ITEM_SUBTYPES.invert.to_a.sort_by { |a| a.first.downcase }
+              = select_tag('generic_subtype',
+                            options_for_select(available_subtypes, @edit[:new][:generic_subtype]),
+                            "data-miq_sparkle_on" => true,
+                            :class                => "selectpicker")
+              :javascript
+                miqSelectPickerEvent('generic_subtype', '#{url}')
     - if @edit[:new][:st_prov_type] == "generic_orchestration"
       - opts = [["<#{_('Choose')}>", nil]] + @edit[:new][:available_templates]
       .form-group
@@ -104,8 +119,6 @@
     .form-group
       %label.col-md-2.control-label{:title => _("Provisioning Entry Point (NameSpace/Class/Instance)")}
         = _('Provisioning Entry Point')
-        %br
-        = _('State Machine (NS/Cls/Inst)')
       .col-md-8{:title => @edit[:new][:fqname]}
         .input-group
           = text_field_tag("fqname",
@@ -128,8 +141,6 @@
     .form-group
       %label.col-md-2.control-label{:title => _("Reconfigure Entry Point (NameSpace/Class/Instance)")}
         = _('Reconfigure Entry Point')
-        %br
-        = _('State Machine (NS/Cls/Inst)')
       .col-md-8{:title => @edit[:new][:reconfigure_fqname]}
         .input-group
           = text_field_tag("reconfigure_fqname",
@@ -154,8 +165,6 @@
     .form-group
       %label.col-md-2.control-label{:title => _("Retirement Entry Point (NameSpace/Class/Instance)")}
         = _('Retirement Entry Point')
-        %br
-        = _('State Machine (NS/Cls/Inst)')
       .col-md-8{:title => @edit[:new][:retire_fqname]}
         .input-group
           = text_field_tag("retire_fqname",

@@ -34,7 +34,6 @@ module ApplicationHelper::Dialogs
     }
 
     extra_options = {"data-miq_observe" => {
-      :interval => '.5',
       :url      => url,
     }.merge(auto_refresh_options(field)).to_json}
 
@@ -44,12 +43,10 @@ module ApplicationHelper::Dialogs
   def textarea_tag_options(field, url)
     tag_options = {
       :class     => "dynamic-text-area-#{field.id} form-control",
-      :maxlength => 8192,
       :size      => "50x6"
     }
 
     extra_options = {"data-miq_observe" => {
-      :interval => '.5',
       :url      => url,
     }.merge(auto_refresh_options(field)).to_json}
 
@@ -104,6 +101,7 @@ module ApplicationHelper::Dialogs
     auto_refresh_string = field.trigger_auto_refresh ? "dialogFieldRefresh.triggerAutoRefresh('#{field.id}', '#{field.trigger_auto_refresh}');" : ""
 
     extra_options = {
+      # FIXME: when removing remote_function, note that onclick should really be onchange instead
       :onclick  => auto_refresh_string + remote_function(
         :with     => "miqSerializeForm('dynamic-radio-#{field.id}')",
         :url      => url,
@@ -131,7 +129,7 @@ module ApplicationHelper::Dialogs
 
   def add_options_unless_read_only(options_to_add, options_to_add_to, field)
     if field.read_only
-      options_to_add_to.merge!(:disabled => true, :title => "This element is disabled because it is read only")
+      options_to_add_to.merge!(:disabled => true, :title => _("This element is disabled because it is read only"))
     else
       options_to_add_to.merge!(options_to_add)
     end

@@ -11,6 +11,7 @@
   - about
   - all_vm_rules
   - availability_zone
+  - host_aggregate
   - compute
   - flavor
   - floating_ip
@@ -33,6 +34,8 @@
   - ems_infra
   - container_dashboard
   - ems_container
+  - ems_container_deployment
+  - configuration_job
   - container_project
   - container_route
   - container_service
@@ -50,7 +53,10 @@
   - middleware_deployment
   - middleware_datasource
   - middleware_topology
+  - cloud_topology
+  - infra_topology
   - host
+  - infra_networking
   - job_all_smartproxy
   - job_my_smartproxy
   - miq_ae_class_explorer
@@ -183,6 +189,7 @@
   - vm_infra_explorer
   - vm_vnc_console
   - vm_vmrc_console
+  - cockpit_console
   - vm_perf
   - vm_policy_sim
   - vm_show
@@ -290,6 +297,7 @@
   - vm_infra_explorer
   - vm_vnc_console
   - vm_vmrc_console
+  - cockpit_console
   - vm_perf
   - vm_show
   - vm_show_list
@@ -329,6 +337,7 @@
   - vm_infra_explorer
   - vm_vnc_console
   - vm_vmrc_console
+  - cockpit_console
   - vm_drift
   - vm_edit
   - vm_refresh
@@ -464,6 +473,7 @@
   - vm_infra_explorer
   - vm_vnc_console
   - vm_vmrc_console
+  - cockpit_console
   - vm_drift
   - vm_edit
   - vm_perf
@@ -664,6 +674,7 @@
   - vm_infra_explorer
   - vm_vnc_console
   - vm_vmrc_console
+  - cockpit_console
   - vm_compare
   - vm_drift
   - vm_perf
@@ -753,6 +764,7 @@
   - vm_infra_explorer
   - vm_vnc_console
   - vm_vmrc_console
+  - cockpit_console
   - vm_compare
   - vm_drift
   - vm_perf
@@ -865,6 +877,7 @@
   - vm_timeline
   - vm_vmrc_console
   - vm_vnc_console
+  - cockpit_console
 
 - :name: EvmRole-vm_user
   :read_only: true
@@ -922,12 +935,14 @@
   - vm_timeline
   - vm_vmrc_console
   - vm_vnc_console
+  - cockpit_console
 
 - :name: EvmRole-tenant_administrator
   :read_only: true
   :miq_product_feature_identifiers:
   - about
   - availability_zone
+  - host_aggregate
   - all_vm_rules
   - compute
   - flavor
@@ -991,6 +1006,7 @@
   :miq_product_feature_identifiers:
   - about
   - availability_zone
+  - host_aggregate
   - all_vm_rules
   - flavor
   - bottlenecks

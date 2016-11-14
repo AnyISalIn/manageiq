@@ -31,11 +31,11 @@ class VmOrTemplateController < ApplicationController
   end
 
   def set_elements_and_redirect_unauthorized_user
-    @nodetype, = params[:id].split("_").last.split("-")
+    @nodetype, = parse_nodetype_and_id(params[:id])
     prefix = prefix_by_nodetype(@nodetype)
 
     # Position in tree that matches selected record
-    if role_allows(:feature => "#{prefix}_filter_accord")
+    if role_allows?(:feature => "#{prefix}_filter_accord")
       set_active_elements_authorized_user("#{prefix}_filter_tree", "#{prefix}_filter", false, nil, nil)
     else
       redirect_to(:controller => 'dashboard', :action => "auth_error")
@@ -53,4 +53,6 @@ class VmOrTemplateController < ApplicationController
   def skip_breadcrumb?
     breadcrumb_prohibited_for_action?
   end
+
+  menu_section :svc
 end

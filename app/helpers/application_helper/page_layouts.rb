@@ -9,8 +9,11 @@ module ApplicationHelper::PageLayouts
       configuration
       container_dashboard
       container_topology
+      ems_infra_dashboard
+      infra_topology
       middleware_topology
       network_topology
+      cloud_topology
       diagnostics
       exception
       miq_ae_automate_button
@@ -42,6 +45,8 @@ module ApplicationHelper::PageLayouts
 
     return false if @showtype == "consumption"
 
+    return false if @showtype == "topology"
+
     return false if controller.action_name.end_with?("tagging_edit")
 
     true
@@ -64,7 +69,9 @@ module ApplicationHelper::PageLayouts
        (@layout == 'vm' && controller.action_name == 'edit') ||
        (@layout == "report" && ["new", "create", "edit", "copy", "update", "explorer"].include?(controller.action_name))
       return false
-    elsif @layout == "dashboard" || @layout == "container_dashboard" || @showtype == 'dashboard' # Dashboard tabs are located in taskbar because they are otherwise hidden behind the taskbar regardless of z-index -->
+    elsif %w(container_dashboard dashboard ems_infra_dashboard).include?(@layout) ||
+          %w(dashboard topology).include?(@showtype)
+      # Dashboard tabs are located in taskbar because they are otherwise hidden behind the taskbar regardless of z-index
       return false
     end
     true

@@ -7,6 +7,7 @@ class OrchestrationStack < ApplicationRecord
   include ProcessTasksMixin
   include_concern 'RetirementManagement'
   include VirtualTotalMixin
+  include TenantIdentityMixin
 
   acts_as_miq_taggable
 
@@ -30,6 +31,7 @@ class OrchestrationStack < ApplicationRecord
   virtual_has_many :vms, :class_name => "ManageIQ::Providers::CloudManager::Vm"
   virtual_has_many :security_groups
   virtual_has_many :cloud_networks
+  virtual_has_many :orchestration_stacks
 
   virtual_total :total_vms, :vms
   virtual_total :total_security_groups, :security_groups
@@ -39,20 +41,16 @@ class OrchestrationStack < ApplicationRecord
   alias_method :orchestration_stack_outputs,    :outputs
   alias_method :orchestration_stack_resources,  :resources
 
+  def orchestration_stacks
+    children
+  end
+
   def direct_service
-    direct_services.first
+    direct_services.first || (root.direct_services.first if root != self)
   end
 
   def service
-    direct_service.try(:root_service)
-  end
-
-  def tenant_identity
-    if ext_management_system
-      ext_management_system.tenant_identity
-    else
-      User.super_admin.tap { |u| u.current_group = Tenant.root_tenant.default_miq_group }
-    end
+    direct_service.try(:root_service) || (root.direct_service.try(:root_service) if root != self)
   end
 
   def indirect_vms

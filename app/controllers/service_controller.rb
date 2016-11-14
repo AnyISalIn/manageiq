@@ -19,27 +19,11 @@ class ServiceController < ApplicationController
     return if ["custom_button"].include?(params[:pressed])    # custom button screen, so return, let custom_buttons method handle everything
   end
 
-  def whitelisted_action(action)
-    raise ActionController::RoutingError.new('invalid button action') unless
-      SERVICE_X_BUTTON_ALLOWED_ACTIONS.key?(action)
-
-    send_action = SERVICE_X_BUTTON_ALLOWED_ACTIONS[action]
-
-    if [:service_ownership, :service_tag].include?(send_action)
-      send(send_action, 'Service')
-    else
-      send(send_action)
-    end
-    send_action
-  end
-  private :whitelisted_action
-
   def x_button
     @explorer = true
     model, action = pressed2model_action(params[:pressed])
-    @sb[:action] = action
 
-    performed_action = whitelisted_action(params[:pressed])
+    performed_action = generic_x_button(SERVICE_X_BUTTON_ALLOWED_ACTIONS)
     return if [:service_delete, :service_edit, :service_reconfigure].include?(performed_action)
 
     if @refresh_partial
@@ -47,10 +31,7 @@ class ServiceController < ApplicationController
     else
       add_flash(_("Button not yet implemented %{model_name}:%{action_name}") %
         {:model_name => model, :action_name => action}, :error) unless @flash_array
-      render :update do |page|
-        page << javascript_prologue
-        page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-      end
+      javascript_flash
     end
   end
 
@@ -77,12 +58,13 @@ class ServiceController < ApplicationController
       return
     end
 
+    build_accordions_and_trees
+
     if params[:id]  # If a tree node id came in, show in one of the trees
       nodetype, id = params[:id].split("-")
       self.x_node = "#{nodetype}-#{to_cid(id)}"
+      get_node_info(x_node)
     end
-
-    build_accordions_and_trees
 
     params.instance_variable_get(:@parameters).merge!(session[:exp_parms]) if session[:exp_parms]  # Grab any explorer parm overrides
     session.delete(:exp_parms)
@@ -98,36 +80,7 @@ class ServiceController < ApplicationController
   # ST clicked on in the explorer right cell
   def x_show
     identify_service(from_cid(params[:id]))
-    respond_to do |format|
-      format.js do                  # AJAX, select the node
-        @explorer = true
-        params[:id] = x_build_node_id(@record, x_tree(:svcs_tree))  # Get the tree node id
-        tree_select
-      end
-      format.html do                # HTML, redirect to explorer
-        tree_node_id = TreeBuilder.build_node_id(@record)
-        session[:exp_parms] = {:id => tree_node_id}
-        redirect_to :action => "explorer"
-      end
-      format.any { head :not_found }
-    end
-  end
-
-  # Tree node selected in explorer
-  def tree_select
-    @explorer = true
-    @lastaction = "explorer"
-    self.x_node = params[:id]
-    replace_right_cell
-  end
-
-  # Accordion selected in explorer
-  def accordion_select
-    @layout     = "explorer"
-    @lastaction = "explorer"
-    self.x_active_accord = params[:id].sub(/_accord$/, '')
-    self.x_active_tree   = "#{self.x_active_accord}_tree"
-    replace_right_cell
+    generic_x_show(x_tree(:svcs_tree))
   end
 
   def service_edit
@@ -143,7 +96,7 @@ class ServiceController < ApplicationController
 
       begin
         service.save
-      rescue StandardError => bang
+      rescue => bang
         add_flash(_("Error during 'Service Edit': %{message}") % {:message => bang.message}, :error)
       else
         add_flash(_("Service \"%{name}\" was saved") % {:name => service.name})
@@ -225,7 +178,7 @@ class ServiceController < ApplicationController
 
   # Get all info for the node about to be displayed
   def get_node_info(treenodeid)
-    @nodetype, id = valid_active_node(treenodeid).split("_").last.split("-")
+    @nodetype, id = parse_nodetype_and_id(valid_active_node(treenodeid))
     # resetting action that was stored during edit to determine what is being edited
     @sb[:action] = nil
     case TreeBuilder.get_model_for_prefix(@nodetype)
@@ -252,7 +205,6 @@ class ServiceController < ApplicationController
 
   # set partial name and cell header for edit screens
   def set_right_cell_vars(action)
-    name = @record ? @record.name.to_s.gsub(/'/, "\\\\'") : "" # If record, get escaped name
     case action
     when "dialog_provision"
       partial = "shared/dialogs/dialog_provision"
@@ -286,7 +238,7 @@ class ServiceController < ApplicationController
     partial, action_url, @right_cell_text = set_right_cell_vars(action) if action # Set partial name, action and cell header
     get_node_info(x_node) if !@edit && !@in_a_form && !params[:display]
     replace_trees = @replace_trees if @replace_trees  # get_node_info might set this
-    type, = x_node.split("_").last.split("-")
+    type, = parse_nodetype_and_id(x_node)
     record_showing = type && ["Service"].include?(TreeBuilder.get_model_for_prefix(type))
     if x_active_tree == :svcs_tree && !@in_a_form && !@sb[:action]
       if record_showing && @sb[:action].nil?
@@ -332,12 +284,14 @@ class ServiceController < ApplicationController
           locals = {:action_url => action_url}
           locals[:multi_record] = true    # need save/cancel buttons on edit screen even tho @record.id is not there
           locals[:record_id]    = @sb[:rec_id] || @edit[:object_ids] && @edit[:object_ids][0]
+        elsif action == "ownership"
+          locals = {:action_url => action_url}
+          locals[:multi_record] = true
+          presenter.update(:form_buttons_div, r[:partial => "layouts/angular/paging_div_buttons"])
         else
           locals = {:record_id => @edit[:rec_id], :action_url => action_url}
-          # need save/cancel buttons on edit screen even tho @record.id is not there
-          locals[:multi_record] = true if action == "ownership"
         end
-        presenter.update(:form_buttons_div, r[:partial => "layouts/x_edit_buttons", :locals => locals])
+        presenter.update(:form_buttons_div, r[:partial => "layouts/x_edit_buttons", :locals => locals]) unless action == "ownership"
       end
     elsif (action != "retire") && (record_showing ||
         (@pages && (@items_per_page == ONE_MILLION || @pages[:items] == 0)))
@@ -367,13 +321,12 @@ class ServiceController < ApplicationController
 
     presenter[:record_id] = determine_record_id_for_presenter
 
-    presenter[:lock_unlock_trees][x_active_tree] = @edit && @edit[:current]
+    presenter.lock_tree(x_active_tree, @edit && @edit[:current])
     presenter[:osf_node] = x_node
     # unset variable that was set in form_field_changed to prompt for changes when leaving the screen
     presenter.reset_changes
 
-    # Render the JS responses to update the explorer screen
-    render :js => presenter.to_html
+    render :json => presenter.for_render
   end
 
   # Build a Services explorer tree
@@ -406,4 +359,6 @@ class ServiceController < ApplicationController
     session[:svc_lastaction] = @lastaction
     session[:prov_options]   = @options if @options
   end
+
+  menu_section :svc
 end

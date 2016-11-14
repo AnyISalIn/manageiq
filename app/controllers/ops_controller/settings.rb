@@ -7,7 +7,9 @@ module OpsController::Settings
   include_concern 'Common'
   include_concern 'Ldap'
   include_concern 'Schedules'
+  include_concern 'AutomateSchedules'
   include_concern 'Tags'
+  include_concern 'LabelTagMapping'
   include_concern 'Upload'
   include_concern 'Zones'
   include_concern 'RHN'
@@ -17,7 +19,7 @@ module OpsController::Settings
     if session[:imports]
       begin
         session[:imports].apply
-      rescue StandardError => bang
+      rescue => bang
         msg = _("Error during 'apply': %{error}") % {:error => bang}
         err = true
       else
@@ -26,7 +28,7 @@ module OpsController::Settings
         session[:imports] = @sb[:imports] = nil
       end
     else
-      msg = _("Use the Browse button to locate CSV file")
+      msg = _("Use the Choose file button to locate CSV file")
       err = true
     end
     @sb[:show_button] = err
@@ -131,25 +133,6 @@ module OpsController::Settings
     end
   end
 
-  def validate_replcation_worker
-    settings_load_edit
-    return unless @edit
-    wb = @edit[:new].config[:workers][:worker_base]
-    w = wb[:replication_worker][:replication][:destination]
-    valid = MiqRegionRemote.validate_connection_settings(w[:host], w[:port], w[:username], w[:password], w[:database])
-    if valid.nil?
-      add_flash(_("Replication Worker Credentials validated successfully"))
-    else
-      valid.each do |v|
-        add_flash(v, :error)
-      end
-    end
-    render :update do |page|
-      page << javascript_prologue
-      page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-    end
-  end
-
   def region_edit
     settings_set_view_vars
     @right_cell_text = _("Settings %{model} \"%{name}\"") %
@@ -166,24 +149,18 @@ module OpsController::Settings
       end
       unless @flash_array.nil?
         session[:changed] = @changed = true
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
         return
       end
       @edit[:region].description = @edit[:new][:description]
       begin
         @edit[:region].save!
-      rescue StandardError => bang
+      rescue => bang
         @edit[:region].errors.each do |field, msg|
           add_flash("#{field.to_s.capitalize} #{msg}", :error)
         end
         @changed = true
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
       else
         add_flash(_("%{model} \"%{name}\" was saved") % {:model => ui_lookup(:model => "MiqRegion"), :name => @edit[:region].description})
         AuditEvent.success(build_saved_audit(@edit[:region], params[:button] == "edit"))
@@ -202,11 +179,7 @@ module OpsController::Settings
   def region_form_field_changed
     return unless load_edit("region_edit__#{params[:id]}", "replace_cell__explorer")
     region_get_form_vars
-    changed = (@edit[:new] != @edit[:current])
-    render :update do |page|
-      page << javascript_prologue
-      page << javascript_for_miq_button_visibility(changed)
-    end
+    javascript_miq_button_visibility(@edit[:new] != @edit[:current])
   end
 
   private ############################

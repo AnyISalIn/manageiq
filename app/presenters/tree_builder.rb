@@ -1,5 +1,6 @@
 class TreeBuilder
   include CompressedIds
+  extend CompressedIds
   include TreeKids
 
   attr_reader :name, :type, :tree_nodes
@@ -7,93 +8,11 @@ class TreeBuilder
   def node_builder
     TreeNodeBuilder
   end
+
   def self.class_for_type(type)
-    case type
-    when :filter           then raise('Obsolete tree type.')
-    # Catalog explorer trees
-    when :configuration_manager_providers then TreeBuilderConfigurationManager
-    when :cs_filter                       then TreeBuilderConfigurationManagerConfiguredSystems
-    when :configuration_scripts           then TreeBuilderConfigurationManagerConfigurationScripts
-
-    # Catalog explorer trees
-    when :ot               then TreeBuilderOrchestrationTemplates
-    when :sandt            then TreeBuilderCatalogItems
-    when :stcat            then TreeBuilderCatalogs
-    when :svccat           then TreeBuilderServiceCatalog
-
-    # Chargeback explorer trees
-    when :cb_assignments   then TreeBuilderChargebackAssignments
-    when :cb_rates         then TreeBuilderChargebackRates
-    when :cb_reports       then TreeBuilderChargebackReports
-
-    when :vandt            then TreeBuilderVandt
-    when :vms_filter       then TreeBuilderVmsFilter
-    when :templates_filter then TreeBuilderTemplateFilter
-
-    when :instances        then TreeBuilderInstances
-    when :images           then TreeBuilderImages
-    when :instances_filter then TreeBuilderInstancesFilter
-    when :images_filter    then TreeBuilderImagesFilter
-    when :vms_instances_filter    then TreeBuilderVmsInstancesFilter
-    when :templates_images_filter then TreeBuilderTemplatesImagesFilter
-
-    when :policy_profile   then TreeBuilderPolicyProfile
-    when :policy           then TreeBuilderPolicy
-    when :event            then TreeBuilderEvent
-    when :condition        then TreeBuilderCondition
-    when :action           then TreeBuilderAction
-    when :alert_profile    then TreeBuilderAlertProfile
-    when :alert            then TreeBuilderAlert
-
-    # reports explorer trees
-    when :db               then TreeBuilderReportDashboards
-    when :export           then TreeBuilderReportExport
-    when :reports          then TreeBuilderReportReports
-    when :roles            then TreeBuilderReportRoles
-    when :savedreports     then TreeBuilderReportSavedReports
-    when :schedules        then TreeBuilderReportSchedules
-    when :widgets          then TreeBuilderReportWidgets
-
-    # containers explorer tree
-    when :containers         then TreeBuilderContainers
-    when :containers_filter  then TreeBuilderContainersFilter
-
-    # automate explorer tree
-    when :ae               then TreeBuilderAeClass
-
-    # miq_ae_customization explorer trees
-    when :ab                    then TreeBuilderButtons
-    when :dialogs               then TreeBuilderServiceDialogs
-    when :dialog_import_export  then TreeBuilderAeCustomization
-    when :old_dialogs           then TreeBuilderProvisioningDialogs
-
-    # OPS explorer trees
-    when :diagnostics           then TreeBuilderOpsDiagnostics
-    when :rbac                  then TreeBuilderOpsRbac
-    when :settings              then TreeBuilderOpsSettings
-    when :vmdb                  then TreeBuilderOpsVmdb
-
-    # PXE explorer trees
-    when :customization_templates then TreeBuilderPxeCustomizationTemplates
-    when :iso_datastores          then TreeBuilderIsoDatastores
-    when :pxe_image_types         then TreeBuilderPxeImageTypes
-    when :pxe_servers             then TreeBuilderPxeServers
-
-    # Services explorer tree
-    when :svcs                    then TreeBuilderServices
-
-    when :sa                      then TreeBuilderStorageAdapters
-
-    # Datastores explorer trees
-    when :storage     then TreeBuilderStorage
-    when :storage_pod then TreeBuilderStoragePod
-
-    when :datacenter              then TreeBuilderDatacenter
-    when :vat                     then TreeBuilderVat
-
-    when :network                 then TreeBuilderNetwork
-    when :df                      then TreeBuilderDefaultFilters
-    end
+    raise('Obsolete tree type.') if type == :filter
+    @x_tree_node_classes ||= {}
+    @x_tree_node_classes[type] ||= X_TREE_NODE_CLASSES[type].constantize
   end
 
   def initialize(name, type, sandbox, build = true)
@@ -127,7 +46,7 @@ class TreeBuilder
     end
   end
 
-  # Get the children of a dynatree node that is being expanded (autoloaded)
+  # Get the children of a tree node that is being expanded (autoloaded)
   def x_get_child_nodes(id)
     parents = [] # FIXME: parent ids should be provided on autoload as well
 
@@ -137,7 +56,7 @@ class TreeBuilder
     open_node(id)
 
     x_get_tree_objects(object, @tree_state.x_tree(@name), false, parents).map do |o|
-      x_build_node_dynatree(o, id, @tree_state.x_tree(@name))
+      x_build_node_tree(o, id, @tree_state.x_tree(@name))
     end
   end
 
@@ -161,6 +80,21 @@ class TreeBuilder
     "#{prefix}-#{record.id}"
   end
 
+  def self.build_node_cid(record_or_id, type = nil)
+    if record_or_id.kind_of?(Integer)
+      prefix = get_prefix_for_model(type)
+      id = record_or_id
+    else
+      prefix = get_prefix_for_model(record_or_id.class.base_model)
+      id = record_or_id.id
+    end
+    "#{prefix}-#{to_cid(id)}"
+  end
+
+  def self.hide_vms
+    !User.current_user.settings.fetch_path(:display, :display_vms) # default value is false
+  end
+
   # return this nodes model and record id
   def self.extract_node_model_and_id(node_id)
     prefix, record_id = node_id.split("_").last.split('-')
@@ -169,18 +103,52 @@ class TreeBuilder
   end
 
   def locals_for_render
-    @locals_for_render.update(:select_node => "#{@tree_state.x_node(@name)}")
+    @locals_for_render.update(:select_node => @tree_state.x_node(@name).to_s)
   end
 
   def reload!
     build_tree
   end
 
+  # FIXME: temporary conversion, needs to be moved into the generation
+  def self.convert_bs_tree(nodes)
+    return [] if nodes.nil?
+    nodes = [nodes] if nodes.kind_of?(Hash)
+    stack = nodes.dup
+    while stack.any?
+      node = stack.pop
+      stack += node[:children] if node.key?(:children)
+      node[:image] = node.delete(:icon) if node.key?(:icon) && node[:icon].start_with?('/')
+      node[:text] = node.delete(:title) if node.key?(:title)
+      node[:nodes] = node.delete(:children) if node.key?(:children)
+      node[:lazyLoad] = node.delete(:isLazy) if node.key?(:isLazy)
+      node[:state] = {}
+      node[:state][:expanded] = node.delete(:expand) if node.key?(:expand)
+      node[:state][:checked] = node.delete(:select) if node.key?(:select)
+      node[:state][:selected] = node.delete(:highlighted) if node.key?(:highlighted)
+      node[:selectable] = !node.delete(:cfmeNoClick) if node.key?(:cfmeNoClick)
+      node[:class] = ''
+      node[:class] = node.delete(:addClass) if node.key?(:addClass)
+      node[:class] = node[:class].split(' ').push('no-cursor').join(' ') if node[:selectable] == false
+    end
+    nodes
+  end
+
+  # Add child nodes to the active tree below node 'id'
+  def self.tree_add_child_nodes(sandbox, klass_name, id, controller)
+    args = [sandbox[:active_tree].to_s, sandbox[:active_tree].to_s.sub(/_tree$/, ''), sandbox, false]
+    if klass_name == 'TreeBuilderAutomate'
+      args << { :node_builder => TreeBuilderAutomate.select_node_builder(controller) }
+    end
+    tree = klass_name.constantize.new(*args)
+    tree.x_get_child_nodes(id)
+  end
+
   private
 
   def build_tree
     # FIXME: we have the options -- no need to reload from @sb
-    tree_nodes = x_build_dynatree(@tree_state.x_tree(@name))
+    tree_nodes = x_build_tree(@tree_state.x_tree(@name))
     active_node_set(tree_nodes)
     set_nodes(tree_nodes)
   end
@@ -194,6 +162,7 @@ class TreeBuilder
   def set_nodes(nodes)
     # Add the root node even if it is not set
     add_root_node(nodes) if @options.fetch(:add_root, :true)
+    @bs_tree = self.class.convert_bs_tree(nodes).to_json
     @tree_nodes = nodes.to_json
     @locals_for_render = set_locals_for_render
   end
@@ -214,24 +183,19 @@ class TreeBuilder
 
   def add_root_node(nodes)
     root = nodes.first
-    root[:title], root[:tooltip], icon = root_options
+    root[:title], root[:tooltip], icon, options = root_options
     root[:icon] = ActionController::Base.helpers.image_path("100/#{icon || 'folder'}.png")
+    root[:cfmeNoClick] = options[:cfmeNoClick] if options.present? && options.key?(:cfmeNoClick)
   end
 
   def set_locals_for_render
     {
-      :tree_id      => "#{@name}box",
-      :tree_name    => @name.to_s,
-      :json_tree    => @tree_nodes,
-      :onclick      => "miqOnClickSelectTreeNode",
-      :id_prefix    => "#{@name}_",
-      :base_id      => "root",
-      :no_base_exp  => true,
-      :exp_tree     => false,
-      :highlighting => true,
-      :tree_state   => true,
-      :multi_lines  => true,
-      :checkboxes   => false,
+      :tree_id    => "#{@name}box",
+      :tree_name  => @name.to_s,
+      :bs_tree    => @bs_tree,
+      :onclick    => "miqOnClickSelectTreeNode",
+      :tree_state => true,
+      :checkboxes => false
     }
   end
 
@@ -243,7 +207,7 @@ class TreeBuilder
   # :add_root               # If true, put a root node at the top
   # :full_ids               # stack parent id on top of each node id
   # :lazy                   # set if tree is lazy
-  def x_build_dynatree(options)
+  def x_build_tree(options)
     children = x_get_tree_objects(nil, options, false, [])
 
     child_nodes = children.map do |child|
@@ -251,11 +215,33 @@ class TreeBuilder
       if child.kind_of?(Hash) && child.key?(:title) && child.key?(:key) && child.key?(:icon)
         child
       else
-        x_build_node_dynatree(child, nil, options)
+        x_build_node_tree(child, nil, options)
       end
     end
     return child_nodes unless options[:add_root]
     [{:key => 'root', :children => child_nodes, :expand => true}]
+  end
+
+  # determine if this is an ancestry node, and return the approperiate object
+  #
+  # @param object [Hash,Array,Object] object that is possibly an ancestry node
+  # @returns [Object, Hash] The object of interest from this ancestry tree, and the children
+  #
+  # Ancestry trees are of the form:
+  #
+  #   {Object => {Object1 => {}, Object2 => {Object2a => {}}}}
+  #
+  # Since `build_tree` and x_build_node uses enumeration, it comes in as:
+  #   [Object, {Object1 => {}, Object2 => {Object2a => {}}}]
+  #
+  def object_from_ancestry(object)
+    if object.kind_of?(Array) && object.size == 2 && object[1].kind_of?(Hash)
+      obj = object.first
+      children = object.last
+      [obj, children]
+    else
+      [object, nil]
+    end
   end
 
   def x_get_tree_objects(parent, options, count_only, parents)
@@ -263,29 +249,27 @@ class TreeBuilder
     children_or_count || (count_only ? 0 : [])
   end
 
-  # Return a tree node for the passed in object
-  def x_build_node(object, pid, options)    # Called with object, tree node parent id, tree options
+  # @param object the current node object (or an ancestry tree hash)
+  # @param pid [String|Nil] parent id root nodes are nil
+  # @param options [Hash] tree options
+  # @returns [Hash] display hash for this node and all children
+  def x_build_node(object, pid, options)
     parents = pid.to_s.split('_')
 
-    options[:is_current] =
-        ((object.kind_of?(MiqServer) && MiqServer.my_server(true).id == object.id) ||
-         (object.kind_of?(Zone) && MiqServer.my_server(true).my_zone == object.name))
+    options[:is_current] = ((object.kind_of?(MiqServer) && MiqServer.my_server.id == object.id) ||
+                             (object.kind_of?(Zone) && MiqServer.my_server.my_zone == object.name))
 
+    object, ancestry_kids = object_from_ancestry(object)
     node = x_build_single_node(object, pid, options)
 
-    if [:policy_profile_tree, :policy_tree].include?(options[:tree])
-      open_node(node[:key])
-    end
-
     # Process the node's children
-    if Array(@tree_state.x_tree(@name)[:open_nodes]).include?(node[:key]) ||
-       options[:open_all] ||
+    node[:expand] = Array(@tree_state.x_tree(@name)[:open_nodes]).include?(node[:key]) || !!options[:open_all] || node[:expand]
+    if ancestry_kids ||
        object[:load_children] ||
        node[:expand] ||
        @options[:lazy] == false
-      node[:expand] = true if options[:type] == :automate &&
-                              Array(@tree_state.x_tree(@name)[:open_nodes]).include?(node[:key])
-      kids = x_get_tree_objects(object, options, false, parents).map do |o|
+
+      kids = (ancestry_kids || x_get_tree_objects(object, options, false, parents)).map do |o|
         x_build_node(o, node[:key], options)
       end
       node[:children] = kids unless kids.empty?
@@ -302,13 +286,30 @@ class TreeBuilder
   end
 
   # Called with object, tree node parent id, tree options
-  def x_build_node_dynatree(object, pid, options)
+  def x_build_node_tree(object, pid, options)
     x_build_node(object, pid, options)
   end
 
   # Handle custom tree nodes (object is a Hash)
   def x_get_tree_custom_kids(_object, count_only, _options)
     count_only ? 0 : []
+  end
+
+  # count_only_or_objects but for many sets of objects
+  # count_only will short circuit the sizes
+  # the last parameter is a required sort_by (which is typically 'name')
+  #
+  # Passing a lambda around a collection will delay loading the collection.
+  # Especially useful when the collection downloads a lot of data.
+  def count_only_or_many_objects(count_only, *collections)
+    sort_by = collections.pop
+
+    if count_only
+      collections.detect { |objects| resolve_object_lambdas(count_only, objects).size > 0 } ? 1 : 0
+    else
+      collections.map! { |objects| resolve_object_lambdas(count_only, objects) }
+      collections.flat_map { |objects| count_only_or_objects(count_only, objects, sort_by) }
+    end
   end
 
   def count_only_or_objects(count_only, objects, sort_by = nil)
@@ -323,6 +324,10 @@ class TreeBuilder
     end
   end
 
+  def count_only_or_objects_filtered(count_only, objects, sort_by = nil, options = {}, &block)
+    count_only_or_objects(count_only, Rbac.filtered(objects, options), sort_by, &block)
+  end
+
   def assert_type(actual, expected)
     raise "#{self.class}: expected #{expected.inspect}, got #{actual.inspect}" unless actual == expected
   end
@@ -332,31 +337,106 @@ class TreeBuilder
     open_nodes.push(id) unless open_nodes.include?(id)
   end
 
-  def get_vmdb_config
-    @vmdb_config ||= VMDB::Config.new("vmdb").config
+  def resolve_object_lambdas(count_only, objects)
+    if objects.respond_to?(:call)
+      # works with a no-param lambda OR a lambda that requests the count_only
+      (objects.arity == 1) ? objects.call(count_only) : objects.call
+    else
+      objects
+    end
   end
+  private :resolve_object_lambdas
 
-  def rbac_filtered_objects(objects, options = {})
-    Rbac.filtered(objects, options)
-  end
+  X_TREE_NODE_CLASSES = {
+    # Catalog explorer trees
+    :configuration_manager_providers => "TreeBuilderConfigurationManager",
+    :cs_filter                       => "TreeBuilderConfigurationManagerConfiguredSystems",
+    :configuration_scripts           => "TreeBuilderConfigurationManagerConfigurationScripts",
 
-  # Add child nodes to the active tree below node 'id'
-  def self.tree_add_child_nodes(sandbox, klass_name, id)
-    tree = klass_name.constantize.new(sandbox[:active_tree].to_s,
-                                      sandbox[:active_tree].to_s.sub(/_tree$/, ''),
-                                      sandbox, false)
-    tree.x_get_child_nodes(id)
-  end
+    # Catalog explorer trees
+    :ot                              => "TreeBuilderOrchestrationTemplates",
+    :sandt                           => "TreeBuilderCatalogItems",
+    :stcat                           => "TreeBuilderCatalogs",
+    :svccat                          => "TreeBuilderServiceCatalog",
 
-  def self.rbac_filtered_objects(objects, options = {})
-    Rbac.filtered(objects, options)
-  end
+    # Chargeback explorer trees
+    :cb_assignments                  => "TreeBuilderChargebackAssignments",
+    :cb_rates                        => "TreeBuilderChargebackRates",
+    :cb_reports                      => "TreeBuilderChargebackReports",
 
-  def self.rbac_has_visible_descendants?(o, type)
-    target_ids = o.descendant_ids(:of_type => type).transpose.last
-    !target_ids.nil? && Rbac.filtered(target_ids, :class => type.constantize).present?
-  end
-  private_class_method :rbac_has_visible_descendants?
+    :vandt                           => "TreeBuilderVandt",
+    :vms_filter                      => "TreeBuilderVmsFilter",
+    :templates_filter                => "TreeBuilderTemplateFilter",
+
+    :infra_networking                => "TreeBuilderInfraNetworking",
+
+    :instances                       => "TreeBuilderInstances",
+    :images                          => "TreeBuilderImages",
+    :instances_filter                => "TreeBuilderInstancesFilter",
+    :images_filter                   => "TreeBuilderImagesFilter",
+    :vms_instances_filter            => "TreeBuilderVmsInstancesFilter",
+    :templates_images_filter         => "TreeBuilderTemplatesImagesFilter",
+
+    :policy_simulation               => "TreeBuilderPolicySimulation",
+    :policy_profile                  => "TreeBuilderPolicyProfile",
+    :policy                          => "TreeBuilderPolicy",
+    :event                           => "TreeBuilderEvent",
+    :condition                       => "TreeBuilderCondition",
+    :action                          => "TreeBuilderAction",
+    :alert_profile                   => "TreeBuilderAlertProfile",
+    :alert                           => "TreeBuilderAlert",
+
+    # reports explorer trees
+    :db                              => "TreeBuilderReportDashboards",
+    :export                          => "TreeBuilderReportExport",
+    :reports                         => "TreeBuilderReportReports",
+    :roles                           => "TreeBuilderReportRoles",
+    :savedreports                    => "TreeBuilderReportSavedReports",
+    :schedules                       => "TreeBuilderReportSchedules",
+    :widgets                         => "TreeBuilderReportWidgets",
+
+    # containers explorer tree
+    :containers                      => "TreeBuilderContainers",
+    :containers_filter               => "TreeBuilderContainersFilter",
+
+    # automate explorer tree
+    :ae                              => "TreeBuilderAeClass",
+
+    # miq_ae_customization explorer trees
+    :ab                              => "TreeBuilderButtons",
+    :dialogs                         => "TreeBuilderServiceDialogs",
+    :dialog_import_export            => "TreeBuilderAeCustomization",
+    :old_dialogs                     => "TreeBuilderProvisioningDialogs",
+
+    # OPS explorer trees
+    :diagnostics                     => "TreeBuilderOpsDiagnostics",
+    :rbac                            => "TreeBuilderOpsRbac",
+    :servers_by_role                 => "TreeBuilderServersByRole",
+    :roles_by_server                 => "TreeBuilderRolesByServer",
+    :settings                        => "TreeBuilderOpsSettings",
+    :vmdb                            => "TreeBuilderOpsVmdb",
+
+    # PXE explorer trees
+    :customization_templates         => "TreeBuilderPxeCustomizationTemplates",
+    :iso_datastores                  => "TreeBuilderIsoDatastores",
+    :pxe_image_types                 => "TreeBuilderPxeImageTypes",
+    :pxe_servers                     => "TreeBuilderPxeServers",
+
+    # Services explorer tree
+    :svcs                            => "TreeBuilderServices",
+
+    :sa                              => "TreeBuilderStorageAdapters",
+
+    # Datastores explorer trees
+    :storage                         => "TreeBuilderStorage",
+    :storage_pod                     => "TreeBuilderStoragePod",
+
+    :datacenter                      => "TreeBuilderDatacenter",
+    :vat                             => "TreeBuilderVat",
+
+    :network                         => "TreeBuilderNetwork",
+    :df                              => "TreeBuilderDefaultFilters",
+  }
 
   # Tree node prefixes for generic explorers
   X_TREE_NODE_PREFIXES = {
@@ -367,9 +447,11 @@ class TreeBuilder
     "aen" => "MiqAeNamespace",
     "al"  => "MiqAlert",
     "ap"  => "MiqAlertSet",
+    "asr" => "AssignedServerRole",
     "az"  => "AvailabilityZone",
     "azu" => "OrchestrationTemplateAzure",
     "at"  => "ManageIQ::Providers::AnsibleTower::ConfigurationManager",
+    "cl"  => "Classification",
     "cf " => "ConfigurationScript",
     "cnt" => "Container",
     "co"  => "Condition",
@@ -420,9 +502,11 @@ class TreeBuilder
     "r"   => "ResourcePool",
     "s"   => "Service",
     "sa"  => "StorageAdapter",
+    'sn'  => 'Snapshot',
     "sl"  => "MiqScsiLun",
     "sg"  => "MiqScsiTarget",
     "sis" => "ScanItemSet",
+    "role" => "ServerRole",
     "st"  => "ServiceTemplate",
     "stc" => "ServiceTemplateCatalog",
     "sr"  => "ServiceResource",
@@ -433,6 +517,7 @@ class TreeBuilder
     "tn"  => "Tenant",
     "u"   => "User",
     "v"   => "Vm",
+    "vap" => "ManageIQ::Providers::Vmware::CloudManager::OrchestrationTemplate",
     "vnf" => "OrchestrationTemplateVnfd",
     "wi"  => "WindowsImage",
     "xx"  => "Hash",  # For custom (non-CI) nodes, specific to each tree

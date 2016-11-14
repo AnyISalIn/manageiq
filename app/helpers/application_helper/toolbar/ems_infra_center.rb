@@ -17,6 +17,12 @@ class ApplicationHelper::Toolbar::EmsInfraCenter < ApplicationHelper::Toolbar::B
           N_('Refresh relationships and power states for all items related to this Infrastructure Provider'),
           N_('Refresh Relationships and Power States'),
           :confirm => N_("Refresh relationships and power states for all items related to this Infrastructure Provider?")),
+        button(
+          :host_register_nodes,
+          'pficon pficon-add-circle-o fa-lg',
+          t = N_('Register Nodes'),
+          t,
+          :url       => "/register_nodes"),
         separator,
         button(
           :ems_infra_edit,
@@ -38,10 +44,10 @@ class ApplicationHelper::Toolbar::EmsInfraCenter < ApplicationHelper::Toolbar::B
         button(
           :ems_infra_delete,
           'pficon pficon-delete fa-lg',
-          t = N_('Remove this Infrastructure Provider from the VMDB'),
+          t = N_('Remove this Infrastructure Provider'),
           t,
           :url_parms => "&refresh=y",
-          :confirm   => N_("Warning: This Infrastructure Provider and ALL of its components will be permanently removed from the Virtual Management Database.  Are you sure you want to remove this Infrastructure Provider?")),
+          :confirm   => N_("Warning: This Infrastructure Provider and ALL of its components will be permanently removed!")),
       ]
     ),
   ])
@@ -94,7 +100,8 @@ class ApplicationHelper::Toolbar::EmsInfraCenter < ApplicationHelper::Toolbar::B
           'fa fa-search fa-lg',
           N_('Re-check Authentication Status for this Infrastructure Provider'),
           N_('Re-check Authentication Status'),
-          :klass => ApplicationHelper::Button::EmsInfraRecheckAuthStatus),
+          :klass => ApplicationHelper::Button::GenericFeatureButton,
+          :options => {:feature => :authentication_status}),
       ]
     ),
   ])

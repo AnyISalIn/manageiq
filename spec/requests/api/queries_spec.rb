@@ -1,7 +1,7 @@
 #
 # REST API Request Tests - Queries
 #
-describe ApiController do
+describe "Queries API" do
   let(:zone)       { FactoryGirl.create(:zone, :name => "api_zone") }
   let(:miq_server) { FactoryGirl.create(:miq_server, :guid => miq_server_guid, :zone => zone) }
   let(:ems)        { FactoryGirl.create(:ems_vmware, :zone => zone) }
@@ -24,7 +24,7 @@ describe ApiController do
       run_get vms_url
 
       expect_query_result(:vms, 3, 3)
-      expect(response_hash).to include("resources" => all(match("href" => a_string_matching(vm_href_pattern))))
+      expect(response.parsed_body).to include("resources" => all(match("href" => a_string_matching(vm_href_pattern))))
     end
 
     it "returns seperate ids and href when expanded" do
@@ -39,7 +39,7 @@ describe ApiController do
                                             "id"   => a_kind_of(Integer),
                                             "guid" => anything))
       }
-      expect(response_hash).to include(expected)
+      expect(response.parsed_body).to include(expected)
     end
 
     it "always return ids and href when asking for specific attributes" do
@@ -62,6 +62,23 @@ describe ApiController do
 
       expect_single_resource_query("id" => vm1.id, "href" => vm1_url, "guid" => vm1.guid)
     end
+
+    it 'supports compressed ids' do
+      api_basic_authorize action_identifier(:vms, :read, :resource_actions, :get)
+
+      run_get vms_url(ApplicationRecord.compress_id(vm1.id))
+
+      expect_single_resource_query("id" => vm1.id, "href" => vm1_url, "guid" => vm1.guid)
+    end
+
+    it 'returns 404 on url with trailing garbage' do
+      api_basic_authorize action_identifier(:vms, :read, :resource_actions, :get)
+      vm1   # create resource
+
+      run_get vm1_url + 'garbage'
+
+      expect(response).to have_http_status(:not_found)
+    end
   end
 
   describe "Query subcollections" do
@@ -81,7 +98,7 @@ describe ApiController do
       run_get vm1_accounts_url
 
       expect_query_result(:accounts, 2)
-      expect_result_resources_to_include_hrefs("resources", :vm1_accounts_url_list)
+      expect_result_resources_to_include_hrefs("resources", vm1_accounts_url_list)
     end
 
     it "includes both id and href when getting a single resource" do
@@ -102,8 +119,23 @@ describe ApiController do
 
       expect_query_result(:accounts, 2)
       expect_result_resources_to_include_keys("resources", %w(id href))
-      expect_result_resources_to_include_hrefs("resources", :vm1_accounts_url_list)
+      expect_result_resources_to_include_hrefs("resources", vm1_accounts_url_list)
       expect_result_resources_to_include_data("resources", "id" => [acct1.id, acct2.id])
+    end
+
+    it 'supports compressed ids' do
+      api_basic_authorize
+
+      run_get vms_url(ApplicationRecord.compress_id(vm1.id)) + "/accounts/#{acct1.id}"
+
+      expect_single_resource_query("id" => acct1.id, "href" => acct1_url, "name" => acct1.name)
+    end
+
+    it 'returns 404 on url with trailing garbage' do
+      api_basic_authorize
+
+      run_get acct1_url + 'garbage'
+      expect(response).to have_http_status(:not_found)
     end
   end
 
@@ -119,9 +151,9 @@ describe ApiController do
       run_get(providers_url(provider.id), :attributes => "authentications")
 
       expect(response).to have_http_status(:ok)
-      expect_result_to_match_hash(response_hash, "name" => "sample")
+      expect_result_to_match_hash(response.parsed_body, "name" => "sample")
       expect_result_to_have_keys(%w(authentications))
-      authentication = response_hash["authentications"].first
+      authentication = response.parsed_body["authentications"].first
       expect(authentication["userid"]).to eq("admin")
       expect(authentication.key?("password")).to be_falsey
     end
@@ -142,8 +174,8 @@ describe ApiController do
       run_get provision_requests_url(request.id)
 
       expect(response).to have_http_status(:ok)
-      expect_result_to_match_hash(response_hash, "description" => "sample provision")
-      provision_attrs = response_hash.fetch_path("options", "attrs")
+      expect_result_to_match_hash(response.parsed_body, "description" => "sample provision")
+      provision_attrs = response.parsed_body.fetch_path("options", "attrs")
       expect(provision_attrs).to_not be_nil
       expect(provision_attrs["userid"]).to eq("admin")
       expect(provision_attrs.key?(password_field)).to be_falsey

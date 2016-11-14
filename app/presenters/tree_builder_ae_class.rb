@@ -2,6 +2,15 @@ class TreeBuilderAeClass < TreeBuilder
   has_kids_for MiqAeClass, [:x_get_tree_class_kids, :type]
   has_kids_for MiqAeNamespace, [:x_get_tree_ns_kids, :type]
 
+  def initialize(name, type, sandbox, build = true, options = {})
+    @node_builder = options.fetch(:node_builder, nil)
+    super(name, type, sandbox, build)
+  end
+
+  def node_builder
+    @node_builder ? @node_builder : super
+  end
+
   private
 
   def tree_init_options(_tree_name)
@@ -14,7 +23,7 @@ class TreeBuilderAeClass < TreeBuilder
   end
 
   def root_options
-    [t = _("Datastore"), t]
+    [t = _("Datastore"), t, nil, {:cfmeNoClick => node_builder != TreeNodeBuilder}]
   end
 
   # Get root nodes count/array for explorer tree

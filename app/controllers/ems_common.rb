@@ -5,6 +5,119 @@ module EmsCommon
     restful? ? '/' : '/show'
   end
 
+  def show_download
+    get_tagdata(@ems)
+    drop_breadcrumb(:name => @ems.name + _(" (Summary)"), :url => show_link(@ems))
+    @showtype = "main"
+    set_summary_pdf_data
+  end
+
+  def show_main
+    get_tagdata(@ems)
+    drop_breadcrumb(:name => @ems.name + _(" (Summary)"), :url => show_link(@ems))
+    @showtype = "main"
+  end
+
+  def show_props
+    drop_breadcrumb(:name => @ems.name + _(" (Properties)"), :url => show_link(@ems, :display  =>  "props"))
+  end
+
+  def show_ems_folders
+    if params[:vat]
+      drop_breadcrumb(:name => @ems.name + _(" (VMs & Templates)"),
+                      :url  => show_link(@ems, :display => "ems_folder", :vat => "true"))
+    else
+      drop_breadcrumb(:name => @ems.name + _(" (Hosts & Clusters)"),
+                      :url  => show_link(@ems, :display => "ems_folders"))
+    end
+    @showtype = "config"
+
+    cluster = @record
+    @datacenter_tree = TreeBuilderVat.new(:vat_tree, :vat, @sb, true, cluster, !!params[:vat])
+    self.x_active_tree = :vat_tree
+  end
+
+  def show_timeline
+    @showtype = "timeline"
+    session[:tl_record_id] = params[:id] if params[:id]
+    @record = find_by_id_filtered(model, session[:tl_record_id])
+    @timeline = @timeline_filter = true
+    @lastaction = "show_timeline"
+    tl_build_timeline # Create the timeline report
+    drop_breadcrumb(:name => _("Timelines"), :url => show_link(@record, :refresh => "n", :display => "timeline"))
+  end
+
+  def show_dashboard
+    @showtype = "dashboard"
+    @lastaction = "show_dashboard"
+    drop_breadcrumb(:name => @ems.name + _(" (Dashboard)"), :url => show_link(@ems))
+  end
+
+  def show_topology
+    @showtype = "topology"
+    @lastaction = "show_topology"
+    drop_breadcrumb(:name => @ems.name + _(" (Topology)"), :url => show_link(@ems))
+  end
+
+  def show_performance
+    @showtype = "performance"
+    drop_breadcrumb(:name => _("%{name} Capacity & Utilization") % {:name => @record.name},
+                    :url  => "/#{@table_name}/show/#{@record.id}?display=#{@display}&refresh=n")
+    perf_gen_init_options # Initialize perf chart options, charts will be generated async
+  end
+
+  def view_setup_params
+    {
+      "instances"                     => [ManageIQ::Providers::CloudManager::Vm, _("Instances")],
+      "images"                        => [ManageIQ::Providers::CloudManager::Template, _("Images")],
+      "storage_managers"              => [ManageIQ::Providers::StorageManager,
+                                          _("Storage Managers"),
+                                          :storage_managers],
+      "miq_templates"                 => [MiqTemplate,            _("Templates")],
+      "vms"                           => [Vm,                     _("VMs")],
+      "orchestration_stacks"          => [OrchestrationStack,     _("Stacks")],
+      # "configuration_jobs"            => [ConfigurationJob, _("Configuration Jobs")],
+      "cloud_object_store_containers" => [CloudObjectStoreContainer, _('Cloud Object Stores')],
+      'containers'                    => [Container,              _('Containers')],
+      'container_replicators'         => [ContainerReplicator,    _('Container Replicators')],
+      'container_nodes'               => [ContainerNode,          _('Container Nodes')],
+      'container_groups'              => [ContainerGroup,         _('Pods')],
+      'container_services'            => [ContainerService,       _('Container Services')],
+      'container_images'              => [ContainerImage,         _('Container Images')],
+      'container_routes'              => [ContainerRoute,         _('Container Routes')],
+      'container_builds'              => [ContainerBuild,         _('Container Builds')],
+      'container_projects'            => [ContainerProject,       _('Container Projects')],
+      'container_image_registries'    => [ContainerImageRegistry, _('Container Image Registries')],
+      'container_templates'           => [ContainerTemplate,      _('Container Templates')],
+      'availability_zones'            => [AvailabilityZone,       _('Availability Zones')],
+      'host_aggregates'               => [HostAggregate,          _('Host Aggregates')],
+      'middleware_servers'            => [MiddlewareServer,       _('Middleware Servers')],
+      'middleware_deployments'        => [MiddlewareDeployment,   _('Middleware Deployments')],
+      'middleware_datasources'        => [MiddlewareDatasource,   _('Middleware Datasources')],
+      'middleware_domains'            => [MiddlewareDomain,       _('Middleware Domains')],
+      'middleware_server_groups'      => [MiddlewareServerGroup,  _('Middleware Server Groups')],
+      'middleware_messagings'         => [MiddlewareMessaging,    _('Middleware Messagings')],
+      'cloud_tenants'                 => [CloudTenant,            _('Cloud Tenants')],
+      'cloud_volumes'                 => [CloudVolume,            _('Cloud Volumes')],
+      'flavors'                       => [Flavor,                 _('Flavors')],
+      'security_groups'               => [SecurityGroup,          _('Security Groups')],
+      'floating_ips'                  => [FloatingIp,             _('Floating IPs')],
+      'network_routers'               => [NetworkRouter,          _('Network Routers')],
+      'network_ports'                 => [NetworkPort,            _('Network Ports')],
+      'cloud_subnets'                 => [CloudSubnet,            _('Cloud Subnets')],
+      'cloud_networks'                => [CloudNetwork,           _('Cloud Networks')],
+      'load_balancers'                => [LoadBalancer,           _('Load Balancers')],
+      'storages'                      => [Storage,                _('Managed Datastores')],
+      'ems_clusters'                  => [EmsCluster,             title_for_clusters],
+      'persistent_volumes'            => [PersistentVolume,       _('Volumes'), :persistent_volumes],
+      'hosts'                         => [Host,                   _("Managed Hosts")],
+    }
+  end
+
+  def show_entities(display)
+    view_setup_helper(display, *view_setup_params[display])
+  end
+
   def show
     @display = params[:display] || "main" unless control_selected?
 
@@ -17,81 +130,24 @@ module EmsCommon
     @showtype = "config"
     drop_breadcrumb({:name => ui_lookup(:tables => @table_name), :url => "/#{@table_name}/show_list?page=#{@current_page}&refresh=y"}, true)
 
-    if ["download_pdf", "main", "summary_only"].include?(@display)
-      get_tagdata(@ems)
-      drop_breadcrumb(:name => @ems.name + _(" (Summary)"), :url => show_link(@ems))
-      @showtype = "main"
-      set_summary_pdf_data if ["download_pdf", "summary_only"].include?(@display)
-    elsif @display == "props"
-      drop_breadcrumb(:name => @ems.name + _(" (Properties)"), :url => show_link(@ems, :display  =>  "props"))
-    elsif @display == "ems_folders"
-      if params[:vat]
-        drop_breadcrumb(:name => @ems.name + _(" (VMs & Templates)"),
-                        :url  => show_link(@ems, :display => "ems_folder", :vat => "true"))
-      else
-        drop_breadcrumb(:name => @ems.name + _(" (Hosts & Clusters)"),
-                        :url  => show_link(@ems, :display => "ems_folders"))
+    case params[:display]
+    when 'main'                          then show_main
+    when 'download_pdf', 'summary_only'  then show_download
+    when 'props'                         then show_props
+    when 'ems_folders'                   then show_ems_folders
+    when 'timeline'                      then show_timeline
+    when 'dashboard'                     then show_dashboard
+    when 'topology'                      then show_topology
+    when 'performance'                   then show_performance
+    when nil
+      if control_selected? # pagination controls
+        show_entities(@display) # display loaded from session
+      else                 # or default display
+        show_main
       end
-      @showtype = "config"
-
-      cluster = @record
-      @datacenter_tree = TreeBuilderVat.new(:vat_tree, :vat, @sb, true, cluster, !!params[:vat])
-      self.x_active_tree = :vat_tree
-
-    elsif @display == "timeline"
-      @showtype = "timeline"
-      session[:tl_record_id] = params[:id] if params[:id]
-      @record = find_by_id_filtered(model, session[:tl_record_id])
-      @timeline = @timeline_filter = true
-      @lastaction = "show_timeline"
-      tl_build_timeline                       # Create the timeline report
-      drop_breadcrumb(:name => _("Timelines"), :url => show_link(@record, :refresh => "n", :display => "timeline"))
-    elsif @display == "dashboard"
-      @showtype = "dashboard"
-      @lastaction = "show_dashboard"
-      drop_breadcrumb(:name => @ems.name + _(" (Dashboard)"), :url => show_link(@ems))
-    elsif @display == "performance"
-      @showtype = "performance"
-      drop_breadcrumb(:name => _("%{name} Capacity & Utilization") % {:name => @record.name},
-                      :url  => "/#{@table_name}/show/#{@record.id}?display=#{@display}&refresh=n")
-      perf_gen_init_options               # Initialize perf chart options, charts will be generated async
-    elsif ["instances", "images", "miq_templates", "vms"].include?(@display) || session[:display] == "vms" && params[:display].nil?
-      if @display == "instances"
-        title = _("Instances")
-        kls = ManageIQ::Providers::CloudManager::Vm
-      elsif @display == "images"
-        title = _("Images")
-        kls = ManageIQ::Providers::CloudManager::Template
-      elsif @display == "miq_templates"
-        title = _("Templates")
-        kls = MiqTemplate
-      elsif @display == "vms"
-        title = _("VMs")
-        kls = Vm
-      end
-      view_setup_helper(kls, title, title.singularize)
-    elsif (display_class = calculate_display_class(@display, (session[:display] unless params[:display])))
-      display_name = display_class.name.underscore.pluralize
-      title = ui_lookup(:tables => display_name)
-      view_setup_helper(display_class, title, title.singularize)
-    elsif @display == "storages" || session[:display] == "storages" && params[:display].nil?
-      title = ui_lookup(:tables => "storages")
-      view_setup_helper(Storage, _("Managed ") + title, title)
-    elsif @display == "ems_clusters"
-      view_setup_helper(EmsCluster, title_for_clusters, "Cluster")
-    elsif @display == "orchestration_stacks" || session[:display] == "orchestration_stacks" && params[:display].nil?
-      title = _("Stacks")
-      view_setup_helper(OrchestrationStack, title, title.singularize)
-    elsif @display == "persistent_volumes" || session[:display] == "persistent_volumes" && params[:display].nil?
-      title = ui_lookup(:tables => "persistent_volumes")
-      view_setup_helper(PersistentVolume, title, title.singularize, :persistent_volumes)
-    elsif @display == "cloud_object_store_containers" ||
-          (session[:display] == "cloud_object_store_containers" && params[:display].nil?)
-      title = ui_lookup(:tables => 'cloud_object_stores')
-      view_setup_helper(CloudObjectStoreContainer, title, title.singularize)
-    else  # Must be Hosts # FIXME !!!
-      view_setup_helper(Host, _("Managed Hosts"), _("Host"))
+    else show_entities(params[:display])
     end
+
     @lastaction = "show"
     session[:tl_record_id] = @record.id
 
@@ -99,27 +155,19 @@ module EmsCommon
     if params[:ppsetting] || params[:searchtag] || params[:entry] || params[:sort_choice]
       replace_gtl_main_div
     end
+
+    render :template => "shared/views/ems_common/show" if params[:action] == 'show' && !performed?
   end
 
-  def calculate_display_class(display_name, session_display)
-    [Container, ContainerReplicator, ContainerNode, ContainerGroup,
-     ContainerService, ContainerImage, ContainerRoute, ContainerBuild,
-     ContainerProject, ContainerImageRegistry, AvailabilityZone,
-     MiddlewareServer, MiddlewareDeployment, MiddlewareDatasource,
-     CloudTenant, CloudVolume, Flavor,
-     SecurityGroup, FloatingIp, NetworkRouter, NetworkPort, CloudSubnet, CloudNetwork].detect do |klass|
-      name = klass.name.underscore.pluralize
-      [display_name, session_display].include?(name)
-    end
-  end
-
-  def view_setup_helper(kls, title, view_item_name, parent_method = nil)
+  def view_setup_helper(display, kls, title, parent_method = nil)
     drop_breadcrumb(:name => @ems.name + _(" (All %{title})") % {:title => title},
-                    :url  => show_link(@ems, :display => @display))
+                    :url  => show_link(@ems, :display => display))
     opts = {:parent => @ems}
     opts[:parent_method] = parent_method if parent_method
     @view, @pages = get_view(kls, **opts)
-    @showtype = @display
+
+    # display need's to be set so that it's stored in the session
+    @showtype = @display = display
   end
 
   # Show the main MS list view
@@ -159,10 +207,7 @@ module EmsCommon
       if !@flash_array && valid_record?(add_ems) && add_ems.save
         AuditEvent.success(build_created_audit(add_ems, @edit))
         session[:edit] = nil  # Clear the edit object from the session object
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to :action => 'show_list', :flash_msg => _("%{model} \"%{name}\" was saved") % {:model => ui_lookup(:tables => @table_name), :name => add_ems.name}
-        end
+        javascript_redirect :action => 'show_list', :flash_msg => _("%{model} \"%{name}\" was saved") % {:model => ui_lookup(:tables => @table_name), :name => add_ems.name}
       else
         @in_a_form = true
         unless @flash_array
@@ -173,10 +218,7 @@ module EmsCommon
         end
         drop_breadcrumb(:name => _("Add New %{table}") % {:table => ui_lookup(:table => @table_name)},
                         :url  => "/#{@table_name}/new")
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
       end
     when "validate"
       verify_ems = model.model_from_emstype(@edit[:new][:emstype]).new
@@ -187,11 +229,17 @@ module EmsCommon
   def edit
     @doc_url = provider_documentation_url
     assert_privileges("#{permission_prefix}_edit")
-    @ems = find_by_id_filtered(model, params[:id])
+    begin
+      @ems = find_by_id_filtered(model, params[:id])
+    rescue => err
+      return redirect_to(:action      => @lastaction || "show_list",
+                         :flash_msg   => err.message,
+                         :flash_error => true)
+    end
     set_form_vars
     @in_a_form = true
     session[:changed] = false
-    drop_breadcrumb(:name => "Edit #{ui_lookup(:tables => @table_name)} '#{@ems.name}'",
+    drop_breadcrumb(:name => _("Edit %{object_type} '%{object_name}'") % {:object_type => ui_lookup(:tables => @table_name), :object_name => @ems.name},
                     :url  => "/#{@table_name}/#{@ems.id}/edit")
   end
 
@@ -254,11 +302,14 @@ module EmsCommon
   def update_button_cancel
     session[:edit] = nil  # clean out the saved info
     _model = model
-    render :update do |page|
-      page << javascript_prologue
-      page.redirect_to(:action => @lastaction, :id => @ems.id, :display => session[:ems_display],
-                       :flash_msg => _("Edit of %{model} \"%{name}\" was cancelled by the user") %
-                       {:model => ui_lookup(:model => _model.to_s), :name => @ems.name})
+    flash = _("Edit of %{model} \"%{name}\" was cancelled by the user") %
+            {:model => ui_lookup(:model => _model.to_s), :name => @ems.name}
+    if restful_routed?(model)
+      javascript_redirect polymorphic_path(model.find(params[:id]), :escape => false, :load_edit_err => true,
+                                           :flash_msg => flash)
+    else
+      javascript_redirect :action => @lastaction, :id => @ems.id, :display => session[:ems_display],
+                          :flash_msg => flash
     end
   end
   private :update_button_cancel
@@ -277,9 +328,10 @@ module EmsCommon
               {:model => ui_lookup(:model => model.to_s), :name => update_ems.name}
       AuditEvent.success(build_saved_audit(update_ems, @edit))
       session[:edit] = nil  # clean out the saved info
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to :action => 'show', :id => @ems.id.to_s, :flash_msg => flash
+      if restful_routed?(model)
+        javascript_redirect polymorphic_path(model.find(params[:id]), :flash_msg => flash)
+      else
+        javascript_redirect :action => 'show', :id => @ems.id.to_s, :flash_msg => flash
       end
       return
     else
@@ -287,9 +339,14 @@ module EmsCommon
       update_ems.errors.each do |field, msg|
         add_flash("#{field.to_s.capitalize} #{msg}", :error)
       end
+
+      breadcrumb_url = "/#{@table_name}/edit/#{@ems.id}"
+
+      breadcrumb_url = "/#{@table_name}/#{@ems.id}/edit" if restful_routed?(model)
+
       drop_breadcrumb(:name => _("Edit %{table} '%{name}'") % {:table => ui_lookup(:table => @table_name),
                                                                :name  => @ems.name},
-                      :url  => "/#{@table_name}/edit/#{@ems.id}")
+                      :url  => breadcrumb_url)
       @in_a_form = true
       session[:changed] = changed
       @changed = true
@@ -304,10 +361,7 @@ module EmsCommon
     @in_a_form = true
     set_verify_status
     session[:flash_msgs] = @flash_array.dup                 # Put msgs in session for next transaction
-    render :update do |page|
-      page << javascript_prologue
-      page.redirect_to :action => 'edit', :id => @ems.id.to_s
-    end
+    javascript_redirect :action => 'edit', :id => @ems.id.to_s
   end
   private :update_button_reset
 
@@ -338,38 +392,73 @@ module EmsCommon
   # handle buttons pressed on the button bar
   def button
     @edit = session[:edit]                                  # Restore @edit for adv search box
+
     params[:display] = @display if ["vms", "hosts", "storages", "instances", "images"].include?(@display)  # Were we displaying vms/hosts/storages
     params[:page] = @current_page unless @current_page.nil?   # Save current page for list refresh
 
-    if params[:pressed].starts_with?("vm_", # Handle buttons from sub-items screen
-                                     "miq_template_",
+    # Handle buttons from sub-items screen
+    if params[:pressed].starts_with?("availability_zone_",
+                                     "cloud_network_",
+                                     "cloud_object_store_container_",
+                                     "cloud_subnet_",
+                                     "cloud_tenant_",
+                                     "cloud_volume_",
+                                     "ems_cluster_",
+                                     "flavor_",
+                                     "floating_ip_",
                                      "guest_",
+                                     "host_",
                                      "image_",
                                      "instance_",
+                                     "load_balancer_",
+                                     "miq_template_",
+                                     "network_port_",
+                                     "network_router_",
+                                     "orchestration_stack_",
+                                     "security_group_",
                                      "storage_",
-                                     "ems_cluster_",
-                                     "host_")
+                                     "vm_")
 
-      scanhosts if params[:pressed] == "host_scan"
-      analyze_check_compliance_hosts if params[:pressed] == "host_analyze_check_compliance"
-      check_compliance_hosts if params[:pressed] == "host_check_compliance"
-      refreshhosts if params[:pressed] == "host_refresh"
-      tag(Host) if params[:pressed] == "host_tag"
-      assign_policies(Host) if params[:pressed] == "host_protect"
-      deletehosts if params[:pressed] == "host_delete"
-      comparemiq if params[:pressed] == "host_compare"
-      edit_record  if params[:pressed] == "host_edit"
-
-      scanclusters if params[:pressed] == "ems_cluster_scan"
-      tag(EmsCluster) if params[:pressed] == "ems_cluster_tag"
-      assign_policies(EmsCluster) if params[:pressed] == "ems_cluster_protect"
-      deleteclusters if params[:pressed] == "ems_cluster_delete"
-      comparemiq if params[:pressed] == "ems_cluster_compare"
-
-      scanstorage if params[:pressed] == "storage_scan"
-      refreshstorage if params[:pressed] == "storage_refresh"
-      tag(Storage) if params[:pressed] == "storage_tag"
-      deletestorages if params[:pressed] == "storage_delete"
+      case params[:pressed]
+      # Clusters
+      when "ems_cluster_compare"              then comparemiq
+      when "ems_cluster_delete"               then deleteclusters
+      when "ems_cluster_protect"              then assign_policies(EmsCluster)
+      when "ems_cluster_scan"                 then scanclusters
+      when "ems_cluster_tag"                  then tag(EmsCluster)
+      # Hosts
+      when "host_analyze_check_compliance"    then analyze_check_compliance_hosts
+      when "host_check_compliance"            then check_compliance_hosts
+      when "host_compare"                     then comparemiq
+      when "host_delete"                      then deletehosts
+      when "host_edit"                        then edit_record
+      when "host_protect"                     then assign_policies(Host)
+      when "host_refresh"                     then refreshhosts
+      when "host_scan"                        then scanhosts
+      when "host_tag"                         then tag(Host)
+      when "host_manageable"                  then sethoststomanageable
+      when "host_introspect"                  then introspecthosts
+      when "host_provide"                     then providehosts
+      # Storages
+      when "storage_delete"                   then deletestorages
+      when "storage_refresh"                  then refreshstorage
+      when "storage_scan"                     then scanstorage
+      when "storage_tag"                      then tag(Storage)
+      # Edit Tags for Network Manager Relationship pages
+      when "availability_zone_tag"            then tag(AvailabilityZone)
+      when "cloud_network_tag"                then tag(CloudNetwork)
+      when "cloud_object_store_container_tag" then tag(CloudObjectStoreContainer)
+      when "cloud_subnet_tag"                 then tag(CloudSubnet)
+      when "cloud_tenant_tag"                 then tag(CloudTenant)
+      when "cloud_volume_tag"                 then tag(CloudVolume)
+      when "flavor_tag"                       then tag(Flavor)
+      when "floating_ip_tag"                  then tag(FloatingIp)
+      when "load_balancer_tag"                then tag(LoadBalancer)
+      when "network_port_tag"                 then tag(NetworkPort)
+      when "network_router_tag"               then tag(NetworkRouter)
+      when "orchestration_stack_tag"          then tag(OrchestrationStack)
+      when "security_group_tag"               then tag(SecurityGroup)
+      end
 
       pfx = pfx_for_vm_button_pressed(params[:pressed])
       # Handle Host power buttons
@@ -398,6 +487,9 @@ module EmsCommon
       @refresh_div = "main_div" # Default div for button.rjs to refresh
       redirect_to :action => "new" if params[:pressed] == "new"
       deleteemss if params[:pressed] == "#{@table_name}_delete"
+      arbitration_profile_edit if params[:pressed] == "arbitration_profile_new"
+      arbitration_profile_edit if params[:pressed] == "arbitration_profile_edit"
+      arbitration_profile_delete if params[:pressed] == "arbitration_profile_delete"
       refreshemss if params[:pressed] == "#{@table_name}_refresh"
       #     scanemss if params[:pressed] == "scan"
       tag(model) if params[:pressed] == "#{@table_name}_tag"
@@ -411,10 +503,7 @@ module EmsCommon
         tl_build_timeline                       # Create the timeline report
         drop_breadcrumb(:name => _("Timelines"), :url => show_link(@record, :refresh => "n", :display => "timeline"))
         session[:tl_record_id] = @record.id
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to  polymorphic_path(@record, :display => 'timeline')
-        end
+        javascript_redirect polymorphic_path(@record, :display => 'timeline')
         return
       end
       if params[:pressed] == "#{@table_name}_perf"
@@ -423,30 +512,35 @@ module EmsCommon
         drop_breadcrumb(:name => _("%{name} Capacity & Utilization") % {:name => @record.name},
                         :url  => show_link(@record, :refresh => "n", :display => "performance"))
         perf_gen_init_options # Intialize options, charts are generated async
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to polymorphic_path(@record, :display => "performance")
-        end
+        javascript_redirect polymorphic_path(@record, :display => "performance")
         return
       end
       if params[:pressed] == "refresh_server_summary"
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to  :back
-        end
+        javascript_redirect :back
         return
       end
-      if params[:pressed] == "ems_cloud_recheck_auth_status" ||
-         params[:pressed] == "ems_infra_recheck_auth_status" ||
+      if params[:pressed] == "ems_cloud_recheck_auth_status"     ||
+         params[:pressed] == "ems_infra_recheck_auth_status"     ||
+         params[:pressed] == "ems_middleware_recheck_auth_status" ||
          params[:pressed] == "ems_container_recheck_auth_status"
-        @record = find_by_id_filtered(model, params[:id])
-        result, details = @record.authentication_check_types_queue(@record.authentication_for_summary.pluck(:authtype),
-                                                                   :save => true)
-        if result
-          add_flash(_("Authentication status will be saved and workers will be restarted for this #{ui_lookup(:table => controller_name)}"))
+        if params[:id]
+          table_key = :table
+          _result, details = recheck_authentication
+          add_flash(_("Re-checking Authentication status for this %{controller_name} was not successful: %{details}") %
+                        {:controller_name => ui_lookup(:table => controller_name), :details => details}, :error) if details
         else
-          add_flash(_("Re-checking Authentication status for this #{ui_lookup(:table => "ems_cloud")} was not successful: %{details}") % {:details => details}, :error)
+          table_key = :tables
+          ems_ids = find_checked_items
+          ems_ids.each do |ems_id|
+            _result, details = recheck_authentication(ems_id)
+            add_flash(_("Re-checking Authentication status for the selected %{controller_name} %{name} was not successful: %{details}") %
+                          {:controller_name => ui_lookup(:table => controller_name),
+                           :name            => @record.name,
+                           :details         => details}, :error) if details
+          end
         end
+        add_flash(_("Authentication status will be saved and workers will be restarted for the selected %{controller_name}") %
+                      {:controller_name => ui_lookup(table_key => controller_name)})
         render_flash
         return
       end
@@ -460,27 +554,99 @@ module EmsCommon
     end
 
     if !@flash_array.nil? && params[:pressed] == "#{@table_name}_delete" && @single_delete
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to :action => 'show_list', :flash_msg => @flash_array[0][:message]  # redirect to build the retire screen
-      end
-    elsif params[:pressed].ends_with?("_edit") || ["#{pfx}_miq_request_new", "#{pfx}_clone",
+      javascript_redirect :action => 'show_list', :flash_msg => @flash_array[0][:message] # redirect to build the retire screen
+    elsif params[:pressed] == "host_aggregate_edit"
+      javascript_redirect :controller => "host_aggregate", :action => "edit", :id => find_checked_items[0]
+    elsif params[:pressed] == "cloud_tenant_edit"
+      javascript_redirect :controller => "cloud_tenant", :action => "edit", :id => find_checked_items[0]
+    elsif params[:pressed] == "cloud_volume_edit"
+      javascript_redirect :controller => "cloud_volume", :action => "edit", :id => find_checked_items[0]
+    elsif params[:pressed].ends_with?("_edit") || ["arbitration_profile_new", "#{pfx}_miq_request_new", "#{pfx}_clone",
                                                    "#{pfx}_migrate", "#{pfx}_publish"].include?(params[:pressed])
       render_or_redirect_partial(pfx)
     else
       if @refresh_div == "main_div" && @lastaction == "show_list"
         replace_gtl_main_div
       else
-        render_flash
+        render_flash unless performed?
       end
     end
+  end
+
+  def recheck_authentication(id = nil)
+    @record = find_by_id_filtered(model, id || params[:id])
+    @record.authentication_check_types_queue(@record.authentication_for_summary.pluck(:authtype), :save => true)
+  end
+
+  def arbitration_profile_edit
+    assert_privileges("arbitration_profile_edit")
+    id = params[:show] ? params[:show] : find_checked_items.first
+    @arbitration_profile = id ? find_by_id_filtered(ArbitrationProfile, from_cid(id)) : ArbitrationProfile.new
+    @refresh_partial = "arbitration_profile_edit"
+    @redirect_id = @arbitration_profile.try(:id) || nil
+    @in_a_form = true
+    @title = _("Arbitration Profiles")
   end
 
   def provider_documentation_url
     "http://manageiq.org/documentation/getting-started/#adding-a-provider"
   end
 
+  def arbitration_profiles
+    @db = params[:db] ? params[:db] : request.parameters[:controller]
+    get_record(@db)
+    return if record_no_longer_exists?(@record)
+    @lastaction = "arbitration_profiles"
+    params[:show].nil? ? fetch_arbitration_profiles_list : fetch_arbitration_profile_item
+  end
+
   private ############################
+
+  def fetch_arbitration_profiles_list
+    generate_breadcrumb(@record.name, "/#{@db}/show/#{@record.id}", true)
+    generate_breadcrumb(_("%{name} (Arbitration Profiles)") % {:name => @record.name}, "/#{@db}/arbitration_profiles/#{@record.id}")
+    @listicon = "arbitration_profile"
+    @no_checkboxes = false
+    show_details(ArbitrationProfile)
+  end
+
+  def fetch_arbitration_profile_item
+    @item = ArbitrationProfile.find_by_id(from_cid(params[:show]))
+    generate_breadcrumb(_("%{name} (Arbitration Profiles)") % {:name => @record.name}, "/#{@db}/arbitration_profiles/#{@record.id}?page=#{@current_page}")
+    generate_breadcrumb(@item.name, "/#{@db}/show/#{@record.id}?show=#{@item.id}")
+    @view = get_db_view(ArbitrationProfile) # Instantiate the MIQ Report view object
+    show_item
+  end
+
+  def arbitration_profile_delete
+    assert_privileges("arbitration_profile_delete")
+    profiles = profiles_to_delete
+    process_elements(profiles, ArbitrationProfile, "destroy") unless profiles.empty?
+    add_flash(_("Delete initiated for %{count_model} from the Database") %
+                {:count_model => pluralize(profiles.length,
+                                           ui_lookup(:table => "ArbitrationProfile"))}) if @flash_array.nil?
+    params.delete(:show) unless flash_errors?
+    @_params[:db] = "ems_cloud"
+    arbitration_profiles
+  end
+
+  def profiles_to_delete
+    if params[:miq_grid_checks] # showing a list
+      profiles = find_checked_items
+      add_flash(_("No %{record} were selected for deletion") %
+                  {:record => ui_lookup(:table => "ArbitrationProfile")}, :error) if profiles.empty?
+    elsif params[:show].nil? || ArbitrationProfile.find_by_id(from_cid(params[:show])).nil? # showing 1 item
+      profiles = []
+      add_flash(_("%{record} no longer exists") % {:record => ui_lookup(:table => "ArbitrationProfile")}, :error)
+    else # showing 1 item
+      profiles.push(from_cid(params[:show]))
+    end
+    profiles
+  end
+
+  def generate_breadcrumb(name, url, replace = false)
+    drop_breadcrumb({:name => name, :url => url}, replace)
+  end
 
   def set_verify_status
     edit_new = @edit[:new]
@@ -609,6 +775,8 @@ module EmsCommon
     end
 
     @edit[:openstack_api_versions] = retrieve_openstack_api_versions
+    @edit[:nuage_api_versions]     = retrieve_nuage_api_versions
+    @edit[:vmware_cloud_api_versions] = retrieve_vmware_cloud_api_versions
 
     @edit[:new][:default_userid] = @ems.authentication_userid
     @edit[:new][:default_password] = @ems.authentication_password
@@ -654,17 +822,20 @@ module EmsCommon
     @provider_regions = retrieve_provider_regions
     @openstack_infra_providers = retrieve_openstack_infra_providers
     @openstack_security_protocols = retrieve_openstack_security_protocols
-    @openstack_amqp_security_protocols = retrieve_openstack_amqp_security_protocols
+    @amqp_security_protocols = retrieve_amqp_security_protocols
+    @nuage_security_protocols = retrieve_nuage_security_protocols
     @scvmm_security_protocols = [[_('Basic (SSL)'), 'ssl'], ['Kerberos', 'kerberos']]
     @openstack_api_versions = retrieve_openstack_api_versions
+    @vmware_cloud_api_versions = retrieve_vmware_cloud_api_versions
     @emstype_display = model.supported_types_and_descriptions_hash[@ems.emstype]
+    @nuage_api_versions = retrieve_nuage_api_versions
   end
 
   def retrieve_provider_regions
-    cloud_managers = model.supported_subclasses.select { |c| c.is_available?(:regions) }
-    cloud_managers.each_with_object({}) do |cloud_manager, provider_regions|
-      regions = cloud_manager.parent::Regions.all.sort_by { |r| r[:description] }
-      provider_regions[cloud_manager.ems_type] = regions.map do |region|
+    managers = model.supported_subclasses.select(&:supports_regions?)
+    managers.each_with_object({}) do |manager, provider_regions|
+      regions = manager.parent::Regions.all.sort_by { |r| r[:description] }
+      provider_regions[manager.ems_type] = regions.map do |region|
         [region[:description], region[:name]]
       end
     end
@@ -679,11 +850,27 @@ module EmsCommon
     [['Keystone v2', 'v2'], ['Keystone v3', 'v3']]
   end
 
-  def retrieve_openstack_security_protocols
+  def retrieve_vmware_cloud_api_versions
+    [['vCloud API 5.1', '5.1'], ['vCloud API 5.5', '5.5'], ['vCloud API 5.6', '5.6'], ['vCloud API 9.0', '9.0']]
+  end
+
+  def retrieve_nuage_api_versions
+    [['Version 3.2', 'v3_2'], ['Version 4.0', 'v4_0']]
+  end
+
+  def retrieve_security_protocols
     [[_('SSL without validation'), 'ssl'], [_('SSL'), 'ssl-with-validation'], [_('Non-SSL'), 'non-ssl']]
   end
 
-  def retrieve_openstack_amqp_security_protocols
+  def retrieve_openstack_security_protocols
+    retrieve_security_protocols
+  end
+
+  def retrieve_nuage_security_protocols
+    retrieve_security_protocols
+  end
+
+  def retrieve_amqp_security_protocols
     # OSP8 doesn't support SSL for AMQP
     [[_('Non-SSL'), 'non-ssl']]
   end
@@ -707,12 +894,8 @@ module EmsCommon
         @edit[:new][:port] = @ems.port ? @ems.port : ManageIQ::Providers::Kubernetes::ContainerManager::DEFAULT_PORT
       elsif params[:server_emstype] == ManageIQ::Providers::Openshift::ContainerManager.ems_type
         @edit[:new][:port] = @ems.port ? @ems.port : ManageIQ::Providers::Openshift::ContainerManager::DEFAULT_PORT
-      elsif params[:server_emstype] == ManageIQ::Providers::Atomic::ContainerManager.ems_type
-        @edit[:new][:port] = @ems.port ? @ems.port : ManageIQ::Providers::Atomic::ContainerManager::DEFAULT_PORT
       elsif params[:server_emstype] == ManageIQ::Providers::OpenshiftEnterprise::ContainerManager.ems_type
         @edit[:new][:port] = @ems.port ? @ems.port : ManageIQ::Providers::OpenshiftEnterprise::ContainerManager::DEFAULT_PORT
-      elsif params[:server_emstype] == ManageIQ::Providers::AtomicEnterprise::ContainerManager.ems_type
-        @edit[:new][:port] = @ems.port ? @ems.port : ManageIQ::Providers::AtomicEnterprise::ContainerManager::DEFAULT_PORT
       else
         @edit[:new][:port] = nil
       end
@@ -807,12 +990,16 @@ module EmsCommon
 
     if task == "refresh_ems"
       model.refresh_ems(emss, true)
-      add_flash(_("%{task} initiated for %{count_model} from the CFME Database") % \
-        {:task        => task_name(task).gsub("Ems", "#{ui_lookup(:tables => @table_name)}"),
-         :count_model => pluralize(emss.length, ui_lookup(:table => @table_name))})
+      add_flash(n_("%{task} initiated for %{count} %{model} from the %{product} Database",
+                   "%{task} initiated for %{count} %{models} from the %{product} Database", emss.length) % \
+        {:task    => task_name(task).gsub("Ems", ui_lookup(:tables => @table_name)),
+         :count   => emss.length,
+         :product => I18n.t('product.name'),
+         :model   => ui_lookup(:table => @table_name),
+         :models  => ui_lookup(:tables => @table_name)})
       AuditEvent.success(:userid => session[:userid], :event => "#{@table_name}_#{task}",
           :message => _("'%{task}' successfully initiated for %{table}") %
-            {:task => task, :table => pluralize(emss.length, "#{ui_lookup(:tables => @table_name)}")},
+            {:task => task, :table => pluralize(emss.length, ui_lookup(:tables => @table_name).to_s)},
           :target_class => model.to_s)
     elsif task == "destroy"
       model.where(:id => emss).order("lower(name)").each do |ems|
@@ -826,21 +1013,19 @@ module EmsCommon
         AuditEvent.success(audit)
       end
       model.destroy_queue(emss)
-      add_flash(_("Delete initiated for %{count_model} from the CFME Database") %
-        {:count_model => pluralize(emss.length, ui_lookup(:table => @table_name))}) if @flash_array.nil?
+      add_flash(n_("Delete initiated for %{count} %{model} from the %{product} Database",
+                   "Delete initiated for %{count} %{models} from the %{product} Database", emss.length) %
+        {:count   => emss.length,
+         :product => I18n.t('product.name'),
+         :model   => ui_lookup(:table => @table_name),
+         :models  => ui_lookup(:tables => @table_name)}) if @flash_array.nil?
     else
       model.where(:id => emss).order("lower(name)").each do |ems|
         id = ems.id
         ems_name = ems.name
-        if task == "destroy"
-          audit = {:event     => "ems_record_delete",
-                   :message   => _("[%{name}] Record deleted") % {:name => ems_name},
-                   :target_id => id, :target_class => model.to_s,
-                   :userid    => session[:userid]}
-        end
         begin
           ems.send(task.to_sym) if ems.respond_to?(task)    # Run the task
-        rescue StandardError => bang
+        rescue => bang
           add_flash(_("%{model} \"%{name}\": Error during '%{task}': %{error_message}") %
             {:model => model.to_s, :name => ems_name, :task => task, :error_message => bang.message}, :error)
           AuditEvent.failure(:userid => session[:userid], :event => "#{@table_name}_#{task}",
@@ -848,18 +1033,10 @@ module EmsCommon
                           {:name => ems_name, :task => task, :message => bang.message},
             :target_class => model.to_s, :target_id => id)
         else
-          if task == "destroy"
-            AuditEvent.success(audit)
-            add_flash(_("%{model} \"%{name}\": Delete successful") % {:model => ui_lookup(:model => model.to_s), :name => ems_name})
-            AuditEvent.success(:userid => session[:userid], :event => "#{@table_name}_#{task}",
-              :message      => _("%{name}: Delete successful") % {:name => ems_name},
-              :target_class => model.to_s, :target_id => id)
-          else
-            add_flash(_("%{model} \"%{name}\": %{task} successfully initiated") % {:model => model.to_s, :name => ems_name, :task => task})
-            AuditEvent.success(:userid => session[:userid], :event => "#{@table_name}_#{task}",
-              :message      => _("%{name}: '%{task}' successfully initiated") % {:name => ems_name, :task => task},
-              :target_class => model.to_s, :target_id => id)
-          end
+          add_flash(_("%{model} \"%{name}\": %{task} successfully initiated") % {:model => model.to_s, :name => ems_name, :task => task})
+          AuditEvent.success(:userid => session[:userid], :event => "#{@table_name}_#{task}",
+                             :message      => _("%{name}: '%{task}' successfully initiated") % {:name => ems_name, :task => task},
+                             :target_class => model.to_s, :target_id => id)
         end
       end
     end
@@ -875,8 +1052,12 @@ module EmsCommon
         add_flash(_("No %{record} were selected for deletion") % {:record => ui_lookup(:table => @table_name)}, :error)
       end
       process_emss(emss, "destroy") unless emss.empty?
-      add_flash(_("Delete initiated for %{count_model} from the CFME Database") %
-        {:count_model => pluralize(emss.length, ui_lookup(:table => @table_name))}) if @flash_array.nil?
+      add_flash(n_("Delete initiated for %{count} %{model} from the %{product} Database",
+                   "Delete initiated for %{count} %{models} from the %{product} Database", emss.length) %
+        {:count   => emss.length,
+         :product => I18n.t('product.name'),
+         :model   => ui_lookup(:table => @table_name),
+         :models  => ui_lookup(:tables => @table_name)}) if @flash_array.nil?
     else # showing 1 ems, scan it
       if params[:id].nil? || model.find_by_id(params[:id]).nil?
         add_flash(_("%{record} no longer exists") % {:record => ui_lookup(:table => @table_name)}, :error)
@@ -904,8 +1085,12 @@ module EmsCommon
         add_flash(_("No %{model} were selected for scanning") % {:model => ui_lookup(:table => @table_name)}, :error)
       end
       process_emss(emss, "scan")  unless emss.empty?
-      add_flash(_("Analysis initiated for %{count_model} from the CFME Database") %
-        {:count_model => pluralize(emss.length, ui_lookup(:tables => @table_name))}) if @flash_array.nil?
+      add_flash(n_("Analysis initiated for %{count} %{model} from the %{product} Database",
+                   "Analysis initiated for %{count} %{models} from the %{product} Database", emss.length) %
+        {:count   => emss.length,
+         :product => I18n.t('product.name'),
+         :model   => ui_lookup(:table => @table_name),
+         :models  => ui_lookup(:tables => @table_name)}) if @flash_array.nil?
       show_list
       @refresh_partial = "layouts/gtl"
     else # showing 1 ems, scan it
@@ -915,8 +1100,12 @@ module EmsCommon
         emss.push(params[:id])
       end
       process_emss(emss, "scan")  unless emss.empty?
-      add_flash(_("Analysis initiated for %{count_model} from the CFME Database") %
-        {:count_model => pluralize(emss.length, ui_lookup(:tables => @table_name))}) if @flash_array.nil?
+      add_flash(n_("Analysis initiated for %{count} %{model} from the %{product} Database",
+                   "Analysis initiated for %{count} %{models} from the %{product} Database", emss.length) %
+        {:count   => emss.length,
+         :product => I18n.t('product.name'),
+         :model   => ui_lookup(:table => @table_name),
+         :models  => ui_lookup(:tables => @table_name)}) if @flash_array.nil?
       params[:display] = @display
       show
       if ["vms", "hosts", "storages"].include?(@display)
@@ -937,8 +1126,12 @@ module EmsCommon
         add_flash(_("No %{model} were selected for refresh") % {:model => ui_lookup(:table => @table_name)}, :error)
       end
       process_emss(emss, "refresh_ems") unless emss.empty?
-      add_flash(_("Refresh initiated for %{count_model} from the CFME Database") %
-        {:count_model => pluralize(emss.length, ui_lookup(:tables => @table_name))}) if @flash_array.nil?
+      add_flash(n_("Refresh initiated for %{count} %{model} from the %{product} Database",
+                   "Refresh initiated for %{count} %{models} from the %{product} Database", emss.length) %
+        {:count   => emss.length,
+         :product => I18n.t('product.name'),
+         :model   => ui_lookup(:table => @table_name),
+         :models  => ui_lookup(:tables => @table_name)}) if @flash_array.nil?
       show_list
       @refresh_partial = "layouts/gtl"
     else # showing 1 ems, scan it
@@ -948,8 +1141,12 @@ module EmsCommon
         emss.push(params[:id])
       end
       process_emss(emss, "refresh_ems") unless emss.empty?
-      add_flash(_("Refresh initiated for %{count_model} from the CFME Database") %
-        {:count_model => pluralize(emss.length, ui_lookup(:tables => @table_name))}) if @flash_array.nil?
+      add_flash(n_("Refresh initiated for %{count} %{model} from the %{product} Database",
+                   "Refresh initiated for %{count} %{models} from the %{product} Database", emss.length) %
+        {:count   => emss.length,
+         :product => I18n.t('product.name'),
+         :model   => ui_lookup(:table => @table_name),
+         :models  => ui_lookup(:tables => @table_name)}) if @flash_array.nil?
       params[:display] = @display
       show
       if ["vms", "hosts", "storages"].include?(@display)
@@ -963,7 +1160,7 @@ module EmsCommon
   # true, if any of the given fields are either missing from or blank in hash
   def any_blank_fields?(hash, fields)
     fields = [fields] unless fields.kind_of? Array
-    fields.any? { |f| !hash.key?(f) || hash[f].blank? }
+    fields.any? { |f| hash[f].blank? }
   end
 
   def get_session_data
@@ -996,6 +1193,13 @@ module EmsCommon
   def show_link(ems, options = {})
     url_for(options.merge(:controller => @table_name,
                           :action     => "show",
+                          :id         => ems.id,
+                          :only_path  => true))
+  end
+
+  def show_list_link(ems, options = {})
+    url_for(options.merge(:controller => @table_name,
+                          :action     => "show_list",
                           :id         => ems.id,
                           :only_path  => true))
   end

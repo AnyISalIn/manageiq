@@ -2,7 +2,7 @@
   #tab_div
     %h3
       = _("Messages")
-    = render(:partial => "layouts/flash_msg", :locals => {:click_remove => false})
+    = render(:partial => "layouts/flash_msg")
     %hr/
     %h3
       = _("Upload %{customer_name} Tag Assignments for VMs") % {:customer_name => session[:customer_name]}
@@ -15,12 +15,7 @@
                      :method    => :post) do
             .form-group
               .col-md-4
-                = file_field("upload",
-                             "file",
-                             :class => "filestyle",
-                             "data-buttonName" => "btn-default")
-                :javascript
-                  $(":file").filestyle({icon: false, placeholder: "No file chosen"});
+                = render :partial => "shared/file_chooser", :locals => {:object_name => "upload", :method => "file"}
               .col-md-6
                 = submit_tag(_("Upload"), :id => "upload_tags", :class => "btn btn-default")
                 = _("* Requirements: CSV formatted file.")

@@ -3,6 +3,7 @@ describe ManageIQ::Providers::Redhat::InfraManager::Refresher do
     guid, server, zone = EvmSpecHelper.create_guid_miq_server_zone
     @ems = FactoryGirl.create(:ems_redhat, :zone => zone, :hostname => "192.168.252.230", :ipaddress => "192.168.252.230", :port => 443)
     @ems.update_authentication(:default => {:userid => "evm@manageiq.com", :password => "password"})
+    allow(@ems).to receive(:supported_api_versions).and_return([3])
   end
 
   it ".ems_type" do
@@ -183,10 +184,10 @@ describe ManageIQ::Providers::Redhat::InfraManager::Refresher do
 
     expect(@host.operating_system).to have_attributes(
       :name         => "192.168.252.232", # TODO: ?????
-      :product_name => "linux",
+      :product_name => "rhel",
       :version      => nil,
       :build_number => nil,
-      :product_type => nil
+      :product_type => "linux"
     )
 
     expect(@host.system_services.size).to eq(0)

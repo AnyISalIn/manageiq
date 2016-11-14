@@ -23,9 +23,9 @@ class RssFeed < ApplicationRecord
 
     options = {
       :feed => {
-        :title       => "#{title}",
+        :title       => title.to_s,
         :link        => "#{host_url}#{link}",
-        :description => "#{description}"
+        :description => description.to_s
       },
       :item => {
         :title       => proc { |rec| RssFeed.eval_item_attr(self.options[:item_title], rec) },
@@ -50,8 +50,8 @@ class RssFeed < ApplicationRecord
       output << '<td>'
       output << i.title
       output << '<br/>'
-      pubDate = (i.pubDate.blank? || i.pubDate == "") ? "" : format_timezone(i.pubDate, options[:tz], "raw")
-      output << "Date : #{pubDate}"
+      pub_date = i.pubDate.blank? ? "" : format_timezone(i.pubDate, options[:tz], "raw")
+      output << "Date : #{pub_date}"
       output << '</td>'
       output << '</tr>'
     end

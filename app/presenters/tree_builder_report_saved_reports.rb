@@ -10,10 +10,7 @@ class TreeBuilderReportSavedReports < TreeBuilderReportReportsClass
 
   def set_locals_for_render
     locals = super
-    locals.merge!(
-      :id_prefix => 'savedreports_',
-      :autoload  => true
-    )
+    locals.merge!(:autoload => true)
   end
 
   def root_options
@@ -32,11 +29,11 @@ class TreeBuilderReportSavedReports < TreeBuilderReportReportsClass
     folder_ids.sort.each_with_index do |p|
       objects.push(:id => p[1], :text => p[0], :image => 'report', :tip => p[0])
     end
-    count_only_or_objects(count_only, objects, nil)
+    count_only_or_objects(count_only, objects)
   end
 
   def x_get_tree_custom_kids(object, count_only, _options)
     scope = MiqReportResult.with_current_user_groups_and_report(from_cid(object[:id].split('-').last))
-    count_only ? scope.size : scope.order("last_run_on DESC").to_a
+    count_only ? scope.size : scope.order("last_run_on DESC").includes(:miq_task).to_a
   end
 end

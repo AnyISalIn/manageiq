@@ -43,6 +43,7 @@ module Sandbox
     cb_assignments_tree
     cb_rates_tree
     cb_reports_tree
+    cluster_tree
     configuration_scripts_tree
     condition_tree
     containers_tree
@@ -50,6 +51,7 @@ module Sandbox
     cs_filter_tree
     customization_templates_tree
     datacenter_tree
+    datastore_tree
     db_tree
     df_tree
     diagnostics_tree
@@ -60,6 +62,7 @@ module Sandbox
     export_tree
     images_filter_tree
     images_tree
+    infra_networking_tree
     instances_filter_tree
     instances_tree
     iso_datastores_tree
@@ -69,17 +72,23 @@ module Sandbox
     network_tree
     policy_profile_tree
     policy_tree
+    policy_simulation_tree
+    protect_tree
     pxe_image_types_tree
     pxe_servers_tree
     configuration_manager_providers_tree
     rbac_tree
     reports_tree
+    roles_by_server_tree
     roles_tree
+    rsop_tree
     sa_tree
     sandt_tree
     savedreports_tree
     schedules_tree
+    servers_by_role_tree
     settings_tree
+    snapshot_tree
     stcat_tree
     storage_tree
     storage_pod_tree
@@ -122,6 +131,7 @@ module Sandbox
     images_filter
     instances
     instances_filter
+    infra_networking
     iso_datastores
     old_dialogs
     ot

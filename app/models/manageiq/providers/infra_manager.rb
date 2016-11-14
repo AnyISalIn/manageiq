@@ -3,6 +3,7 @@ module ManageIQ::Providers
     require_nested :Template
     require_nested :ProvisionWorkflow
     require_nested :Vm
+    require_nested :VmOrTemplate
 
     include AvailabilityMixin
 
@@ -43,12 +44,12 @@ module ManageIQ::Providers
       [read_timeout, open_timeout]
     end
 
-    def validate_timeline
+    def validate_authentication_status
       {:available => true, :message => nil}
     end
 
-    def validate_authentication_status
-      {:available => true, :message => nil}
+    def validate_import_vm
+      false
     end
   end
 end

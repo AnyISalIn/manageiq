@@ -18,7 +18,7 @@ describe('emsCommonFormController', function() {
       zone: 'default',
       emstype_vm: false,
       openstack_infra_providers_exist: false,
-      api_port: '5000',
+      api_port: '',
       api_version: 'v2'
     };
     $httpBackend = _$httpBackend_;
@@ -43,6 +43,10 @@ describe('emsCommonFormController', function() {
       $httpBackend.flush();
     }));
 
+    it('sets actionUrl to createUrl', function () {
+      expect($scope.actionUrl).toEqual($scope.createUrl);
+    });
+
     it('sets the name to blank', function () {
       expect($scope.emsCommonModel.name).toEqual('');
     });
@@ -63,12 +67,12 @@ describe('emsCommonFormController', function() {
       expect($scope.emsCommonModel.openstack_infra_providers_exist).toEqual(false);
     });
 
-    it('sets the default_api_port to 5000', function() {
-      expect($scope.emsCommonModel.default_api_port).toEqual(5000);
+    it('sets the default_api_port to blank', function() {
+      expect($scope.emsCommonModel.default_api_port).toEqual('');
     });
 
     it('sets the amqp_api_port to 5672', function() {
-      expect($scope.emsCommonModel.amqp_api_port).toEqual(5672);
+      expect($scope.emsCommonModel.amqp_api_port).toEqual('5672');
     });
 
     it('sets the api_version to v2', function() {
@@ -102,6 +106,10 @@ describe('emsCommonFormController', function() {
         });
       $httpBackend.flush();
     }));
+
+    it('sets actionUrl to updateUrl', function () {
+      expect($scope.actionUrl).toEqual($scope.updateUrl);
+    });
 
     it('sets the name to the Amazon EC2 Cloud Provider', function () {
       expect($scope.emsCommonModel.name).toEqual('amz');
@@ -402,7 +410,7 @@ describe('emsCommonFormController in the context of ems infra provider', functio
       zone: 'default',
       emstype_vm: false,
       openstack_infra_providers_exist: false,
-      default_api_port: '5000',
+      default_api_port: '',
       api_version: 'v2'
     };
     $httpBackend = _$httpBackend_;
@@ -442,8 +450,8 @@ describe('emsCommonFormController in the context of ems infra provider', functio
       expect($scope.emsCommonModel.zone).toEqual('default');
     });
 
-    it('sets the api_port to 5000', function () {
-      expect($scope.emsCommonModel.default_api_port).toEqual(5000);
+    it('sets the api_port to blank', function () {
+      expect($scope.emsCommonModel.default_api_port).toEqual('');
     });
 
     it('sets the api_version to v2', function () {
@@ -585,6 +593,180 @@ describe('emsCommonFormController in the context of ems infra provider', functio
 
     it('sets the ssh_keypair_password', function () {
       expect($scope.emsCommonModel.ssh_keypair_password).toEqual(miqService.storedPasswordPlaceholder);
+    });
+  });
+
+  describe('when the emsCommonFormId is a RHEV Id', function () {
+    var emsCommonFormResponse = {
+      id: 12345,
+      name: 'myRhevm',
+      hostname: '10.22.33.44',
+      emstype: 'rhevm',
+      zone: 'default',
+      api_port: '',
+      default_userid: "default_user",
+    };
+
+    beforeEach(inject(function (_$controller_) {
+      $httpBackend.whenGET('/ems_infra/ems_infra_form_fields/12345').respond(emsCommonFormResponse);
+
+      $controller = _$controller_('emsCommonFormController',
+        {
+          $scope: $scope,
+          $attrs: {
+            'formFieldsUrl': '/ems_infra/ems_infra_form_fields/',
+            'createUrl': '/ems_infra',
+            'updateUrl': '/ems_infra/update/'
+          },
+          emsCommonFormId: 12345,
+          miqService: miqService
+        });
+      $httpBackend.flush();
+    }));
+
+    it('sets the name to the RHEVM Provider', function () {
+      expect($scope.emsCommonModel.name).toEqual('myRhevm');
+    });
+
+    it('sets the type to openstack', function () {
+      expect($scope.emsCommonModel.emstype).toEqual('rhevm');
+    });
+
+    it('sets the hostname', function () {
+      expect($scope.emsCommonModel.hostname).toEqual('10.22.33.44');
+    });
+
+    it('sets the zone to default', function () {
+      expect($scope.emsCommonModel.zone).toEqual('default');
+    });
+
+    it('sets the default_userid', function () {
+      expect($scope.emsCommonModel.default_userid).toEqual("default_user");
+    });
+
+    it('sets the default_password', function () {
+      expect($scope.emsCommonModel.default_password).toEqual(miqService.storedPasswordPlaceholder);
+    });
+
+    it('sets the default api port', function () {
+      expect($scope.emsCommonModel.default_api_port).toEqual('');
+    });
+  });
+});
+
+describe('emsCommonFormController in the context of ems middleware provider', function () {
+  var $scope, $controller, $httpBackend, miqService, compile;
+
+  beforeEach(module('ManageIQ'));
+
+  beforeEach(inject(function (_$httpBackend_, $rootScope, _$controller_, _miqService_, _$compile_) {
+    miqService = _miqService_;
+    compile = _$compile_;
+    spyOn(miqService, 'miqAjaxButton');
+    spyOn(miqService, 'restAjaxButton');
+    spyOn(miqService, 'sparkleOn');
+    spyOn(miqService, 'sparkleOff');
+    $scope = $rootScope.$new();
+
+    var emsCommonFormResponse = {
+      name: '',
+      emstype: '',
+      zone: 'default',
+      emstype_vm: false,
+      openstack_infra_providers_exist: false,
+      default_api_port: '',
+      api_version: 'v2'
+    };
+    $httpBackend = _$httpBackend_;
+    $httpBackend.whenGET('/ems_middleware/ems_middleware_form_fields/new').respond(emsCommonFormResponse);
+    $controller = _$controller_('emsCommonFormController',
+      {
+        $scope: $scope,
+        $attrs: {
+          'formFieldsUrl': '/ems_middleware/ems_middleware_form_fields/',
+          'createUrl': '/ems_middleware',
+          'updateUrl': '/ems_middleware/12345'
+        },
+        emsCommonFormId: 'new',
+        miqService: miqService
+      });
+  }));
+
+  afterEach(function () {
+    $httpBackend.verifyNoOutstandingExpectation();
+    $httpBackend.verifyNoOutstandingRequest();
+  });
+
+  describe('when the emsCommonFormId is new', function () {
+    beforeEach(inject(function () {
+      $httpBackend.flush();
+    }));
+
+    it('sets the name to blank', function () {
+      expect($scope.emsCommonModel.name).toEqual('');
+    });
+
+    it('sets the type to blank', function () {
+      expect($scope.emsCommonModel.emstype).toEqual('');
+    });
+
+    it('sets the zone to default', function () {
+      expect($scope.emsCommonModel.zone).toEqual('default');
+    });
+
+    it('sets the api_port to blank', function () {
+      expect($scope.emsCommonModel.default_api_port).toEqual('');
+    });
+  });
+
+  describe('when the emsCommonFormId is an Hawkular Id', function () {
+    var emsCommonFormResponse = {
+      id: 12345,
+      name: 'SeaHawks',
+      emstype: 'hawkular',
+      zone: 'default',
+      default_userid: "default_user"
+    };
+
+    beforeEach(inject(function (_$controller_) {
+      $httpBackend.whenGET('/ems_middleware/ems_middleware_form_fields/12345').respond(emsCommonFormResponse);
+
+      $controller = _$controller_('emsCommonFormController',
+        {
+          $scope: $scope,
+          $attrs: {
+            'formFieldsUrl': '/ems_middleware/ems_middleware_form_fields/',
+            'createUrl': '/ems_middleware',
+            'updateUrl': '/ems_middleware/12345'
+          },
+          emsCommonFormId: 12345,
+          miqService: miqService
+        });
+      $httpBackend.flush();
+    }));
+
+    it('sets the name to the Hawkular Middleware Provider', function () {
+      expect($scope.emsCommonModel.name).toEqual('SeaHawks');
+    });
+
+    it('sets the type to hawkular', function () {
+      expect($scope.emsCommonModel.emstype).toEqual('hawkular');
+    });
+
+    it('sets the zone to default', function () {
+      expect($scope.emsCommonModel.zone).toEqual('default');
+    });
+
+    it('sets the default_userid', function () {
+      expect($scope.emsCommonModel.default_userid).toEqual("default_user");
+    });
+
+    it('sets the default_password', function () {
+      expect($scope.emsCommonModel.default_password).toEqual(miqService.storedPasswordPlaceholder);
+    });
+
+    it('sets the default_verify', function () {
+      expect($scope.emsCommonModel.default_verify).toEqual(miqService.storedPasswordPlaceholder);
     });
   });
 });

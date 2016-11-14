@@ -1,8 +1,6 @@
 describe ApplicationHelper do
   before do
-    login_as @user = FactoryGirl.create(:user)
-    allow(@user).to receive(:role_allows?).and_return(true)
-    allow(@user).to receive(:role_allows_any?).and_return(true)
+    login_as FactoryGirl.create(:user)
   end
 
   context "build_toolbar" do
@@ -38,13 +36,11 @@ describe ApplicationHelper do
     end
   end
 
-  describe "#role_allows" do
+  describe "#role_allows?" do
     let(:features) { MiqProductFeature.find_all_by_identifier("everything") }
     before(:each) do
       EvmSpecHelper.seed_specific_product_features("miq_report", "service")
-
-      @user        = FactoryGirl.create(:user, :features => features)
-      login_as  @user
+      @user = login_as FactoryGirl.create(:user, :features => features)
     end
 
     context "permission store" do
@@ -66,6 +62,9 @@ describe ApplicationHelper do
             expect(Menu::DefaultMenu.services_menu_section.visible?).to be_truthy
             expect(Menu::DefaultMenu.cloud_inteligence_menu_section.visible?).to be_falsey
 
+            # TODO Fix this assert, it's bad.  We need to create the right feature
+            # for this user so it's allowed using normal permissions but not with
+            # the permission store.
             allow(User).to receive_message_chain(:current_user, :role_allows?).and_return(true)
             expect(Menu::DefaultMenu.cloud_inteligence_menu_section.visible?).to be_falsey
           end
@@ -78,23 +77,23 @@ describe ApplicationHelper do
     context "when with :feature" do
       context "and :any" do
         it "and entitled" do
-          expect(helper.role_allows(:feature => "miq_report", :any => true)).to be_truthy
+          expect(helper.role_allows?(:feature => "miq_report", :any => true)).to be_truthy
         end
 
         it "and not entitled" do
-          allow(@user).to receive_messages(:role_allows_any? => false)
-          expect(helper.role_allows(:feature => "miq_report", :any => true)).to be_falsey
+          login_as FactoryGirl.create(:user, :features => "service")
+          expect(helper.role_allows?(:feature => "miq_report", :any => true)).to be_falsey
         end
       end
 
       context "and no :any" do
         it "and entitled" do
-          expect(helper.role_allows(:feature => "miq_report")).to be_truthy
+          expect(helper.role_allows?(:feature => "miq_report")).to be_truthy
         end
 
         it "and not entitled" do
-          allow(@user).to receive_messages(:role_allows? => false)
-          expect(helper.role_allows(:feature => "miq_report")).to be_falsey
+          login_as FactoryGirl.create(:user, :features => "service")
+          expect(helper.role_allows?(:feature => "miq_report")).to be_falsey
         end
       end
     end
@@ -105,13 +104,13 @@ describe ApplicationHelper do
       end
 
       it "and not entitled" do
-        allow(@user).to receive_messages(:role_allows_any? => false)
+        allow(@user).to receive(:role_allows_any?).and_return(false)
         expect(Menu::DefaultMenu.services_menu_section.visible?).to be_falsey
       end
     end
 
     it "when not with :feature or :main_tab_id" do
-      expect(helper.role_allows).to be_falsey
+      expect(helper.role_allows?).to be_falsey
     end
   end
 
@@ -523,13 +522,13 @@ describe ApplicationHelper do
     end
   end
 
-  context "#to_cid" "(id)" do
+  context "#to_cid" do
     it "converts record id to compressed id" do
       expect(helper.to_cid(12_000_000_000_056)).to eq('12r56')
     end
   end
 
-  context "#from_cid" "(cid)" do
+  context "#from_cid" do
     it "converts compressed id to record id" do
       expect(helper.from_cid("12r56")).to eq(12_000_000_000_056)
     end
@@ -773,9 +772,8 @@ describe ApplicationHelper do
     subject { helper.javascript_pf_toolbar_reload(test_tab, 'foobar') }
 
     it "returns javascript to reload toolbar" do
-      expect(helper).to receive(:buttons_to_html).and_return('foobar')
-      is_expected.to include("$('##{test_tab}').html('foobar');")
-      is_expected.to include("miqInitToolbars();")
+      expect(helper).to receive(:toolbar_from_hash).and_return('foobar')
+      is_expected.to include("sendDataWithRx({redrawToolbar: \"foobar\"});")
     end
   end
 
@@ -1150,23 +1148,6 @@ describe ApplicationHelper do
         end
       end
     end
-
-    context "#center_div_height" do
-      it "calculates height for center div" do
-        @winH = 800
-        max = 627
-        min = 200
-        height = @winH < max ? min : @winH - (max - min)
-        res = helper.center_div_height
-        expect(res).to eq(height)
-
-        max = 757
-        min = 400
-        height = @winH < max ? min : @winH - (max - min)
-        res = helper.center_div_height(false, 400)
-        expect(res).to eq(height)
-      end
-    end
   end
 
   describe '#pressed2model_action' do
@@ -1336,8 +1317,13 @@ describe ApplicationHelper do
   end
 
   context "#start_page_allowed?" do
+    before do
+      stub_user(:features => :all)
+    end
+
     it "should return true for storage start pages when product flag is set" do
-      allow(helper).to receive(:get_vmdb_config).and_return(:product => { :storage => true })
+      stub_settings(:product => { :storage => true })
+
       result = helper.start_page_allowed?("cim_storage_extent_show_list")
       expect(result).to be_truthy
     end
@@ -1348,7 +1334,8 @@ describe ApplicationHelper do
     end
 
     it "should return true for containers start pages when product flag is set" do
-      allow(helper).to receive(:get_vmdb_config).and_return(:product => { :containers => true })
+      stub_settings(:product => { :containers => true })
+
       result = helper.start_page_allowed?("ems_container_show_list")
       expect(result).to be_truthy
     end
@@ -1645,6 +1632,7 @@ describe ApplicationHelper do
   describe "#multiple_relationship_link" do
     context "When record is a Container Provider" do
       it "Uses polymorphic_path for the show action" do
+        stub_user(:features => :all)
         ems = FactoryGirl.create(:ems_kubernetes)
         ContainerProject.create(:ext_management_system => ems, :name => "Test Project")
         expect(helper.multiple_relationship_link(ems, "container_project")).to eq("<li><a title=\"Show Projects\" href=\"/ems_container/#{ems.id}?display=container_projects\">Projects (1)</a></li>")
@@ -1653,10 +1641,97 @@ describe ApplicationHelper do
 
     context "When record is a Middleware Provider" do
       it "Routes to the controller's show action" do
+        stub_user(:features => :all)
         allow(helper).to receive_messages(:controller_name => "ems_middleware")
         ems = FactoryGirl.create(:ems_hawkular)
         MiddlewareDatasource.create(:ext_management_system => ems, :name => "Test Middleware")
-        expect(helper.multiple_relationship_link(ems, "middleware_datasource")).to eq("<li><a title=\"Show Middleware Datasources\" href=\"/ems_middleware/show/#{ems.id}?display=middleware_datasources\">Middleware Datasources (1)</a></li>")
+        expect(helper.multiple_relationship_link(ems, "middleware_datasource")).to eq("<li><a title=\"Show Middleware \
+Datasources\" href=\"/ems_middleware/#{ems.id}?display=middleware_datasources\">Middleware Datasources (1)</a></li>")
+      end
+    end
+  end
+
+  describe "#auth_mode_name" do
+    modes = %w(ldap ldaps amazon httpd database)
+    modes_pretty = %w(LDAP LDAPS Amazon External\ Authentication Database)
+
+    modes.zip modes_pretty.each do |mode, mode_pretty|
+      it "Returns #{mode_pretty} when mode is #{mode}" do
+        stub_settings(:authentication => { :mode => mode }, :server => {})
+        expect(helper.auth_mode_name).to eq(mode_pretty)
+      end
+    end
+  end
+
+  describe "#x_gtl_view_tb_render?" do
+    class XGtlViewTbRenderTestClass
+      include ApplicationHelper
+
+      def initialize(record, explorer, layout)
+        @record = record
+        @explorer = explorer
+        @layout = layout
+      end
+    end
+
+    let(:subject) { XGtlViewTbRenderTestClass.new(record, explorer, layout) }
+
+    context "when record is nil" do
+      let(:record) { nil }
+
+      context "when explorer is false" do
+        let(:explorer) { false }
+        let(:layout) { "doesn't matter" }
+
+        it "returns false" do
+          expect(subject.x_gtl_view_tb_render?).to eq(false)
+        end
+      end
+
+      context "when explorer is true" do
+        let(:explorer) { true }
+
+        %w(
+          chargeback
+          generic_object_definition
+          miq_ae_class
+          miq_ae_customization
+          miq_ae_tools
+          miq_capacity_planning
+          miq_capacity_utilization
+          miq_policy
+          miq_policy_rsop
+          ops
+          provider_foreman
+          pxe
+          report
+        ).each do |layout_name|
+          context "when the no_gtl_view_buttons array contains the #{layout_name} layout" do
+            let(:layout) { layout_name }
+
+            it "returns false" do
+              expect(subject.x_gtl_view_tb_render?).to eq(false)
+            end
+          end
+        end
+
+        context "when the no_gtl_view_buttons array does not contain the given layout" do
+          let(:layout) { "potato" }
+
+          it "returns true" do
+            expect(subject.x_gtl_view_tb_render?).to eq(true)
+          end
+        end
+      end
+    end
+
+    context "when record is not nil" do
+      let(:record) { "not nil" }
+      let(:explorer) { "doesn't matter" }
+      let(:layout) { "doesn't matter" }
+
+      it "returns false" do
+        expect(subject.x_gtl_view_tb_render?).to eq(false)
       end
     end
   end

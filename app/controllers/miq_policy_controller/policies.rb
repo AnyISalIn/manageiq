@@ -96,10 +96,7 @@ module MiqPolicyController::Policies
     new_desc = truncate("Copy of #{policy.description}", :length => 255, :omission => "")
     if MiqPolicy.find_by_description(new_desc)
       add_flash(_("%{model} \"%{name}\" already exists") % {:model => ui_lookup(:model => "MiqPolicy"), :name => new_desc}, :error)
-      render :update do |page|
-        page << javascript_prologue
-        page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-      end
+      javascript_flash
     else
       new_pol = policy.copy(:description => new_desc, :created_by => session[:userid], :read_only => nil)
       AuditEvent.success(:event        => "miqpolicy_copy",
@@ -224,16 +221,10 @@ module MiqPolicyController::Policies
     event.name.end_with?("compliance_check", "perf_complete")
   end
 
-  def policy_get_all_folders(parent = nil)
-    if !parent.nil?
-      @folders = MiqPolicy::UI_FOLDERS.collect(&:name)
-      @right_cell_text = _("%{typ} %{model}") % {:typ => parent, :model => ui_lookup(:models => "MiqPolicy")}
-      @right_cell_div = "policy_folders"
-    else
-      @folders = ["Compliance", "Control"]
-      @right_cell_text = _("All %{models}") % {:models => ui_lookup(:models => "MiqPolicy")}
-      @right_cell_div = "policy_folders"
-    end
+  def policy_get_all_folders
+    @folders = ["Compliance", "Control"]
+    @right_cell_text = _("All Policies")
+    @right_cell_div = "policy_folders"
   end
 
   # Get information for a policy
@@ -241,7 +232,7 @@ module MiqPolicyController::Policies
     @record = @policy = policy
     @right_cell_text = _("%{model} \"%{name}\"") % {
       :model => "#{@sb[:mode]} Policy",
-      :name  => @policy.description.gsub(/'/, "\\'")
+      :name  => @policy.description
     }
     @right_cell_div = "policy_details"
     @policy_conditions = @policy.conditions

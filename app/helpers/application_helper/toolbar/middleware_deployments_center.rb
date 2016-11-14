@@ -30,14 +30,35 @@ class ApplicationHelper::Toolbar::MiddlewareDeploymentsCenter < ApplicationHelpe
       :onwhen  => "1+",
       :items   => [
         button(
-          :middleware_deployment_redeploy,
+          :middleware_deployment_restart,
           'pficon pficon-restart fa-lg',
-          N_('Redeploy these Middleware Deployments'),
-          N_('Redeploy'),
+          N_('Restart these Middleware Deployments'),
+          N_('Restart'),
           :url_parms => "main_div",
           :enabled   => false,
           :onwhen    => "1+",
-          :confirm   => N_("Do you want to redeploy these deployments ?")),
+          :confirm   => N_("Do you want to restart these deployments ?"),
+          :klass     => ApplicationHelper::Button::MiddlewareStandaloneServerAction),
+        button(
+          :middleware_deployment_disable,
+          'fa fa-stop-circle-o fa-lg',
+          N_('Disable these Middleware Deployments'),
+          N_('Disable'),
+          :url_parms => "main_div",
+          :enabled   => false,
+          :onwhen    => "1+",
+          :confirm   => N_("Do you want to disable these deployments ?"),
+          :klass     => ApplicationHelper::Button::MiddlewareStandaloneServerAction),
+        button(
+          :middleware_deployment_enable,
+          'fa fa-play-circle-o fa-lg',
+          N_('Enable these Middleware Deployments'),
+          N_('Enable'),
+          :url_parms => "main_div",
+          :enabled   => false,
+          :onwhen    => "1+",
+          :confirm   => N_("Do you want to enable these deployments ?"),
+          :klass     => ApplicationHelper::Button::MiddlewareStandaloneServerAction),
         button(
           :middleware_deployment_undeploy,
           'fa fa-eject fa-lg',
@@ -46,7 +67,8 @@ class ApplicationHelper::Toolbar::MiddlewareDeploymentsCenter < ApplicationHelpe
           :url_parms => "main_div",
           :enabled   => false,
           :onwhen    => "1+",
-          :confirm   => N_("Do you want to undeploy these deployments ?"))
+          :confirm   => N_("Do you want to undeploy these deployments ?"),
+          :klass     => ApplicationHelper::Button::MiddlewareStandaloneServerAction)
       ]
     ),
   ])

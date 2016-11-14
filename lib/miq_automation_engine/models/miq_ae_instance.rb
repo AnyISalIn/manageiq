@@ -8,7 +8,8 @@ class MiqAeInstance < ApplicationRecord
 
   validates_uniqueness_of :name, :case_sensitive => false, :scope => :class_id
   validates_presence_of   :name
-  validates_format_of     :name, :with => /\A[A-Za-z0-9_.-]+\z/i
+  validates_format_of     :name, :with    => /\A[\w.-]+\z/i,
+                                 :message => N_("may contain only alphanumeric and _ . - characters")
 
   def self.find_by_name(name)
     where("lower(name) = ?", name.downcase).first
@@ -101,9 +102,7 @@ class MiqAeInstance < ApplicationRecord
     end.compact
   end
 
-  def editable?
-    ae_class.ae_namespace.editable?
-  end
+  delegate :editable?, :to => :ae_class
 
   def field_names
     fields = ae_values.collect(&:field_id)

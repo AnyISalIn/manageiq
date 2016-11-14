@@ -193,7 +193,7 @@ describe('miq_application.js', function() {
   describe('miqSendOneTrans', function () {
     beforeEach(function() {
       ManageIQ.oneTransition.oneTrans = undefined;
-      ManageIQ.oneTransition.IEButtonPressed = undefined;
+      ManageIQ.oneTransition.IEButtonPressed = false;
 
       spyOn(window, 'miqObserveRequest');
       spyOn(window, 'miqJqueryRequest');
@@ -414,7 +414,13 @@ describe('miq_application.js', function() {
     });
 
     it("sets beforeSend & complete options using data-miq_sparkle_on & data-miq_sparkle_off", function() {
-      var html = '<select class="selectpicker bs-select-hidden" id="miq-select-picker-1" name="miq-select-picker-1" data-miq_sparkle_on="true" data-miq_sparkle_off="true"><option value="one">1</option> <option value="two" selected="selected">2</option></select>';
+      var html = [
+        '<select class="selectpicker" id="miq-select-picker-1" name="miq-select-picker-1" data-miq_sparkle_on="true" data-miq_sparkle_off="true">',
+        '  <option value="one">1</option>',
+        '  <option value="two" selected="selected">2</option>',
+        '</select>',
+      ].join("\n");
+
       setFixtures(html);
       spyOn(window, 'miqObserveRequest');
       spyOn(_, 'debounce').and.callFake(function(fn, opts) {
@@ -433,4 +439,36 @@ describe('miq_application.js', function() {
     });
   });
 
+  describe('miqUncompressedId', function () {
+    it('returns uncompressed id unchanged', function() {
+      expect(miqUncompressedId('123')).toEqual('123');
+      expect(miqUncompressedId('12345678901234567890')).toEqual('12345678901234567890');
+    });
+
+    it('uncompresses compressed id', function() {
+      expect(miqUncompressedId('1r23')).toEqual('1000000000023');
+      expect(miqUncompressedId('999r123456789012')).toEqual('999123456789012');
+    });
+  });
+
+  describe('miqFormatNotification', function () {
+    context('single placeholder', function () {
+      it('replaces placeholders with bindings', function () {
+        expect(miqFormatNotification('¯\_%{dude}_/¯', {dude: { text: '(ツ)' }})).toEqual('¯\_(ツ)_/¯');
+      });
+    });
+
+    context('multiple placeholders', function () {
+      it('replaces placeholders with bindings', function () {
+        expect(miqFormatNotification('%{dude}︵ %{table}', {dude: { text: '(╯°□°）╯' }, table: {text: '┻━┻'}})).toEqual('(╯°□°）╯︵ ┻━┻');
+      });
+    });
+
+    context('same placeholder multiple times', function () {
+      it('replaces placeholders with bindings', function () {
+        expect(miqFormatNotification('( %{eye}▽%{eye})/', {eye: { text: 'ﾟ' }})).toEqual('( ﾟ▽ﾟ)/');
+      });
+    });
+  });
 });
+

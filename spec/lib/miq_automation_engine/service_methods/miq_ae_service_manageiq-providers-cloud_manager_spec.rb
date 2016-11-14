@@ -39,5 +39,9 @@ module MiqAeServiceEmsCloudSpec
     it "#cloud_networks_private" do
       expect(described_class.instance_methods).to include(:private_networks)
     end
+
+    it "#host_aggregates" do
+      expect(described_class.instance_methods).to include(:host_aggregates)
+    end
   end
 end

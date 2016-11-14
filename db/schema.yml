@@ -33,6 +33,39 @@ ar_internal_metadata:
 - value
 - created_at
 - updated_at
+arbitration_profiles:
+- id
+- uid_ems
+- cloud_network_id
+- flavor_id
+- availability_zone_id
+- cloud_subnet_id
+- security_group_id
+- ems_id
+- authentication_id
+- name
+- description
+- default_profile
+- type
+- profile
+- created_at
+- updated_at
+arbitration_rules:
+- id
+- description
+- operation
+- arbitration_profile_id
+- priority
+- expression
+- created_at
+- updated_at
+arbitration_settings:
+- id
+- name
+- display_name
+- value
+- created_on
+- updated_on
 assigned_server_roles:
 - id
 - miq_server_id
@@ -126,6 +159,15 @@ blacklisted_events:
 - ems_id
 - system
 - enabled
+- created_at
+- updated_at
+blueprints:
+- id
+- name
+- description
+- status
+- version
+- ui_properties
 - created_at
 - updated_at
 bottleneck_events:
@@ -316,6 +358,10 @@ cloud_subnets_network_ports:
 - cloud_subnet_id
 - network_port_id
 - address
+cloud_tenant_flavors:
+- id
+- cloud_tenant_id
+- flavor_id
 cloud_tenants:
 - id
 - name
@@ -326,10 +372,26 @@ cloud_tenants:
 - created_at
 - updated_at
 - type
+- parent_id
 cloud_tenants_vms:
 - cloud_tenant_id
 - vm_id
 - id
+cloud_volume_backups:
+- id
+- ems_id
+- type
+- name
+- description
+- ems_ref
+- status
+- creation_time
+- size
+- object_count
+- is_incremental
+- has_dependent_backups
+- cloud_volume_id
+- availability_zone_id
 cloud_volume_snapshots:
 - id
 - type
@@ -653,6 +715,17 @@ container_images:
 - last_scan_attempt_on
 - digest
 - registered_on
+- architecture
+- author
+- command
+- entrypoint
+- docker_version
+- exposed_ports
+- environment_variables
+- size
+- created_on
+- old_ems_id
+- deleted_on
 container_label_tag_mappings:
 - id
 - labeled_resource_type
@@ -779,6 +852,30 @@ container_services:
 - service_type
 - container_image_registry_id
 - created_on
+container_template_parameters:
+- id
+- name
+- ems_created_on
+- display_name
+- description
+- value
+- generate
+- from
+- required
+- container_template_id
+- created_at
+- updated_at
+container_templates:
+- id
+- ems_ref
+- name
+- ems_created_on
+- resource_version
+- ems_id
+- container_project_id
+- objects
+- created_at
+- updated_at
 container_volumes:
 - id
 - parent_id
@@ -855,6 +952,7 @@ custom_attributes:
 - description
 - value_interpolated
 - unique_name
+- serialized_value
 custom_buttons:
 - id
 - guid
@@ -969,6 +1067,7 @@ dialogs:
 - created_at
 - updated_at
 - label
+- blueprint_id
 direct_configuration_profiles_configuration_tags:
 - configuration_profile_id
 - configuration_tag_id
@@ -998,6 +1097,8 @@ disks:
 - storage_id
 - backing_id
 - backing_type
+- storage_profile_id
+- bootable
 drift_states:
 - id
 - timestamp
@@ -1134,6 +1235,10 @@ ext_management_systems:
 - project
 - parent_ems_id
 - subscription
+- last_metrics_error
+- last_metrics_update_date
+- last_metrics_success_date
+- tenant_mapping_enabled
 file_depots:
 - id
 - name
@@ -1206,6 +1311,7 @@ flavors:
 - ephemeral_disk_count
 - root_disk_size
 - swap_disk_size
+- publicly_available
 floating_ips:
 - id
 - type
@@ -1328,6 +1434,19 @@ hardwares:
 - computer_system_id
 - disk_size_minimum
 - memory_mb_minimum
+- introspected
+- provision_state
+host_aggregate_hosts:
+- id
+- host_id
+- host_aggregate_id
+host_aggregates:
+- id
+- ems_id
+- name
+- ems_ref
+- type
+- metadata
 host_service_groups:
 - id
 - name
@@ -1338,6 +1457,7 @@ host_storages:
 - host_id
 - read_only
 - id
+- ems_ref
 host_switches:
 - id
 - host_id
@@ -1522,6 +1642,97 @@ lifecycle_events:
 - vm_or_template_id
 - created_by
 - created_on
+load_balancer_health_check_members:
+- id
+- load_balancer_health_check_id
+- load_balancer_pool_member_id
+- status
+- status_reason
+load_balancer_health_checks:
+- id
+- ems_ref
+- name
+- protocol
+- port
+- url_path
+- interval
+- timeout
+- healthy_threshold
+- unhealthy_threshold
+- ems_id
+- load_balancer_listener_id
+- cloud_tenant_id
+- created_at
+- updated_at
+- load_balancer_id
+- type
+load_balancer_listener_pools:
+- id
+- load_balancer_listener_id
+- load_balancer_pool_id
+- created_at
+- updated_at
+load_balancer_listeners:
+- id
+- ems_ref
+- name
+- description
+- load_balancer_protocol
+- instance_protocol
+- ems_id
+- cloud_tenant_id
+- load_balancer_id
+- created_at
+- updated_at
+- type
+- load_balancer_port_range
+- instance_port_range
+load_balancer_pool_member_pools:
+- id
+- load_balancer_pool_id
+- load_balancer_pool_member_id
+load_balancer_pool_members:
+- id
+- ems_ref
+- address
+- port
+- cloud_tenant_id
+- cloud_subnet_id
+- network_port_id
+- resource_group_id
+- created_at
+- updated_at
+- vm_id
+- type
+- ems_id
+load_balancer_pools:
+- id
+- ems_ref
+- name
+- description
+- load_balancer_algorithm
+- protocol
+- ems_id
+- cloud_tenant_id
+- created_at
+- updated_at
+- type
+load_balancers:
+- id
+- ems_ref
+- name
+- description
+- ems_id
+- cloud_tenant_id
+- created_at
+- updated_at
+- type
+- retired
+- retires_on
+- retirement_warn
+- retirement_last_warn
+- retirement_state
+- retirement_requester
 log_files:
 - id
 - name
@@ -4399,6 +4610,7 @@ middleware_datasources:
 - ems_id
 - created_at
 - updated_at
+- feed
 middleware_deployments:
 - id
 - name
@@ -4409,6 +4621,44 @@ middleware_deployments:
 - created_at
 - updated_at
 - status
+- feed
+- properties
+middleware_domains:
+- id
+- name
+- ems_ref
+- nativeid
+- feed
+- type_path
+- profile
+- properties
+- ems_id
+- created_at
+- updated_at
+middleware_messagings:
+- id
+- name
+- ems_ref
+- nativeid
+- feed
+- server_id
+- properties
+- ems_id
+- messaging_type
+- created_at
+- updated_at
+middleware_server_groups:
+- id
+- name
+- ems_ref
+- nativeid
+- feed
+- type_path
+- profile
+- properties
+- domain_id
+- created_at
+- updated_at
 middleware_servers:
 - id
 - name
@@ -4424,6 +4674,7 @@ middleware_servers:
 - updated_at
 - lives_on_type
 - lives_on_id
+- server_group_id
 miq_actions:
 - id
 - name
@@ -4509,7 +4760,6 @@ miq_ae_namespaces:
 - display_name
 - updated_by
 - updated_by_user_id
-- system
 - priority
 - enabled
 - tenant_id
@@ -4520,6 +4770,8 @@ miq_ae_namespaces:
 - ref
 - ref_type
 - last_import_on
+- source
+- top_level_namespace
 miq_ae_values:
 - id
 - instance_id
@@ -4642,8 +4894,6 @@ miq_databases:
 - id
 - created_at
 - updated_at
-- last_replication_count
-- last_replication_id
 - registration_type
 - registration_organization
 - registration_server
@@ -4652,7 +4902,6 @@ miq_databases:
 - postgres_update_available
 - session_secret_token
 - csrf_secret_token
-- update_repo_name
 - registration_organization_display_name
 miq_dialogs:
 - id
@@ -4742,6 +4991,10 @@ miq_product_features:
 - created_at
 - updated_at
 - hidden
+miq_product_features_shares:
+- id
+- miq_product_feature_id
+- share_id
 miq_queue:
 - id
 - target_id
@@ -4966,6 +5219,10 @@ miq_servers:
 - log_file_depot_id
 - proportional_set_size
 - has_active_websocket
+- system_memory_free
+- system_memory_used
+- system_swap_free
+- system_swap_used
 miq_sets:
 - id
 - name
@@ -5097,6 +5354,7 @@ network_ports:
 - binding_host_id
 - binding_virtual_interface_type
 - extra_attributes
+- source
 network_ports_security_groups:
 - network_port_id
 - security_group_id
@@ -5130,6 +5388,29 @@ networks:
 - hostname
 - domain
 - ipv6address
+notification_recipients:
+- id
+- notification_id
+- user_id
+- seen
+notification_types:
+- id
+- name
+- level
+- audience
+- message
+- expires_in
+notifications:
+- id
+- notification_type_id
+- user_id
+- subject_type
+- subject_id
+- cause_type
+- cause_id
+- created_at
+- updated_at
+- options
 ontap_aggregate_derived_metrics:
 - id
 - statistic_time
@@ -5777,6 +6058,15 @@ persistent_volume_claims:
 - capacity
 - created_at
 - updated_at
+physical_servers:
+- id
+- ems_id
+- name
+- type
+- uid_ems
+- ems_ref
+- created_at
+- updated_at
 pictures:
 - id
 - resource_id
@@ -5993,6 +6283,12 @@ server_roles:
 - max_concurrent
 - external_failover
 - role_scope
+service_connections:
+- id
+- service_bundle_id
+- service_template_a_id
+- service_template_b_id
+- properties
 service_orders:
 - id
 - name
@@ -6046,6 +6342,8 @@ service_templates:
 - service_template_catalog_id
 - long_description
 - tenant_id
+- blueprint_id
+- generic_subtype
 services:
 - id
 - name
@@ -6078,6 +6376,15 @@ settings_changes:
 - resource_id
 - key
 - value
+- created_at
+- updated_at
+shares:
+- id
+- resource_type
+- resource_id
+- tenant_id
+- user_id
+- allow_tenant_inheritance
 - created_at
 - updated_at
 snapshots:
@@ -6130,6 +6437,18 @@ storage_metrics_metadata:
 - counter_info
 - created_at
 - updated_at
+storage_profile_storages:
+- id
+- storage_profile_id
+- storage_id
+storage_profiles:
+- id
+- ems_id
+- name
+- ems_ref
+- profile_type
+- created_at
+- updated_at
 storages:
 - id
 - name
@@ -6179,6 +6498,9 @@ system_consoles:
 - user_id
 - created_at
 - updated_at
+- url
+- proxy_pid
+- proxy_status
 system_services:
 - id
 - name
@@ -6237,6 +6559,8 @@ tenants:
 - description
 - use_config_for_attributes
 - default_miq_group_id
+- source_type
+- source_id
 time_profiles:
 - id
 - description
@@ -6257,7 +6581,6 @@ users:
 - settings
 - lastlogon
 - lastlogoff
-- region
 - current_group_id
 - first_name
 - last_name
@@ -6419,6 +6742,12 @@ vms:
 - tenant_id
 - resource_group_id
 - deprecated
+- storage_profile_id
+- cpu_hot_add_enabled
+- cpu_hot_remove_enabled
+- memory_hot_add_enabled
+- memory_hot_add_limit
+- memory_hot_add_increment
 volumes:
 - id
 - name

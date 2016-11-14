@@ -2,21 +2,34 @@ class MiqAeField < ApplicationRecord
   include MiqAeSetUserInfoMixin
   include MiqAeYamlImportExportMixin
 
-  belongs_to :ae_class,   :class_name => "MiqAeClass",  :foreign_key => :class_id
-  belongs_to :ae_method,  :class_name => "MiqAeMethod", :foreign_key => :method_id
+  belongs_to :ae_class,   :class_name => "MiqAeClass",  :foreign_key => :class_id, :touch => true
+  belongs_to :ae_method,  :class_name => "MiqAeMethod", :foreign_key => :method_id, :touch => true
   has_many   :ae_values,  :class_name => "MiqAeValue",  :foreign_key => :field_id, :dependent => :destroy
 
   validates_uniqueness_of :name, :case_sensitive => false, :scope => [:class_id, :method_id]
   validates_presence_of   :name
-  validates_format_of     :name, :with => /\A[A-Za-z0-9_]+\z/i
+  validates_format_of     :name, :with    => /\A[\w]+\z/i,
+                                 :message => N_("may contain only alphanumeric and _ characters")
 
   validates_inclusion_of  :substitute, :in => [true, false]
+
+  NULL_COALESCING_DATATYPE = "null coalescing".freeze
   AVAILABLE_SCOPES    = ["class", "instance", "local"]
   validates_inclusion_of  :scope,      :in => AVAILABLE_SCOPES,    :allow_nil => true  # nil => instance
   AVAILABLE_AETYPES   = ["assertion", "attribute", "method", "relationship", "state"]
   validates_inclusion_of  :aetype,     :in => AVAILABLE_AETYPES,   :allow_nil => true  # nil => attribute
-  AVAILABLE_DATATYPES_FOR_UI = ["string", "symbol", "integer", "float", "boolean", "time", "array", "password"]
-  AVAILABLE_DATATYPES        = AVAILABLE_DATATYPES_FOR_UI + ["host", "vm", "storage", "ems", "policy", "server", "request", "provision"]
+  AVAILABLE_DATATYPES_FOR_UI = ["string", "symbol", "integer", "float", "boolean", "time",
+                                "array", "password", NULL_COALESCING_DATATYPE].freeze
+  AVAILABLE_DATATYPES        = AVAILABLE_DATATYPES_FOR_UI +
+                               %w(host
+                                  vm
+                                  storage
+                                  ems
+                                  policy
+                                  server
+                                  request
+                                  provision
+                                  user)
   validates_inclusion_of  :datatype,   :in => AVAILABLE_DATATYPES, :allow_nil => true  # nil => string
 
   before_save        :set_message_and_default_value
@@ -27,12 +40,12 @@ class MiqAeField < ApplicationRecord
     AVAILABLE_AETYPES
   end
 
-  def self.available_datatypes_for_ui
-    AVAILABLE_DATATYPES_FOR_UI
-  end
-
   def self.available_datatypes
     AVAILABLE_DATATYPES
+  end
+
+  class <<self
+    alias available_datatypes_for_ui available_datatypes
   end
 
   def self.defaults
@@ -87,9 +100,7 @@ class MiqAeField < ApplicationRecord
     set_default_value(default_value)
   end
 
-  def editable?
-    ae_class.ae_namespace.editable?
-  end
+  delegate :editable?, :to => :ae_class
 
   private
 

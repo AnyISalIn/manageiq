@@ -43,40 +43,36 @@ class CloudVolumeController < ApplicationController
       delete_volumes if params[:pressed] == 'cloud_volume_delete'
     end
 
-    if !flash_errors? && @refresh_div == "main_div" && @lastaction == "show_list"
-      replace_gtl_main_div
-    elsif params[:pressed] == "cloud_volume_attach"
+    if params[:pressed] == "cloud_volume_attach"
       checked_volume_id = get_checked_volume_id(params)
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to :action => "attach", :id => checked_volume_id
-      end
+      javascript_redirect :action => "attach", :id => checked_volume_id
     elsif params[:pressed] == "cloud_volume_detach"
       checked_volume_id = get_checked_volume_id(params)
       @volume = find_by_id_filtered(CloudVolume, checked_volume_id)
       if @volume.attachments.empty?
-        add_flash(_("%{volume} \"%{volume_name}\" is not attached to any %{instances}") % {
-          :volume      => ui_lookup(:table => 'cloud_volume'),
-          :volume_name => @volume.name,
-          :instances   => ui_lookup(:tables => 'vm_cloud')}, :error)
-        render_flash
+        render_flash(_("%{volume} \"%{volume_name}\" is not attached to any %{instances}") % {
+                     :volume      => ui_lookup(:table => 'cloud_volume'),
+                     :volume_name => @volume.name,
+                     :instances   => ui_lookup(:tables => 'vm_cloud')}, :error)
       else
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to :action => "detach", :id => checked_volume_id
-        end
+        javascript_redirect :action => "detach", :id => checked_volume_id
       end
     elsif params[:pressed] == "cloud_volume_edit"
       checked_volume_id = get_checked_volume_id(params)
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to :action => "edit", :id => checked_volume_id
-      end
+      javascript_redirect :action => "edit", :id => checked_volume_id
+    elsif params[:pressed] == "cloud_volume_snapshot_create"
+      checked_volume_id = get_checked_volume_id(params)
+      javascript_redirect :action => "snapshot_new", :id => checked_volume_id
     elsif params[:pressed] == "cloud_volume_new"
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to :action => "new"
-      end
+      javascript_redirect :action => "new"
+    elsif params[:pressed] == "cloud_volume_backup_create"
+      checked_volume_id = get_checked_volume_id(params)
+      javascript_redirect :action => "backup_new", :id => checked_volume_id
+    elsif params[:pressed] == "cloud_volume_backup_restore"
+      checked_volume_id = get_checked_volume_id(params)
+      javascript_redirect :action => "backup_select", :id => checked_volume_id
+    elsif !flash_errors? && @refresh_div == "main_div" && @lastaction == "show_list"
+      replace_gtl_main_div
     elsif params[:pressed].ends_with?("_edit") || ["#{pfx}_miq_request_new", "#{pfx}_clone",
                                                    "#{pfx}_migrate", "#{pfx}_publish"].include?(params[:pressed])
       render_or_redirect_partial(pfx)
@@ -116,6 +112,15 @@ class CloudVolumeController < ApplicationController
         :url  => "/cloud_volume/show/#{@volume.id}?display=cloud_volume_snapshots"
       )
       @view, @pages = get_view(kls, :parent => @volume, :association => :cloud_volume_snapshots)
+      @showtype = @display
+    when "cloud_volume_backups"
+      title = ui_lookup(:tables => 'cloud_volume_backups')
+      kls   = CloudVolumeBackup
+      drop_breadcrumb(
+        :name => _("%{name} (All %{children})") % {:name => @volume.name, :children => title},
+        :url  => "/cloud_volume/show/#{@volume.id}?display=cloud_volume_backups"
+      )
+      @view, @pages = get_view(kls, :parent => @volume, :association => :cloud_volume_backups)
       @showtype = @display
     when "instances"
       title = ui_lookup(:tables => "vm_cloud")
@@ -178,13 +183,10 @@ class CloudVolumeController < ApplicationController
   def cancel_action(message)
     session[:edit] = nil
     @breadcrumbs.pop if @breadcrumbs
-    render :update do |page|
-      page << javascript_prologue
-      page.redirect_to :action    => @lastaction,
-                       :id        => @volume.id,
-                       :display   => session[:cloud_volume_display],
-                       :flash_msg => message
-    end
+    javascript_redirect :action    => @lastaction,
+                        :id        => @volume.id,
+                        :display   => session[:cloud_volume_display],
+                        :flash_msg => message
   end
 
   def attach_volume
@@ -220,10 +222,7 @@ class CloudVolumeController < ApplicationController
       @breadcrumbs.pop if @breadcrumbs
       session[:edit] = nil
       session[:flash_msgs] = @flash_array.dup if @flash_array
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to :action => "show", :id => @volume.id.to_s
-      end
+      javascript_redirect :action => "show", :id => @volume.id.to_s
     end
   end
 
@@ -261,10 +260,7 @@ class CloudVolumeController < ApplicationController
       @breadcrumbs.pop if @breadcrumbs
       session[:edit] = nil
       session[:flash_msgs] = @flash_array.dup if @flash_array
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to :action => "show", :id => @volume.id.to_s
-      end
+      javascript_redirect :action => "show", :id => @volume.id.to_s
     end
   end
 
@@ -284,12 +280,8 @@ class CloudVolumeController < ApplicationController
     assert_privileges("cloud_volume_new")
     case params[:button]
     when "cancel"
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to(:action => 'show_list', :flash_msg => _("Add of new %{model} was cancelled by the user") % {
-          :model => ui_lookup(:table => 'cloud_volume')
-        })
-      end
+      javascript_redirect :action => 'show_list',
+                          :flash_msg => _("Add of new %{model} was cancelled by the user") % {:model => ui_lookup(:table => 'cloud_volume')}
 
     when "add"
       @volume = CloudVolume.new
@@ -299,7 +291,7 @@ class CloudVolumeController < ApplicationController
       if valid_action
         begin
           CloudVolume.create_volume(cloud_tenant.ext_management_system, options)
-          add_flash(_("Create %{volume} \"%{volume_name}\"") % {
+          add_flash(_("Creating %{volume} \"%{volume_name}\"") % {
             :volume      => ui_lookup(:table => 'cloud_volume'),
             :volume_name => options[:name]})
         rescue => ex
@@ -310,10 +302,7 @@ class CloudVolumeController < ApplicationController
         end
         @breadcrumbs.pop if @breadcrumbs
         session[:flash_msgs] = @flash_array.dup if @flash_array
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to :action => "show_list"
-        end
+        javascript_redirect :action => "show_list"
       else
         @in_a_form = true
         add_flash(_(action_details), :error) unless action_details.nil?
@@ -321,10 +310,7 @@ class CloudVolumeController < ApplicationController
           :name => _("Add New %{model}") % {:model => ui_lookup(:table => 'cloud_volume')},
           :url  => "/cloud_volume/new"
         )
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
       end
 
     when "validate"
@@ -337,10 +323,7 @@ class CloudVolumeController < ApplicationController
       else
         add_flash(_(action_details), :error) unless details.nil?
       end
-      render :update do |page|
-        page << javascript_prologue
-        page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-      end
+      javascript_flash
     end
   end
 
@@ -388,10 +371,7 @@ class CloudVolumeController < ApplicationController
       @breadcrumbs.pop if @breadcrumbs
       session[:edit] = nil
       session[:flash_msgs] = @flash_array.dup if @flash_array
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to :action => "show", :id => @volume.id
-      end
+      javascript_redirect :action => "show", :id => @volume.id
 
     when "validate"
       @in_a_form = true
@@ -403,10 +383,7 @@ class CloudVolumeController < ApplicationController
       else
         add_flash(_(action_details), :error) unless details.nil?
       end
-      render :update do |page|
-        page << javascript_prologue
-        page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-      end
+      javascript_flash
     end
   end
 
@@ -462,6 +439,199 @@ class CloudVolumeController < ApplicationController
     end
   end
 
+  def backup_new
+    assert_privileges("cloud_volume_backup_create")
+    @volume = find_by_id_filtered(CloudVolume, params[:id])
+    @in_a_form = true
+    drop_breadcrumb(
+      :name => _("Create Backup for %{model} \"%{name}\"") % {
+        :model => ui_lookup(:table => 'cloud_volume'),
+        :name  => @volume.name
+      },
+      :url  => "/cloud_volume/backup_new/#{@volume.id}"
+    )
+  end
+
+  def backup_create
+    assert_privileges("cloud_volume_backup_create")
+    @volume = find_by_id_filtered(CloudVolume, params[:id])
+
+    case params[:button]
+    when "cancel"
+      cancel_action(_("Backup of %{model} \"%{name}\" was cancelled by the user") % {
+        :model => ui_lookup(:table => 'cloud_volume'),
+        :name  => @volume.name
+      })
+
+    when "create"
+      options = {}
+      options[:name] = params[:backup_name] if params[:backup_name]
+      options[:incremental] = true if params[:incremental]
+
+      task_id = @volume.backup_create_queue(session[:userid], options)
+
+      add_flash(_("Cloud volume backup creation failed: Task start failed: ID [%{id}]") %
+                {:id => task_id.inspect}, :error)
+
+      if task_id.kind_of?(Integer)
+        initiate_wait_for_task(:task_id => task_id, :action => "backup_create_finished")
+      else
+        javascript_flash(
+          :text        => _("Cloud volume backup creation failed: Task start failed: ID [%{id}]") %
+            {:id => task_id.inspect},
+          :severity    => :error,
+          :spinner_off => true
+        )
+      end
+    end
+  end
+
+  def backup_create_finished
+    task_id = session[:async][:params][:task_id]
+    volume_id = session[:async][:params][:id]
+    task = MiqTask.find(task_id)
+    @volume = find_by_id_filtered(CloudVolume, volume_id)
+    if task.results_ready?
+      add_flash(_("Backup for %{model} \"%{name}\" created") % {
+        :model => ui_lookup(:table => 'cloud_volume'),
+        :name  => @volume.name
+      })
+    else
+      add_flash(_("Unable to create backup for %{model} \"%{name}\": %{details}") % {
+        :model   => ui_lookup(:table => 'cloud_volume'),
+        :name    => @volume.name,
+        :details => task.message
+      }, :error)
+    end
+
+    @breadcrumbs.pop if @breadcrumbs
+    session[:edit] = nil
+    session[:flash_msgs] = @flash_array.dup if @flash_array
+    javascript_redirect :action => "show", :id => @volume.id
+  end
+
+  def backup_select
+    assert_privileges("cloud_volume_backup_restore")
+    @volume = find_by_id_filtered(CloudVolume, params[:id])
+    @backup_choices = {}
+    @volume.cloud_volume_backups.each do |backup|
+      @backup_choices[backup.name] = backup.id
+    end
+    @in_a_form = true
+    drop_breadcrumb(
+      :name => _("Restore %{model} \"%{name}\" from a Backup") % {
+        :model => ui_lookup(:table => 'cloud_volume'),
+        :name  => @volume.name
+      },
+      :url  => "/cloud_volume/backup_select/#{@volume.id}"
+    )
+  end
+
+  def backup_restore
+    assert_privileges("cloud_volume_backup_restore")
+    @volume = find_by_id_filtered(CloudVolume, params[:id])
+
+    case params[:button]
+    when "cancel"
+      cancel_action(_("Restore of %{model} \"%{name}\" was cancelled by the user") % {
+        :model => ui_lookup(:table => 'cloud_volume'),
+        :name  => @volume.name
+      })
+
+    when "restore"
+      @backup = find_by_id_filtered(CloudVolumeBackup, params[:backup_id])
+      task_id = @volume.backup_restore_queue(session[:userid], @backup.ems_ref)
+
+      add_flash(_("Cloud volume restore failed: Task start failed: ID [%{id}]") %
+                {:id => task_id.inspect}, :error) unless task_id.kind_of?(Integer)
+
+      if @flash_array
+        javascript_flash(:spinner_off => true)
+      else
+        initiate_wait_for_task(:task_id => task_id, :action => "backup_restore_finished")
+      end
+    end
+  end
+
+  def backup_restore_finished
+    task_id = session[:async][:params][:task_id]
+    volume_id = session[:async][:params][:id]
+    task = MiqTask.find(task_id)
+    @volume = find_by_id_filtered(CloudVolume, volume_id)
+    if task.results_ready?
+      add_flash(_("Restoring %{model} \"%{name}\" from backup") % {
+        :model => ui_lookup(:table => 'cloud_volume'),
+        :name  => @volume.name
+      })
+    else
+      add_flash(_("Unable to restore %{model} \"%{name}\" from backup: %{details}") % {
+        :model   => ui_lookup(:table => 'cloud_volume'),
+        :name    => @volume.name,
+        :details => task.message
+      }, :error)
+    end
+
+    @breadcrumbs.pop if @breadcrumbs
+    session[:edit] = nil
+    session[:flash_msgs] = @flash_array.dup if @flash_array
+    javascript_redirect :action => "show", :id => @volume.id
+  end
+
+  def snapshot_new
+    assert_privileges("cloud_volume_snapshot_create")
+    @volume = find_by_id_filtered(CloudVolume, params[:id])
+    @in_a_form = true
+    drop_breadcrumb(
+      :name => _("Create Snapshot for Cloud Volume \"%{name}\"") % {
+        :name => @volume.name
+      },
+      :url  => "/cloud_volume/snapshot_new/#{@volume.id}"
+    )
+  end
+
+  def snapshot_create
+    assert_privileges("cloud_volume_snapshot_create")
+    @volume = find_by_id_filtered(CloudVolume, params[:id])
+    case params[:button]
+    when "cancel"
+      cancel_action(_("Snapshot of Cloud Volume \"%{name}\" was cancelled by the user") % {
+        :name => @volume.name
+      })
+    when "create"
+      options = {}
+      options[:name] = params[:snapshot_name] if params[:snapshot_name]
+      task_id = @volume.create_volume_snapshot_queue(session[:userid], options)
+      add_flash(_("Cloud volume snapshot creation failed: Task start failed: ID [%{id}]") %
+                {:id => task_id.inspect}, :error) unless task_id.kind_of?(Integer)
+      if @flash_array
+        javascript_flash(:spinner_off => true)
+      else
+        initiate_wait_for_task(:task_id => task_id, :action => "snapshot_create_finished")
+      end
+    end
+  end
+
+  def snapshot_create_finished
+    task_id = session[:async][:params][:task_id]
+    volume_id = session[:async][:params][:id]
+    task = MiqTask.find(task_id)
+    @volume = find_by_id_filtered(CloudVolume, volume_id)
+    if task.results_ready?
+      add_flash(_("Snapshot for Cloud Volume \"%{name}\" created") % {
+        :name => @volume.name
+      })
+    else
+      add_flash(_("Unable to create snapshot for Cloud Volume \"%{name}\": %{details}") % {
+        :name    => @volume.name,
+        :details => task.message
+      }, :error)
+    end
+    @breadcrumbs.pop if @breadcrumbs
+    session[:edit] = nil
+    session[:flash_msgs] = @flash_array.dup if @flash_array
+    javascript_redirect :action => "show", :id => @volume.id
+  end
+
   private
 
   def form_params
@@ -490,9 +660,9 @@ class CloudVolumeController < ApplicationController
         AuditEvent.success(audit)
         volume.delete_volume
       end
-      add_flash(_("Delete initiated for %{models}.") % {
-        :models => pluralize(volumes.length, ui_lookup(:table => 'cloud_volume'))
-      })
+      add_flash(n_("Delete initiated for %{number} Cloud Volume.",
+                   "Delete initiated for %{number} Cloud Volumes.",
+                   volumes.length) % {:number => volumes.length})
     end
   end
 
@@ -513,4 +683,6 @@ class CloudVolumeController < ApplicationController
     session[:cloud_volume_catinfo]    = @catinfo
     session[:cloud_volume_showtype]   = @showtype
   end
+
+  menu_section :sto
 end

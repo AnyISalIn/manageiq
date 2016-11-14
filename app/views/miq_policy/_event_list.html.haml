@@ -1,16 +1,18 @@
 #event_list_div
   - if @events
-    = render :partial => "layouts/flash_msg"
     - if @events.empty?
-      .note
-        = _("* No Events are defined%s.") % @search_text.blank? ? "" : _(" that match the entered search string")
+      - if @search_text.empty?
+        - msg = _("No Events are defined")
+      - else
+        - msg = _("No Events are defined that match the entered search string '%s'") % @search_text
+      = render 'layouts/info_msg', :message => msg
     - else
       %table.table.table-striped.table-bordered.table-hover
         %tbody
           - @events.each do |e|
-            %tr{:title => ("View this Event"),
-              :onclick => "miqDynatreeActivateNode('event_tree', 'ev-#{to_cid(e.id)}');"}
+            %tr{:title => _("View this Event"),
+              :onclick => "miqTreeActivateNode('event_tree', 'ev-#{to_cid(e.id)}');"}
               %td.narrow
-                %img{:src => image_path("100/event-#{e.name}.png")}
+                %i{:class => e.decorate.try(:fonticon)}
               %td
                 = e.description

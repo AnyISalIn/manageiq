@@ -121,7 +121,7 @@
         %td
           = _("Processors")
         %td{:align => "right"}
-          = @record.num_cpu ? @record.num_cpu : notavail
+          = @record.cpu_total_cores ? @record.cpu_total_cores : notavail
         %td{:align => "right"}
           = @record.conservative_recommended_vcpus ? @record.conservative_recommended_vcpus : notavail
         %td{:align => "right"}
@@ -156,7 +156,7 @@
         %td
           = _("Processors")
         %td{:align => "right"}
-          = @record.num_cpu ? @record.num_cpu : notavail
+          = @record.cpu_total_cores ? @record.cpu_total_cores : notavail
         %td{:align => "right"}
           = @record.moderate_recommended_vcpus ? @record.moderate_recommended_vcpus : notavail
         %td{:align => "right"}
@@ -190,7 +190,7 @@
         %td
           = _("Processors")
         %td{:align => "right"}
-          = @record.num_cpu ? @record.num_cpu : notavail
+          = @record.cpu_total_cores ? @record.cpu_total_cores : notavail
         %td{:align => "right"}
           = @record.aggressive_recommended_vcpus ? @record.aggressive_recommended_vcpus : notavail
         %td{:align => "right"}
@@ -211,7 +211,7 @@
 
   .note
     - arr = [Vm.cpu_recommendation_minimum, MiqReport.new.format_mbytes_to_human_size(Vm.mem_recommendation_minimum)]
-    = _("* Recommendations are subject to minimum of CPU: %s and Memory: %s.") % arr
+    = _("* Recommendations are subject to minimum of CPU: %{cpu} and Memory: %{memory}.") % {:cpu => arr[0], :memory => arr[1]}
 
   - unless @explorer
     #buttons_on{:style => "float: right"}

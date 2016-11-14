@@ -38,13 +38,9 @@
               %td
                 = h(desc)
   %hr
-  %h3= _("Policy Simulation for %s") % pluralize(@tagitems.length, 'Item')
-  %table.admintable{:height => "75"}
-    %tbody
-      %tr
-        %td
-          - if @tagitems
-            - @embedded = true
-            - @policy_sim = true
-            = render :partial => "layouts/gtl", 
-                     :locals  => {:view => @pol_view} 
+  %h3= n_("Policy Simulation for %{amount} Item", "Policy Simulation for %{amount} Items", @tagitems.length) % {:amount => @tagitems.length}
+  - if @tagitems
+    - @embedded = true
+    - @policy_sim = true
+    = render :partial => "layouts/gtl",
+             :locals  => {:view => @pol_view}

@@ -5,7 +5,7 @@ describe AnsibleTowerJobTemplateDialogService do
     it "creates a dialog from a job template" do
       survey =
         "{\"spec\":[{\"index\": 0, \"question_name\": \"Param1\", \"min\": 10, \
-        \"default\": 19, \"max\": 100, \"question_description\": \"param 1\", \"required\": true, \"variable\": \
+        \"default\": \"19\", \"max\": 100, \"question_description\": \"param 1\", \"required\": true, \"variable\": \
         \"param1\", \"choices\": \"\", \"type\": \"integer\"}, {\"index\": 1, \"question_name\": \"Param2\", \"min\": \
         2, \"default\": \"as\", \"max\": 5, \"question_description\": \"param 2\", \"required\": true, \"variable\": \
         \"param2\", \"choices\": \"\", \"type\": \"text\"}, {\"index\": 2, \"question_name\": \"Param3\", \"min\": \
@@ -18,11 +18,15 @@ describe AnsibleTowerJobTemplateDialogService do
         \"multiplechoice\"}, {\"index\": 5, \"question_description\": \"param 6\", \"min\": \"\", \"default\": \
         \"opt1\\n222\", \"max\": \"\", \"question_name\": \"Param6\", \"required\": true, \"variable\": \"param6\", \
         \"choices\": \"opt1\\n222\\nopt3\", \"type\": \"multiselect\"}, {\"index\": 6, \"question_name\": \"Param7\", \
-        \"min\": \"\", \"default\": 14.5, \"max\": \"\", \"question_description\": \"param 7\", \"required\": true, \
-        \"variable\": \"param7\", \"choices\": \"\", \"type\": \"float\"}],\"name\":\"\",\"description\":\"\"}"
+        \"min\": \"\", \"default\": \"14.5\", \"max\": \"\", \"question_description\": \"param 7\", \
+        \"required\": true, \"variable\": \"param7\", \"choices\": \"\", \"type\": \"float\"}],\"name\":\"\", \
+        \"description\":\"\"}"
       allow(template).to receive(:survey_spec).and_return(JSON.parse(survey))
 
-      allow(template).to receive(:variables).and_return('some_extra_var' => 'blah')
+      allow(template).to receive(:variables).and_return('some_extra_var'  => 'blah',
+                                                        'other_extra_var' => {'name' => 'some_value'},
+                                                        'array_extra_var' => [{'name' => 'some_value'}]
+                                                       )
       dialog = subject.create_dialog(template)
 
       expect(dialog).to have_attributes(:label => template.name, :buttons => "submit,cancel")
@@ -78,8 +82,10 @@ describe AnsibleTowerJobTemplateDialogService do
     expect(group).to have_attributes(:label => "Extra Variables", :display => "edit")
 
     fields = group.dialog_fields
-    expect(fields.size).to eq(1)
+    expect(fields.size).to eq(3)
 
     assert_field(fields[0], DialogFieldTextBox, :name => 'param_some_extra_var', :default_value => 'blah', :data_type => 'string', :read_only => true)
+    assert_field(fields[1], DialogFieldTextBox, :name => 'param_other_extra_var', :default_value => '{"name":"some_value"}', :data_type => 'string', :read_only => true)
+    assert_field(fields[2], DialogFieldTextBox, :name => 'param_array_extra_var', :default_value => '[{"name":"some_value"}]', :data_type => 'string', :read_only => true)
   end
 end

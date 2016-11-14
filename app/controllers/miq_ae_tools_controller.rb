@@ -20,10 +20,6 @@ class MiqAeToolsController < ApplicationController
       refresh_log
       return
     end
-    if params[:pressed] == "collect_logs"
-      collect_logs
-      return
-    end
 
     unless @refresh_partial # if no button handler ran, show not implemented msg
       add_flash(_("Button not yet implemented"), :error)
@@ -35,7 +31,7 @@ class MiqAeToolsController < ApplicationController
   def log
     @breadcrumbs = []
     @log = $miq_ae_logger.contents if $miq_ae_logger
-    add_flash(_("Logs for this CFME Server are not available for viewing"), :warning) if @log.blank?
+    add_flash(_("Logs for this %{product} Server are not available for viewing") % {:product => I18n.t('product.name')}, :warning) if @log.blank?
     @lastaction = "log"
     @layout = "miq_ae_logs"
     @msg_title = "AE"
@@ -47,13 +43,9 @@ class MiqAeToolsController < ApplicationController
   def refresh_log
     assert_privileges("refresh_log")
     @log = $miq_ae_logger.contents if $miq_ae_logger
-    add_flash(_("Logs for this CFME Server are not available for viewing"), :warning) if @log.blank?
-    render :update do |page|
-      page << javascript_prologue
-      page.replace_html("main_div",
-                        :partial => "layouts/log_viewer",
-                        :locals  => {:legend_text => _("Last 1000 lines from the Automation log")})
-    end
+    add_flash(_("Logs for this %{product} Server are not available for viewing") % {:product => I18n.t('product.name')}, :warning) if @log.blank?
+    replace_main_div :partial => "layouts/log_viewer",
+                     :locals  => {:legend_text => _("Last 1000 lines from the Automation log")}
   end
 
   # Send the log in text format
@@ -112,7 +104,7 @@ class MiqAeToolsController < ApplicationController
   def automate_json
     begin
       automate_json = automate_import_json_serializer.serialize(ImportFileUpload.find(params[:import_file_upload_id]))
-    rescue StandardError => e
+    rescue => e
       add_flash(_("Error: import processing failed: %{message}") % {:message => e.message}, :error)
     end
 
@@ -128,6 +120,20 @@ class MiqAeToolsController < ApplicationController
   def cancel_import
     automate_import_service.cancel_import(params[:import_file_upload_id])
     add_flash(_("Datastore import was cancelled or is finished"), :info)
+
+    respond_to do |format|
+      format.js { render :json => @flash_array.to_json, :status => 200 }
+    end
+  end
+
+  def import_via_git
+    begin
+      git_based_domain_import_service.import(params[:git_repo_id], params[:git_branch_or_tag], current_tenant.id)
+
+      add_flash(_("Imported from git"), :info)
+    rescue => error
+      add_flash(_("Error: import failed: %{message}") % {:message => error.message}, :error)
+    end
 
     respond_to do |format|
       format.js { render :json => @flash_array.to_json, :status => 200 }
@@ -172,7 +178,7 @@ Methods updated/added: %{method_stats}") % stat_options, :success)
     upload_file = params.fetch_path(:upload, :file)
 
     if upload_file.blank?
-      add_flash(_("Use the browse button to locate an import file"), :warning)
+      add_flash(_("Use the Choose file button to locate an import file"), :warning)
     else
       import_file_upload_id = automate_import_service.store_for_import(upload_file.read)
       add_flash(_("Import file was uploaded successfully"), :success)
@@ -189,6 +195,67 @@ Methods updated/added: %{method_stats}") % stat_options, :success)
     @message = params[:message]
   end
 
+  def retrieve_git_datastore
+    redirect_options = {:action => :review_git_import}
+    git_url = params[:git_url]
+    verify_ssl = params[:git_verify_ssl] == "true" ? OpenSSL::SSL::VERIFY_PEER : OpenSSL::SSL::VERIFY_NONE
+    new_git_repo = false
+
+    if git_url.blank?
+      add_flash(_("Please provide a valid git URL"), :error)
+    elsif !GitBasedDomainImportService.available?
+      add_flash(_("Please enable the git owner role in order to import git repositories"), :error)
+    else
+      begin
+        git_repo = GitRepository.find_or_create_by!(:url => git_url) { new_git_repo = true }
+        git_repo.update_attributes(:verify_ssl => verify_ssl)
+        if params[:git_username] && params[:git_password]
+          git_repo.update_authentication(:values => {:userid   => params[:git_username],
+                                                     :password => params[:git_password]})
+        end
+
+        task_options = {
+          :action => "Retrieve git repository",
+          :userid => current_user.userid
+        }
+        queue_options = {
+          :class_name  => "GitRepository",
+          :method_name => "refresh",
+          :instance_id => git_repo.id,
+          :role        => "git_owner",
+          :args        => []
+        }
+
+        task_id = MiqTask.generic_action_with_callback(task_options, queue_options)
+        task = MiqTask.wait_for_taskid(task_id)
+
+        raise task.message unless task.status == "Ok"
+
+        branch_names = git_repo.git_branches.collect(&:name)
+        tag_names = git_repo.git_tags.collect(&:name)
+        redirect_options[:git_branches] = branch_names.to_json
+        redirect_options[:git_tags] = tag_names.to_json
+        redirect_options[:git_repo_id] = git_repo.id
+        flash_message = "Successfully found git repository, please choose a branch or tag"
+        add_flash(_(flash_message), :success)
+      rescue => err
+        git_repo.destroy if git_repo && new_git_repo
+        add_flash(_("Error during repository fetch: #{err.message}"), :error)
+      end
+    end
+
+    redirect_options[:message] = @flash_array.first.to_json
+
+    redirect_to redirect_options
+  end
+
+  def review_git_import
+    @message = params[:message]
+    @git_branches = params[:git_branches]
+    @git_tags = params[:git_tags]
+    @git_repo_id = params[:git_repo_id]
+  end
+
   # Import classes
   def upload
     if params[:upload] && !params[:upload][:datastore].blank?
@@ -200,13 +267,13 @@ Classes updated/added: %{class_stats}
 Instances updated/added: %{instance_stats}
 Methods updated/added: %{method_stats}") % stat_options)
         redirect_to :action => 'import_export', :flash_msg => @flash_array[0][:message]         # redirect to build the retire screen
-      rescue StandardError => bang
+      rescue => bang
         add_flash(_("Error during 'upload': %{message}") % {:message => bang.message}, :error)
         redirect_to :action => 'import_export', :flash_msg => @flash_array[0][:message], :flash_error => true         # redirect to build the retire screen
       end
     else
       @in_a_form = true
-      add_flash(_("Use the Browse button to locate an Import file"), :error)
+      add_flash(_("Use the Choose file button to locate an Import file"), :error)
       #     render :action=>"import_export"
       import_export
     end
@@ -236,11 +303,7 @@ Methods updated/added: %{method_stats}") % stat_options)
       self.x_node = "root" if x_active_tree == :ae_tree && x_tree
       add_flash(_("All custom classes and instances have been reset to default"))
     end
-    render :update do |page|
-      page << javascript_prologue
-      page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-      page << "miqSparkle(false);"
-    end
+    javascript_flash(:spinner_off => true)
   end
 
   private ###########################
@@ -251,6 +314,10 @@ Methods updated/added: %{method_stats}") % stat_options)
 
   def automate_import_service
     @automate_import_service ||= AutomateImportService.new
+  end
+
+  def git_based_domain_import_service
+    @git_based_domain_import_service ||= GitBasedDomainImportService.new
   end
 
   def add_stats(stats_hash)
@@ -314,52 +381,6 @@ Methods updated/added: %{method_stats}") % stat_options)
     txt
   end
 
-  def ws_tree_from_xml(xml_string)
-    xml = MiqXml.load(xml_string)
-    top_nodes = []
-    @idx = 0
-    xml.root.each_element do |e|
-      top_nodes.push(ws_tree_add_node(e))
-    end
-    top_nodes.to_json
-  end
-
-  def ws_tree_add_node(el)
-    e_node = {}
-    e_node[:key] = "e_#{@idx}"
-    @idx += 1
-    #   e_node['tooltip'] = "Host: #{@host.name}"
-    e_node[:style] = "cursor:default"          # No cursor pointer
-    e_node[:addClass] = "cfme-no-cursor-node"
-    e_kids = []
-    if el.name == "MiqAeObject"
-      e_node[:title] = "#{el.attributes["namespace"]} <b>/</b> #{el.attributes["class"]} <b>/</b> #{el.attributes["instance"]}"
-      e_node[:icon] = ActionController::Base.helpers.image_path("100/q.png")
-    elsif el.name == "MiqAeAttribute"
-      e_node[:title] = el.attributes["name"]
-      e_node[:icon] = ActionController::Base.helpers.image_path("100/attribute.png")
-    elsif !el.text.blank?
-      e_node[:title] = el.text
-      e_node[:icon] = ActionController::Base.helpers.image_path("100/#{el.name.underscore}.png")
-    else
-      e_node[:title] = el.name
-      e_node[:icon] = ActionController::Base.helpers.image_path("100/#{e_node[:title].underscore.sub(/^miq_ae_service_/, '')}.png")
-      el.attributes.each_pair do |k, v|
-        a_node = {}
-        a_node[:key] = "a_#{@idx}"
-        @idx += 1
-        a_node[:title] = "#{k} <b>=</b> #{v}"
-        a_node[:icon] = ActionController::Base.helpers.image_path("100/attribute.png")
-        e_kids.push(a_node)
-      end
-    end
-    el.each_element do |e|
-      e_kids.push(ws_tree_add_node(e))
-    end
-    e_node[:children] = e_kids unless e_kids.empty?
-    e_node
-  end
-
   def valid_resolve_object?
     add_flash(_("Starting Class must be selected"), :error) if @resolve[:new][:starting_object].blank?
     if @resolve[:new][:instance_name].blank? && @resolve[:new][:other_name].blank?
@@ -397,9 +418,8 @@ Methods updated/added: %{method_stats}") % stat_options)
     #   @resolve[:new][:target_attr_name] = params[:target_attr_name] if params.has_key?(:target_attr_name)
     if params.key?(:target_class)
       @resolve[:new][:target_class] = params[:target_class]
-      klass = CustomButton.name_to_button_class(params[:target_class])
-      unless klass.nil?
-        targets = klass.all
+      targets = Rbac.filtered(params[:target_class]).select(:id, :name)
+      unless targets.nil?
         @resolve[:targets] = targets.sort_by { |t| t.name.downcase }.collect { |t| [t.name, t.id.to_s] }
         @resolve[:new][:target_id] = nil
       end
@@ -413,10 +433,12 @@ Methods updated/added: %{method_stats}") % stat_options)
 
   def get_session_data
     @layout  = "miq_ae_tools"
-    @resolve = session[:resolve] if session[:resolve]
+    @resolve = session[:resolve_tools] if session[:resolve_tools]
   end
 
   def set_session_data
-    session[:resolve] = @resolve if @resolve
+    session[:resolve_tools] = @resolve if @resolve
   end
+
+  menu_section :aut
 end

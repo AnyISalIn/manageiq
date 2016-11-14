@@ -1,4 +1,6 @@
 describe ServiceTemplate do
+  include_examples "OwnershipMixin"
+
   describe "#custom_actions" do
     let(:service_template) do
       described_class.create(:name => "test", :description => "test", :custom_button_sets => [assigned_group_set])
@@ -155,6 +157,20 @@ describe ServiceTemplate do
       expect(sub_svc).to include(@svc_d)
     end
 
+    it "should add_resource! only if a parent_svc exists" do
+      sub_svc = instance_double("service_task", :options => {:dialog => {}})
+      parent_svc = instance_double("service_task", :options => {:dialog => {}})
+      expect(parent_svc).to receive(:add_resource!).once
+
+      @svc_a.create_service(sub_svc, parent_svc)
+    end
+
+    it "should not call add_resource! if no parent_svc exists" do
+      sub_svc = instance_double("service_task", :options => {:dialog => {}})
+      expect(sub_svc).to receive(:add_resource!).never
+
+      @svc_a.create_service(sub_svc)
+    end
     it "should return all parent services for a service" do
       add_and_save_service(@svc_a, @svc_b)
       add_and_save_service(@svc_a, @svc_c)
@@ -351,6 +367,14 @@ describe ServiceTemplate do
         expect(@st1.template_valid?).to be_truthy
         expect(@st1.template_valid_error_message).to be_nil
       end
+
+      it 'not existing request' do
+        @st1.save!
+        @ptr.destroy
+        expect(@st1.reload.template_valid?).to be_falsey
+        msg = "Missing Service Resource(s): #{@ptr.class.base_model.name}:#{@ptr.id}"
+        expect(@st1.template_valid_error_message).to include(msg)
+      end
     end
 
     context 'composite' do
@@ -381,6 +405,27 @@ describe ServiceTemplate do
         @ptr.update_attributes(:src_vm_id => 999)
         expect(@st2.template_valid?).to be_falsey
         expect(@st2.template_valid_error_message).to include("Unable to find VM with Id [999]")
+      end
+    end
+  end
+
+  describe 'generic_subtype' do
+    context 'when prov_type = generic ' do
+      it 'sets a default value' do
+        st = ServiceTemplate.create(:prov_type => 'generic')
+        expect(st.generic_subtype).to eq('custom')
+      end
+
+      it 'sets specified value' do
+        st = ServiceTemplate.create(:prov_type => 'generic', :generic_subtype => 'vm')
+        expect(st.generic_subtype).to eq('vm')
+      end
+    end
+
+    context 'when prov_type != generic' do
+      it 'does not set default value' do
+        st = ServiceTemplate.create(:prov_type => 'vmware')
+        expect(st.generic_subtype).to be_nil
       end
     end
   end

@@ -19,10 +19,18 @@ describe VirtualFields do
         create_table :test_classes do |t|
           t.integer :col1
         end
+
+        create_table :test_other_classes do |t|
+          t.integer :ocol1
+          t.string  :ostr
+        end
       end
 
       require 'ostruct'
       class TestClass < TestClassBase
+        def self.connection
+          TestClassBase.connection
+        end
         belongs_to :ref1, :class_name => 'TestClass', :foreign_key => :col1
       end
     end
@@ -156,35 +164,35 @@ describe VirtualFields do
     shared_examples_for "TestSubclass with virtual columns" do
       context "TestSubclass" do
         it ".virtual_attribute_names" do
-          expect(TestSubclass.virtual_attribute_names).to match_array(@vcols_sub_strs)
+          expect(test_sub_class.virtual_attribute_names).to match_array(@vcols_sub_strs)
         end
 
         it ".attribute_names" do
-          expect(TestSubclass.attribute_names).to match_array(@cols_sub_strs)
+          expect(test_sub_class.attribute_names).to match_array(@cols_sub_strs)
         end
 
         context ".virtual_attribute?" do
           context "with virtual column" do
-            it("as string") { expect(TestSubclass.virtual_attribute?("vcolsub1")).to be_truthy }
-            it("as symbol") { expect(TestSubclass.virtual_attribute?(:vcolsub1)).to  be_truthy }
+            it("as string") { expect(test_sub_class.virtual_attribute?("vcolsub1")).to be_truthy }
+            it("as symbol") { expect(test_sub_class.virtual_attribute?(:vcolsub1)).to  be_truthy }
           end
 
           context "with column" do
-            it("as string") { expect(TestSubclass.virtual_attribute?("col1")).not_to be_truthy }
-            it("as symbol") { expect(TestSubclass.virtual_attribute?(:col1)).not_to  be_truthy }
+            it("as string") { expect(test_sub_class.virtual_attribute?("col1")).not_to be_truthy }
+            it("as symbol") { expect(test_sub_class.virtual_attribute?(:col1)).not_to  be_truthy }
           end
         end
 
         it ".remove_virtual_fields" do
-          expect(TestSubclass.remove_virtual_fields(:vcol1)).to             be_nil
-          expect(TestSubclass.remove_virtual_fields(:vcolsub1)).to          be_nil
-          expect(TestSubclass.remove_virtual_fields(:ref1)).to eq(:ref1)
-          expect(TestSubclass.remove_virtual_fields([:vcol1])).to eq([])
-          expect(TestSubclass.remove_virtual_fields([:vcolsub1])).to eq([])
-          expect(TestSubclass.remove_virtual_fields([:vcolsub1, :vcol1, :ref1])).to eq([:ref1])
-          expect(TestSubclass.remove_virtual_fields({:vcol1    => {}})).to eq({})
-          expect(TestSubclass.remove_virtual_fields({:vcolsub1 => {}})).to eq({})
-          expect(TestSubclass.remove_virtual_fields(:vcolsub1 => {}, :volsub1 => {}, :ref1 => {})).to eq({:ref1 => {}})
+          expect(test_sub_class.remove_virtual_fields(:vcol1)).to             be_nil
+          expect(test_sub_class.remove_virtual_fields(:vcolsub1)).to          be_nil
+          expect(test_sub_class.remove_virtual_fields(:ref1)).to eq(:ref1)
+          expect(test_sub_class.remove_virtual_fields([:vcol1])).to eq([])
+          expect(test_sub_class.remove_virtual_fields([:vcolsub1])).to eq([])
+          expect(test_sub_class.remove_virtual_fields([:vcolsub1, :vcol1, :ref1])).to eq([:ref1])
+          expect(test_sub_class.remove_virtual_fields({:vcol1    => {}})).to eq({})
+          expect(test_sub_class.remove_virtual_fields({:vcolsub1 => {}})).to eq({})
+          expect(test_sub_class.remove_virtual_fields(:vcolsub1 => {}, :volsub1 => {}, :ref1 => {})).to eq({:ref1 => {}})
         end
       end
     end
@@ -203,19 +211,17 @@ describe VirtualFields do
       it_should_behave_like "TestClass with virtual columns"
 
       context "and TestSubclass with virtual columns" do
-        before(:each) do
-          class TestSubclass < TestClass
+        let(:test_sub_class) do
+          Class.new(TestClass) do
             virtual_column :vcolsub1, :type => :string
           end
-
+        end
+        before(:each) do
+          test_sub_class
           @vcols_sub_strs = @vcols_strs + ["vcolsub1"]
           @vcols_sub_syms = @vcols_syms + [:vcolsub1]
           @cols_sub_strs  = @vcols_sub_strs + ["id", "col1"]
           @cols_sub_syms  = @vcols_sub_syms + [:id, :col1]
-        end
-
-        after(:each) do
-          Object.send(:remove_const, :TestSubclass)
         end
 
         it_should_behave_like "TestClass with virtual columns" # Shows inheritance doesn't pollute base class
@@ -361,13 +367,13 @@ describe VirtualFields do
     shared_examples_for "TestSubclass with virtual reflections" do
       context "TestSubclass" do
         it ".virtual_reflections" do
-          expect(TestSubclass.virtual_reflections.keys).to match_array(@vrefs_sub_syms)
-          expect(TestSubclass.virtual_reflections.values.collect(&:name)).to match_array(@vrefs_sub_syms)
+          expect(test_sub_class.virtual_reflections.keys).to match_array(@vrefs_sub_syms)
+          expect(test_sub_class.virtual_reflections.values.collect(&:name)).to match_array(@vrefs_sub_syms)
         end
 
         it ".reflections_with_virtual" do
-          expect(TestSubclass.reflections_with_virtual.keys).to match_array(@refs_sub_syms)
-          expect(TestSubclass.reflections_with_virtual.values.collect(&:name)).to match_array(@refs_sub_syms)
+          expect(test_sub_class.reflections_with_virtual.keys).to match_array(@refs_sub_syms)
+          expect(test_sub_class.reflections_with_virtual.values.collect(&:name)).to match_array(@refs_sub_syms)
         end
 
         context ".virtual_reflection?" do
@@ -383,15 +389,15 @@ describe VirtualFields do
         end
 
         it ".remove_virtual_fields" do
-          expect(TestSubclass.remove_virtual_fields(:vref1)).to             be_nil
-          expect(TestSubclass.remove_virtual_fields(:vrefsub1)).to          be_nil
-          expect(TestSubclass.remove_virtual_fields(:ref1)).to eq(:ref1)
-          expect(TestSubclass.remove_virtual_fields([:vref1])).to eq([])
-          expect(TestSubclass.remove_virtual_fields([:vrefsub1])).to eq([])
-          expect(TestSubclass.remove_virtual_fields([:vrefsub1, :vref1, :ref1])).to eq([:ref1])
-          expect(TestSubclass.remove_virtual_fields({:vref1    => {}})).to eq({})
-          expect(TestSubclass.remove_virtual_fields({:vrefsub1 => {}})).to eq({})
-          expect(TestSubclass.remove_virtual_fields(:vrefsub1 => {}, :vref1 => {}, :ref1 => {})).to eq({:ref1 => {}})
+          expect(test_sub_class.remove_virtual_fields(:vref1)).to             be_nil
+          expect(test_sub_class.remove_virtual_fields(:vrefsub1)).to          be_nil
+          expect(test_sub_class.remove_virtual_fields(:ref1)).to eq(:ref1)
+          expect(test_sub_class.remove_virtual_fields([:vref1])).to eq([])
+          expect(test_sub_class.remove_virtual_fields([:vrefsub1])).to eq([])
+          expect(test_sub_class.remove_virtual_fields([:vrefsub1, :vref1, :ref1])).to eq([:ref1])
+          expect(test_sub_class.remove_virtual_fields({:vref1    => {}})).to eq({})
+          expect(test_sub_class.remove_virtual_fields({:vrefsub1 => {}})).to eq({})
+          expect(test_sub_class.remove_virtual_fields(:vrefsub1 => {}, :vref1 => {}, :ref1 => {})).to eq({:ref1 => {}})
         end
       end
     end
@@ -408,19 +414,17 @@ describe VirtualFields do
       it_should_behave_like "TestClass with virtual reflections"
 
       context "and TestSubclass with virtual reflections" do
-        before(:each) do
-          class TestSubclass < TestClass
+        let(:test_sub_class) do
+          Class.new(TestClass) do
             def self.reflections; super.merge(:ref2 => OpenStruct.new(:name => :ref2, :options => {}, :klass => TestClass)); end
 
             virtual_has_one :vrefsub1
           end
-
+        end
+        before(:each) do
+          test_sub_class
           @vrefs_sub_syms = @vrefs_syms + [:vrefsub1]
           @refs_sub_syms  = @vrefs_sub_syms + [:ref1, :ref2]
-        end
-
-        after(:each) do
-          Object.send(:remove_const, :TestSubclass)
         end
 
         it_should_behave_like "TestClass with virtual reflections" # Shows inheritance doesn't pollute base class
@@ -454,6 +458,269 @@ describe VirtualFields do
           it("as string") { expect(TestClass.virtual_attribute?("col1")).not_to be_truthy }
           it("as symbol") { expect(TestClass.virtual_attribute?(:col1)).not_to  be_truthy }
         end
+      end
+    end
+
+    describe ".attribute_supported_by_sql?" do
+      it "supports real columns" do
+        expect(TestClass.attribute_supported_by_sql?(:col1)).to be_truthy
+      end
+
+      it "supports aliases" do
+        TestClass.alias_attribute :col2, :col1
+
+        expect(TestClass.attribute_supported_by_sql?(:col2)).to be_truthy
+      end
+
+      it "does not support virtual columns" do
+        class TestClass
+          virtual_attribute :col2, :integer
+          def col2
+            col1
+          end
+        end
+        expect(TestClass.attribute_supported_by_sql?(:col2)).to be_falsey
+      end
+
+      it "supports virtual columns with arel" do
+        class TestClass
+          virtual_attribute :col2, :integer, :arel => (-> (t) { t.grouping(t.class.arel_attribute(:col1)) })
+          def col2
+            col1
+          end
+        end
+        expect(TestClass.attribute_supported_by_sql?(:col2)).to be_truthy
+      end
+
+      it "supports delegates" do
+        TestClass.virtual_delegate :col1, :prefix => 'parent', :to => :ref1
+
+        expect(TestClass.attribute_supported_by_sql?(:parent_col1)).to be_truthy
+      end
+    end
+
+    describe ".virtual_delegate" do
+      # double purposing col1. It has an actual value in the child class
+      let(:parent) { TestClass.create(:id => 1, :col1 => 4) }
+
+      it "delegates to parent" do
+        TestClass.virtual_delegate :col1, :prefix => 'parent', :to => :ref1
+        tc = TestClass.new(:id => 2, :ref1 => parent)
+        expect(tc.parent_col1).to eq(4)
+      end
+
+      it "delegates to nil parent" do
+        TestClass.virtual_delegate :col1, :prefix => 'parent', :to => :ref1, :allow_nil => true
+        tc = TestClass.new(:id => 2)
+        expect(tc.parent_col1).to be_nil
+      end
+
+      it "defines parent virtual attribute" do
+        TestClass.virtual_delegate :col1, :prefix => 'parent', :to => :ref1
+        expect(TestClass.virtual_attribute_names).to include("parent_col1")
+      end
+
+      it "delegates to parent (sql)" do
+        TestClass.virtual_delegate :col1, :prefix => 'parent', :to => :ref1
+        TestClass.create(:id => 2, :ref1 => parent)
+        tcs = TestClass.all.select(:id, :col1, TestClass.arel_attribute(:parent_col1).as("x"))
+        expect(tcs.map(&:x)).to match_array([nil, 4])
+      end
+
+      context "with has_one :parent" do
+        before do
+          TestClass.has_one :ref2, :class_name => 'TestClass', :foreign_key => :col1, :inverse_of => :ref1
+        end
+        # child.col1 will be getting parent's (aka tc's) id
+        let(:child) { TestClass.create(:id => 1) }
+
+        it "delegates to child" do
+          TestClass.virtual_delegate :col1, :prefix => 'child', :to => :ref2
+          tc = TestClass.create(:id => 2, :ref2 => child)
+          expect(tc.child_col1).to eq(2)
+        end
+
+        it "delegates to nil child" do
+          TestClass.virtual_delegate :col1, :prefix => 'child', :to => :ref2, :allow_nil => true
+          tc = TestClass.new(:id => 2)
+          expect(tc.child_col1).to be_nil
+        end
+
+        it "defines child virtual attribute" do
+          TestClass.virtual_delegate :col1, :prefix => 'child', :to => :ref2
+          expect(TestClass.virtual_attribute_names).to include("child_col1")
+        end
+
+        it "delegates to child (sql)" do
+          TestClass.virtual_delegate :col1, :prefix => 'child', :to => :ref2
+          TestClass.create(:id => 2, :ref2 => child)
+          tcs = TestClass.all.select(:id, :col1, :child_col1).to_a
+          expect { expect(tcs.map(&:child_col1)).to match_array([nil, 2]) }.to match_query_limit_of(0)
+        end
+
+        # this may fail in the future as our way of building queries may change
+        # just want to make sure it changed due to intentional changes
+        it "uses table alias for subquery" do
+          TestClass.virtual_delegate :col1, :prefix => 'child', :to => :ref2
+          sql = TestClass.all.select(:id, :col1, :child_col1).to_sql
+          expect(sql).to match(/"test_classes_[^"]*"."col1"/i)
+        end
+      end
+
+      context "with relation in foreign table" do
+        before(:each) do
+          class TestOtherClass < ActiveRecord::Base
+            def self.connection
+              TestClassBase.connection
+            end
+            belongs_to :oref1, :class_name => 'TestClass', :foreign_key => :ocol1
+
+            include VirtualFields
+          end
+        end
+
+        after(:each) do
+          TestOtherClass.remove_connection
+          Object.send(:remove_const, :TestOtherClass)
+        end
+
+        it "delegates to another table" do
+          TestOtherClass.virtual_delegate :col1, :to => :oref1
+          TestOtherClass.create(:id => 4, :oref1 => TestClass.create(:id => 3))
+          TestOtherClass.create(:id => 3, :oref1 => TestClass.create(:id => 2, :col1 => 99))
+          tcs = TestOtherClass.all.select(:id, :ocol1, TestOtherClass.arel_attribute(:col1).as("x"))
+          expect(tcs.map(&:x)).to match_array([nil, 99])
+        end
+
+        # this may fail in the future as our way of building queries may change
+        # just want to make sure it changed due to intentional changes
+        it "delegates to another table without alias" do
+          TestOtherClass.virtual_delegate :col1, :to => :oref1
+          sql = TestOtherClass.all.select(:id, :ocol1, TestOtherClass.arel_attribute(:col1).as("x")).to_sql
+          expect(sql).to match(/"test_classes"."col1"/i)
+        end
+      end
+    end
+
+    describe ".attribute_supported_by_sql?" do
+      it "supports real columns" do
+        expect(TestClass.attribute_supported_by_sql?(:col1)).to be_truthy
+      end
+
+      it "supports aliases" do
+        TestClass.alias_attribute :col2, :col1
+
+        expect(TestClass.attribute_supported_by_sql?(:col2)).to be_truthy
+      end
+
+      it "does not support virtual columns" do
+        class TestClass
+          virtual_attribute :col2, :integer
+          def col2
+            col1
+          end
+        end
+        expect(TestClass.attribute_supported_by_sql?(:col2)).to be_falsey
+      end
+
+      it "supports virtual columns with arel" do
+        class TestClass
+          virtual_attribute :col2, :integer, :arel => (-> (t) { t.grouping(t.class.arel_attribute(:col1)) })
+          def col2
+            col1
+          end
+        end
+        expect(TestClass.attribute_supported_by_sql?(:col2)).to be_truthy
+      end
+
+      it "supports delegates" do
+        TestClass.virtual_delegate :col1, :prefix => 'parent', :to => :ref1
+
+        expect(TestClass.attribute_supported_by_sql?(:parent_col1)).to be_truthy
+      end
+    end
+
+    describe "#select" do
+      it "supports virtual attributes" do
+        class TestClass
+          virtual_attribute :col2, :integer, :arel => (-> (t) { t.grouping(arel_attribute(:col1)) })
+          def col2
+            if has_attribute?("col2")
+              col2
+            else
+              # typically we'd return col1
+              # but we're testing that virtual columns are working
+              # col1
+              raise "NOPE"
+            end
+          end
+        end
+
+        TestClass.create(:id => 2, :col1 => 20)
+        expect(TestClass.select(:col2).first[:col2]).to eq(20)
+      end
+    end
+
+    describe ".virtual_delegate" do
+      # double purposing col1. It has an actual value in the child class
+      let(:parent) { TestClass.create(:id => 1, :col1 => 4) }
+
+      it "delegates to child" do
+        TestClass.virtual_delegate :col1, :prefix => 'parent', :to => :ref1
+        tc = TestClass.new(:id => 2, :ref1 => parent)
+        expect(tc.parent_col1).to eq(4)
+      end
+
+      it "delegates to nil child" do
+        TestClass.virtual_delegate :col1, :prefix => 'parent', :to => :ref1, :allow_nil => true
+        tc = TestClass.new(:id => 2)
+        expect(tc.parent_col1).to be_nil
+      end
+
+      it "defines virtual attribute" do
+        TestClass.virtual_delegate :col1, :prefix => 'parent', :to => :ref1
+        expect(TestClass.virtual_attribute_names).to include("parent_col1")
+      end
+
+      it "defines with a new name" do
+        TestClass.virtual_delegate 'funky_name', :to => "ref1.col1"
+        tc = TestClass.new(:id => 2, :ref1 => parent)
+        expect(tc.funky_name).to eq(4)
+      end
+
+      it "defaults for to nil child (array)" do
+        TestClass.virtual_delegate :col1, :prefix => 'parent', :to => :ref1, :allow_nil => true, :default => []
+        tc = TestClass.new(:id => 2)
+        expect(tc.parent_col1).to eq([])
+      end
+
+      it "defaults for to nil child (integer)" do
+        TestClass.virtual_delegate :col1, :prefix => 'parent', :to => :ref1, :allow_nil => true, :default => 0
+        tc = TestClass.new(:id => 2)
+        expect(tc.parent_col1).to eq(0)
+      end
+
+      it "defaults for to nil child (string)" do
+        TestClass.virtual_delegate :col1, :prefix => 'parent', :to => :ref1, :allow_nil => true, :default => "def"
+        tc = TestClass.new(:id => 2)
+        expect(tc.parent_col1).to eq("def")
+      end
+    end
+
+    describe "#sum" do
+      it "supports virtual attributes" do
+        class TestClass
+          virtual_attribute :col2, :integer, :arel => (-> (t) { t.grouping(arel_attribute(:col1)) })
+          def col2
+            col1
+          end
+        end
+
+        TestClass.create(:id => 1, :col1 => nil)
+        TestClass.create(:id => 2, :col1 => 20)
+        TestClass.create(:id => 3, :col1 => 30)
+
+        expect(TestClass.sum(:col2)).to eq(50)
       end
     end
   end

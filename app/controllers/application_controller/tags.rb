@@ -15,13 +15,21 @@ module ApplicationController::Tags
       tagging_edit_tags_reset
     end
   end
+
+  def service_tag
+    tagging_edit('Service')
+  end
+
+  def container_tag
+    tagging_edit('Container')
+  end
+
   alias_method :image_tag, :tagging_edit
   alias_method :instance_tag, :tagging_edit
   alias_method :vm_tag, :tagging_edit
   alias_method :miq_template_tag, :tagging_edit
-  alias_method :service_tag, :tagging_edit
-  alias_method :container_tag, :tagging_edit
   alias_method :storage_tag, :tagging_edit
+  alias_method :infra_networking_tag, :tagging_edit
 
   # New classification category chosen on the classify screen
   def classify_new_cat
@@ -187,10 +195,7 @@ module ApplicationController::Tags
     else
       @edit = nil                               # clean out the saved info
       session[:flash_msgs] = @flash_array.dup   # Put msg in session for next transaction to display
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to(previous_breadcrumb_url)
-      end
+      javascript_redirect previous_breadcrumb_url
     end
   end
 
@@ -207,10 +212,7 @@ module ApplicationController::Tags
     else
       @edit = nil
       session[:flash_msgs] = @flash_array.dup   # Put msg in session for next transaction to display
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to(previous_breadcrumb_url)
-      end
+      javascript_redirect previous_breadcrumb_url
     end
   end
 
@@ -232,7 +234,7 @@ module ApplicationController::Tags
                                       :add_ids    => @edit[:new][:assignments] - @edit[:current][:assignments],
                                       :delete_ids => @edit[:current][:assignments] - @edit[:new][:assignments]
                                     })
-  rescue StandardError => bang
+  rescue => bang
     add_flash(_("Error during 'Save Tags': %{error_message}") % {:error_message => bang.message}, :error)
   else
     add_flash(_("Tag edits were successfully saved"))
@@ -382,13 +384,10 @@ module ApplicationController::Tags
     @tagging = session[:tag_db] = db        # Remember the DB
     get_tag_items
     drop_breadcrumb(:name => _("Tag Assignment"), :url => "/#{session[:controller]}/tagging_edit")
-    render :update do |page|
-      page << javascript_prologue
-      page.redirect_to :action => 'tagging_edit',
-                       :id     => params[:id],
-                       :db     => db,
-                       :escape => false
-    end
+    javascript_redirect :action => 'tagging_edit',
+                         :id     => params[:id],
+                         :db     => db,
+                         :escape => false
   end
 
   # Getting my company tags and my tags to display on summary screen
@@ -402,5 +401,19 @@ module ApplicationController::Tags
       array << a.description
     end
     session[:mytags] = rec.tagged_with(:cat => session[:userid])    # Start with the first items tags
+  end
+
+  def locals_for_tagging
+    {:action_url   => 'tagging',
+     :multi_record => true,
+     :record_id    => @sb[:rec_id] || @edit[:object_ids] && @edit[:object_ids][0]
+    }
+  end
+
+  def update_tagging_partials(presenter, r)
+    presenter.update(:main_div, r[:partial => 'layouts/tagging',
+                                  :locals  => locals_for_tagging])
+    presenter.update(:form_buttons_div, r[:partial => 'layouts/x_edit_buttons',
+                                          :locals  => locals_for_tagging])
   end
 end

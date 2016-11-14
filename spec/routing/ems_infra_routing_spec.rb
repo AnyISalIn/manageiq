@@ -28,7 +28,6 @@ describe EmsInfraController do
     create
     form_field_changed
     listnav_search_selected
-    panel_control
     protect
     quick_search
     sections_field_changed
@@ -37,8 +36,7 @@ describe EmsInfraController do
     tag_edit_form_field_changed
     tagging_edit
     tl_chooser
-    tree_autoload_dynatree
-    tree_autoload_quads
+    tree_autoload
     update
     wait_for_task
     scaling

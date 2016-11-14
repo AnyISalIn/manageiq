@@ -17,8 +17,6 @@ class SupportController < ApplicationController
   end
 
   def about
-    #   @tabs ||= [ ["1", ""] ]
-    #   @tabs.push( ["1", "Help"] )
     @vmdb = {:version => Vmdb::Appliance.VERSION, :build => Vmdb::Appliance.BUILD}
     @user_role = User.current_user.miq_user_role_name
     @pdf_documents = pdf_documents
@@ -32,7 +30,7 @@ class SupportController < ApplicationController
   end
 
   def get_session_data
-    @title  = _("Support")
+    @title  = _("Documentation")
     @layout = get_layout
   end
 

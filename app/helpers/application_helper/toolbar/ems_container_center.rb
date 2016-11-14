@@ -26,10 +26,10 @@ class ApplicationHelper::Toolbar::EmsContainerCenter < ApplicationHelper::Toolba
         button(
           :ems_container_delete,
           'pficon pficon-delete fa-lg',
-          t = N_('Remove this Containers Provider from the VMDB'),
+          t = N_('Remove this Containers Provider'),
           t,
           :url_parms => "&refresh=y",
-          :confirm   => N_("Warning: This Containers Provider and ALL of its components will be permanently removed from the Virtual Management Database.  Are you sure you want to remove this Containers Provider?")),
+          :confirm   => N_("Warning: This Containers Provider and ALL of its components will be permanently removed!")),
       ]
     ),
   ])
@@ -45,14 +45,16 @@ class ApplicationHelper::Toolbar::EmsContainerCenter < ApplicationHelper::Toolba
           'product product-timeline fa-lg',
           N_('Show Timelines for this Containers Provider'),
           N_('Timelines'),
-          :klass     => ApplicationHelper::Button::EmsContainerTimeline,
+          :klass     => ApplicationHelper::Button::GenericFeatureButton,
+          :options   => {:feature => :timeline},
           :url_parms => "?display=timeline"),
         button(
           :ems_container_perf,
           'product product-monitoring fa-lg',
           N_('Show Capacity & Utilization data for this Provider'),
           N_('Utilization'),
-          :klass     => ApplicationHelper::Button::EmsContainerPerformance,
+          :klass     => ApplicationHelper::Button::GenericFeatureButton,
+          :options   => {:feature => :performance},
           :url_parms => "?display=performance"),
       ]
     ),
@@ -89,7 +91,8 @@ class ApplicationHelper::Toolbar::EmsContainerCenter < ApplicationHelper::Toolba
           'fa fa-search fa-lg',
           N_('Re-check Authentication Status for this Containers Provider'),
           N_('Re-check Authentication Status'),
-          :klass => ApplicationHelper::Button::EmsContainerRecheckAuthStatus),
+          :klass => ApplicationHelper::Button::GenericFeatureButton,
+          :options => {:feature => :authentication_status}),
       ]
     ),
   ])

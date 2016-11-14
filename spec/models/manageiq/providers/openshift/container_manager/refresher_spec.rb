@@ -11,7 +11,7 @@ describe ManageIQ::Providers::Openshift::ContainerManager::Refresher do
   it "will perform a full refresh on openshift" do
     2.times do
       @ems.reload
-      VCR.use_cassette("#{described_class.name.underscore}",
+      VCR.use_cassette(described_class.name.underscore,
                        :match_requests_on => [:path,]) do # , :record => :new_episodes) do
         EmsRefresh.refresh(@ems)
       end
@@ -28,6 +28,7 @@ describe ManageIQ::Providers::Openshift::ContainerManager::Refresher do
       assert_specific_container_route
       assert_specific_container_build
       assert_specific_container_build_pod
+      assert_specific_container_template
     end
   end
 
@@ -42,6 +43,7 @@ describe ManageIQ::Providers::Openshift::ContainerManager::Refresher do
     expect(ContainerProject.count).to eq(4)
     expect(ContainerBuild.count).to eq(1)
     expect(ContainerBuildPod.count).to eq(1)
+    expect(ContainerTemplate.count).to eq(6)
   end
 
   def assert_ems
@@ -179,5 +181,20 @@ describe ManageIQ::Providers::Openshift::ContainerManager::Refresher do
 
     expect(@container_build_pod.container_build).to eq(
       ContainerBuild.find_by(:name => "ruby-sample-build"))
+  end
+
+  def assert_specific_container_template
+    @container_template = ContainerTemplate.find_by_name("hawkular-cassandra-node-emptydir")
+    expect(@container_template).to have_attributes(
+      :name             => "hawkular-cassandra-node-emptydir",
+      :resource_version => "1398"
+    )
+
+    expect(@container_template.ext_management_system).to eq(@ems)
+    expect(@container_template.container_project).to eq(ContainerProject.find_by(:name => "openshift-infra"))
+    expect(@container_template.container_template_parameters.count).to eq(4)
+    expect(@container_template.container_template_parameters.last).to have_attributes(
+      :name => "NODE"
+    )
   end
 end

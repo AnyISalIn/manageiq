@@ -17,10 +17,14 @@ class MiqRegion < ApplicationRecord
   virtual_has_many :miq_templates,          :uses => :all_relationships
   virtual_has_many :vms,                    :uses => :all_relationships
 
+  after_save :clear_my_region_cache
+
   acts_as_miq_taggable
+  include AuthenticationMixin
   include UuidMixin
   include NamingSequenceMixin
   include AggregationMixin
+  include ConfigurationManagementMixin
 
   include MiqPolicyMixin
   include Metric::CiMixin
@@ -36,6 +40,7 @@ class MiqRegion < ApplicationRecord
   alias_method :all_storages,           :storages
 
   PERF_ROLLUP_CHILDREN = [:ext_management_systems, :storages]
+  AUTHENTICATION_TYPE  = "system_api".freeze
 
   def database_backups
     DatabaseBackup.in_region(region_number)
@@ -63,6 +68,10 @@ class MiqRegion < ApplicationRecord
 
   def miq_servers
     MiqServer.in_region(region_number)
+  end
+
+  def servers_for_settings_reload
+    miq_servers.where(:status => "started")
   end
 
   def active_miq_servers
@@ -116,13 +125,14 @@ class MiqRegion < ApplicationRecord
   end
 
   def self.destroy_region(conn, region, tables = nil)
-    tables ||= conn.tables.reject { |t| t =~ /^schema_migrations|^ar_internal_metadata|^rr/ }.sort
+    tables ||= (conn.tables - MiqPglogical::ALWAYS_EXCLUDED_TABLES).sort
     tables.each do |t|
       pk = conn.primary_key(t)
       if pk
         conditions = sanitize_conditions(region_to_conditions(region, pk))
       else
         id_cols = connection.columns(t).select { |c| c.name.ends_with?("_id") }
+        next if id_cols.empty?
         conditions = id_cols.collect { |c| "(#{sanitize_conditions(region_to_conditions(region, c.name))})" }.join(" OR ")
       end
 
@@ -180,6 +190,10 @@ class MiqRegion < ApplicationRecord
     ext_management_systems.select { |e| e.kind_of? ManageIQ::Providers::MiddlewareManager }
   end
 
+  def ems_configproviders
+    ext_management_systems.select { |e| e.kind_of? ManageIQ::Providers::ConfigurationManager }
+  end
+
   def assigned_roles
     miq_servers.collect(&:assigned_roles).flatten.uniq.compact
   end
@@ -232,7 +246,72 @@ class MiqRegion < ApplicationRecord
 
   def remote_ws_url
     hostname = remote_ws_address
-    hostname.nil? ? nil : "https://#{hostname}"
+    hostname && URI::HTTPS.build(:host => hostname).to_s
+  end
+
+  def generate_auth_key_queue(ssh_user, ssh_password, ssh_host = nil)
+    args = [ssh_user, MiqPassword.try_encrypt(ssh_password)]
+    args << ssh_host if ssh_host
+
+    MiqQueue.put_unless_exists(
+      :class_name  => self.class.name,
+      :instance_id => id,
+      :queue_name  => "generic",
+      :method_name => "generate_auth_key",
+      :args        => args
+    )
+  end
+
+  def generate_auth_key(ssh_user, ssh_password, ssh_host = remote_ws_address)
+    key = remote_region_v2_key(ssh_user, MiqPassword.try_decrypt(ssh_password), ssh_host)
+
+    auth = AuthToken.new
+    auth.auth_key = key
+    auth.name = "Region #{region} API Key"
+    auth.resource = self
+    auth.authtype = AUTHENTICATION_TYPE
+    auth.save!
+  end
+
+  def remove_auth_key
+    authentication_delete(AUTHENTICATION_TYPE)
+  end
+
+  def verify_credentials(_auth_type = nil, _options = nil)
+    # TODO: verify the key against the remote api using the api client gem
+    true
+  end
+
+  def auth_key_configured?
+    authentication_token(AUTHENTICATION_TYPE).present?
+  end
+
+  def api_system_auth_token(userid)
+    region_v2_key = authentication_token(AUTHENTICATION_TYPE)
+
+    token_hash = {
+      :server_guid => remote_ws_miq_server.guid,
+      :userid      => userid,
+      :timestamp   => Time.now.utc
+    }
+
+    file = Tempfile.new("region_auth_key")
+    begin
+      file.write(region_v2_key)
+      file.close
+      key = EzCrypto::Key.load(file.path)
+      MiqPassword.new.encrypt(token_hash.to_yaml, "v2", key)
+    ensure
+      file.unlink
+    end
+  end
+
+  def required_credential_fields(_type)
+    [:auth_key]
+  end
+
+  def self.api_system_auth_token_for_region(region_id, user)
+    find_by_region(region_id).api_system_auth_token(user)
   end
 
   #
@@ -307,5 +386,17 @@ class MiqRegion < ApplicationRecord
       options[type] = self.is_tagged_with?("capture_enabled", :ns => "/performance/#{type}")
     end
     @perf_capture_always = options.freeze
+  end
+
+  private
+
+  def clear_my_region_cache
+    MiqRegion.my_region_clear_cache
+  end
+
+  def remote_region_v2_key(ssh_user, ssh_password, ssh_host)
+    require 'net/scp'
+    key_path = "/var/www/miq/vmdb/certs/v2_key"
+    Net::SCP.download!(ssh_host, ssh_user, key_path, nil, :ssh => {:password => ssh_password})
   end
 end

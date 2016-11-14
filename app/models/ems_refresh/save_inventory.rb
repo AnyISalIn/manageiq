@@ -1,12 +1,19 @@
 module EmsRefresh::SaveInventory
   def save_ems_inventory(ems, hashes, target = nil)
+    if hashes && hashes[:_dto_collection]
+      hashes.delete(:_dto_collection)
+      ManagerRefresh::SaveInventory.save_inventory(ems, hashes)
+      return
+    end
     case ems
-    when EmsCloud                                  then save_ems_cloud_inventory(ems, hashes, target)
-    when EmsInfra                                  then save_ems_infra_inventory(ems, hashes, target)
-    when ManageIQ::Providers::ConfigurationManager then save_configuration_manager_inventory(ems, hashes, target)
-    when ManageIQ::Providers::ContainerManager     then save_ems_container_inventory(ems, hashes, target)
-    when ManageIQ::Providers::NetworkManager       then save_ems_network_inventory(ems, hashes, target)
-    when ManageIQ::Providers::MiddlewareManager    then save_ems_middleware_inventory(ems, hashes, target)
+    when EmsCloud                                           then save_ems_cloud_inventory(ems, hashes, target)
+    when EmsInfra                                           then save_ems_infra_inventory(ems, hashes, target)
+    when ManageIQ::Providers::ConfigurationManager          then save_configuration_manager_inventory(ems, hashes, target)
+    when ManageIQ::Providers::ContainerManager              then save_ems_container_inventory(ems, hashes, target)
+    when ManageIQ::Providers::NetworkManager                then save_ems_network_inventory(ems, hashes, target)
+    when ManageIQ::Providers::StorageManager::CinderManager then save_ems_cinder_inventory(ems, hashes, target)
+    when ManageIQ::Providers::StorageManager::SwiftManager  then save_ems_swift_inventory(ems, hashes, target)
+    when ManageIQ::Providers::MiddlewareManager             then save_ems_middleware_inventory(ems, hashes, target)
     end
   end
 
@@ -27,8 +34,8 @@ module EmsRefresh::SaveInventory
                     []
                   end
 
-    child_keys = [:operating_system, :hardware, :custom_attributes, :snapshots]
-    extra_infra_keys = [:host, :ems_cluster, :storage, :storages, :raw_power_state, :parent_vm]
+    child_keys = [:operating_system, :hardware, :custom_attributes, :snapshots, :advanced_settings]
+    extra_infra_keys = [:host, :ems_cluster, :storage, :storages, :storage_profile, :raw_power_state, :parent_vm]
     extra_cloud_keys = [
       :flavor,
       :availability_zone,
@@ -57,6 +64,7 @@ module EmsRefresh::SaveInventory
       h[:host_id]                = key_backup.fetch_path(:host, :id) || key_backup.fetch_path(:host).try(:id)
       h[:ems_cluster_id]         = key_backup.fetch_path(:ems_cluster, :id) || key_backup.fetch_path(:ems_cluster).try(:id)
       h[:storage_id]             = key_backup.fetch_path(:storage, :id)
+      h[:storage_profile_id]     = key_backup.fetch_path(:storage_profile, :id)
       h[:flavor_id]              = key_backup.fetch_path(:flavor, :id)
       h[:availability_zone_id]   = key_backup.fetch_path(:availability_zone, :id)
       h[:cloud_network_id]       = key_backup.fetch_path(:cloud_network, :id)
@@ -64,7 +72,6 @@ module EmsRefresh::SaveInventory
       h[:cloud_tenant_id]        = key_backup.fetch_path(:cloud_tenant, :id)
       h[:cloud_tenants]          = key_backup.fetch_path(:cloud_tenants).compact.map { |x| x[:_object] } if key_backup.fetch_path(:cloud_tenants, 0, :_object)
       h[:orchestration_stack_id] = key_backup.fetch_path(:orchestration_stack, :id)
-
       begin
         raise MiqException::MiqIncompleteData if h[:invalid]
 
@@ -104,18 +111,12 @@ module EmsRefresh::SaveInventory
         found.raw_power_state = key_backup[:raw_power_state]
 
         link_habtm(found, key_backup[:storages], :storages, Storage)
-        # TODO(lsmola) NetworkManager, once all providers are converted, security groups relation of Vm will go away,
-        # being moved to NetworkPort, we will ignore here through associations
-        security_groups_association = found && found.class.reflect_on_association(:security_groups)
-        if security_groups_association && security_groups_association.options[:through] != :network_ports
-          link_habtm(found, key_backup[:security_groups], :security_groups, SecurityGroup)
-        end
         link_habtm(found, key_backup[:key_pairs], :key_pairs, ManageIQ::Providers::CloudManager::AuthKeyPair)
         save_child_inventory(found, key_backup, child_keys)
 
         found.save!
         h[:id] = found.id
-        found.reload # reload to clear caches and lower memory usage
+        found.send(:clear_association_cache)
         h[:_object] = found
       rescue => err
         # If a vm failed to process, mark it as invalid and log an error
@@ -134,20 +135,16 @@ module EmsRefresh::SaveInventory
     end
 
     # Handle genealogy link ups
-    vm_ids = hashes.collect { |h| !h[:invalid] && h.has_key_path?(:parent_vm, :id) ? [h[:id], h.fetch_path(:parent_vm, :id)] : nil }.flatten.compact.uniq
+    # TODO: can we use _object
+    vm_ids = hashes.flat_map { |h| !h[:invalid] && h.has_key_path?(:parent_vm, :id) ? [h[:id], h.fetch_path(:parent_vm, :id)] : [] }.uniq
     unless vm_ids.empty?
       _log.info("#{log_header} Updating genealogy connections.")
-      vms = VmOrTemplate.where(:id => vm_ids)
+      vms = VmOrTemplate.where(:id => vm_ids).index_by(&:id)
       hashes.each do |h|
-        child_id = h[:id]
-        parent_id = h.fetch_path(:parent_vm, :id)
-        next if child_id.blank? || parent_id.blank?
+        parent = vms[h.fetch_path(:parent_vm, :id)]
+        child = vms[h[:id]]
 
-        parent = vms.detect { |v| v.id == parent_id }
-        child = vms.detect { |v| v.id == child_id }
-        next if parent.blank? || child.blank?
-
-        parent.with_relationship_type('genealogy') { parent.set_child(child) }
+        parent.with_relationship_type('genealogy') { parent.set_child(child) } if parent && child
       end
     end
 
@@ -213,11 +210,12 @@ module EmsRefresh::SaveInventory
 
     # Update the associated ids
     hashes.each do |h|
-      h[:storage_id] = h.fetch_path(:storage, :id)
-      h[:backing_id] = h.fetch_path(:backing, :id)
+      h[:storage_id]         = h.fetch_path(:storage, :id)
+      h[:backing_id]         = h.fetch_path(:backing, :id)
+      h[:storage_profile_id] = h.fetch_path(:storage_profile, :id)
     end
 
-    save_inventory_multi(hardware.disks, hashes, :use_association, [:controller_type, :location], nil, [:storage, :backing])
+    save_inventory_multi(hardware.disks, hashes, :use_association, [:controller_type, :location], nil, [:storage, :backing, :storage_profile])
   end
 
   def save_network_inventory(guest_device, hash)
@@ -304,12 +302,40 @@ module EmsRefresh::SaveInventory
     vm.snapshots.each do |s|
       if s.parent_uid
         parent = vm.snapshots.detect { |s2| s2.uid == s.parent_uid }
-        s.update_attribute(:parent_id, parent ? parent.id : nil)
+        s.update_attribute(:parent_id, parent.try(:id))
       end
     end
   end
 
   def save_event_logs_inventory(os, hashes)
     save_inventory_multi(os.event_logs, hashes, :use_association, [:uid])
+  end
+
+  def save_new_target(target_hash)
+    unless target_hash[:vm].nil?
+      vm_hash = target_hash[:vm]
+      existing_vm = VmOrTemplate.find_by(:ems_ref => vm_hash[:ems_ref], :ems_id => target_hash[:ems_id])
+      unless existing_vm.nil?
+        return existing_vm
+      end
+
+      ems = ExtManagementSystem.find_by_id(target_hash[:ems_id])
+      old_cluster = get_cluster(ems, target_hash[:cluster], target_hash[:resource_pools], target_hash[:folders])
+
+      vm_hash[:ems_cluster_id] = old_cluster[:id]
+
+      new_vm = ems.vms_and_templates.create!(vm_hash)
+
+      dc = old_cluster.parent_datacenter
+      vm_folder = dc.children.select { |folder| folder.name == "vm" }[0]
+      vm_folder.add_vm(new_vm)
+      vm_folder.save!
+
+      resource_pool = old_cluster.children.first
+      resource_pool.add_vm(new_vm)
+      resource_pool.save!
+
+      new_vm
+    end
   end
 end

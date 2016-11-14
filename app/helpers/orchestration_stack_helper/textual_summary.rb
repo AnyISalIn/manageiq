@@ -16,7 +16,7 @@ module OrchestrationStackHelper::TextualSummary
   end
 
   def textual_group_relationships
-    %i(ems_cloud service orchestration_template instances security_groups cloud_networks parameters outputs resources)
+    %i(ems_cloud service parent_orchestration_stack child_orchestration_stack orchestration_template instances security_groups cloud_networks parameters outputs resources)
   end
 
   #
@@ -37,12 +37,12 @@ module OrchestrationStackHelper::TextualSummary
   def textual_retirement_date
     {:label => _("Retirement Date"),
      :image => "retirement",
-     :value => (@record.retires_on.nil? ? _("Never") : @record.retires_on.to_time.strftime("%x"))}
+     :value => (@record.retires_on.nil? ? _("Never") : @record.retires_on.strftime("%x %R %Z"))}
   end
 
   def textual_service
     h = {:label => _("Service"), :image => "service"}
-    service = @record.service
+    service = @record.service || @record.try(:root).try(:service)
     if service.nil?
       h[:value] = _("None")
     else
@@ -53,12 +53,29 @@ module OrchestrationStackHelper::TextualSummary
     h
   end
 
+  def textual_parent_orchestration_stack
+    @record.parent
+  end
+
+  def textual_child_orchestration_stack
+    num = @record.number_of(:children)
+    if num == 1 && role_allows(:feature => "orchestration_stack_show")
+      @record.children.first
+    elsif num > 1 && role_allows(:feature => "orchestration_stack_show_list")
+      label     = _("Child Orchestration Stacks")
+      h         = {:label => label, :image => "orchestration_stack", :value => num}
+      h[:link]  = url_for(:action => 'show', :id => @record.id, :display => 'children')
+      h[:title] = _("Show all %{label}") % {:label => label}
+      h
+    end
+  end
+
   def textual_orchestration_template
     template = @record.try(:orchestration_template)
     return nil if template.nil?
     label = ui_lookup(:table => "orchestration_template")
     h = {:label => label, :image => "orchestration_template", :value => template.name}
-    if role_allows(:feature => "orchestration_templates_view")
+    if role_allows?(:feature => "orchestration_templates_view")
       h[:title] = _("Show this Orchestration Template")
       h[:link] = url_for(:action => 'show', :id => @orchestration_stack, :display => 'stack_orchestration_template')
     end
@@ -69,7 +86,7 @@ module OrchestrationStackHelper::TextualSummary
     label = ui_lookup(:tables => "vm_cloud")
     num   = @record.number_of(:vms)
     h     = {:label => label, :image => "vm", :value => num}
-    if num > 0 && role_allows(:feature => "vm_show_list")
+    if num > 0 && role_allows?(:feature => "vm_show_list")
       h[:link]  = url_for(:action => 'show', :id => @orchestration_stack, :display => 'instances')
       h[:title] = _("Show all %{label}") % {:label => label}
     end
@@ -81,7 +98,8 @@ module OrchestrationStackHelper::TextualSummary
   end
 
   def textual_cloud_networks
-    num   = @record.number_of(:cloud_networks)
+    num = @record.number_of(:cloud_networks)
+    return nil if num <= 0
     {:label => ui_lookup(:tables => "cloud_network"), :image => "cloud_network", :value => num}
   end
 

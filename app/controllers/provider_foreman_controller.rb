@@ -25,9 +25,11 @@ class ProviderForemanController < ApplicationController
     end
   end
 
-  def self.model_to_cs_name(provmodel)
+  def self.model_to_type_name(provmodel)
     if provmodel.include?("ManageIQ::Providers::AnsibleTower")
-      ui_lookup(:ui_title => 'Ansible Tower Job Template')
+      'ansible_tower'
+    elsif provmodel.include?("ManageIQ::Providers::Foreman")
+      'foreman'
     end
   end
 
@@ -35,8 +37,8 @@ class ProviderForemanController < ApplicationController
     ProviderForemanController.model_to_name(provmodel)
   end
 
-  def model_to_cs_name(provmodel)
-    ProviderForemanController.model_to_cs_name(provmodel)
+  def model_to_type_name(provmodel)
+    ProviderForemanController.model_to_type_name(provmodel)
   end
 
   def index
@@ -51,11 +53,13 @@ class ProviderForemanController < ApplicationController
     assert_privileges("provider_foreman_add_provider")
     @provider_cfgmgmt = ManageIQ::Providers::ConfigurationManager.new
     @provider_types = ["Ansible Tower", ui_lookup(:ui_title => 'foreman')]
+    @server_zones = Zone.in_my_region.order('lower(description)').pluck(:description, :name)
     render_form
   end
 
   def edit
     @provider_types = ["Ansible Tower", ui_lookup(:ui_title => 'foreman')]
+    @server_zones = Zone.in_my_region.order('lower(description)').pluck(:description, :name)
     case params[:button]
     when "cancel"
       cancel_provider_foreman
@@ -74,6 +78,7 @@ class ProviderForemanController < ApplicationController
   def delete
     assert_privileges("provider_foreman_delete_provider") # TODO: Privelege name should match generic ways from Infra and Cloud
     checked_items = find_checked_items # TODO: Checked items are managers, not providers.  Make them providers
+    checked_items.push(params[:id]) if checked_items.empty? && params[:id]
     providers = ManageIQ::Providers::ConfigurationManager.where(:id => checked_items).includes(:provider).collect(&:provider)
     if providers.empty?
       add_flash(_("No %{model} were selected for %{task}") % {:model => ui_lookup(:tables => "providers"), :task => "deletion"}, :error)
@@ -89,7 +94,9 @@ class ProviderForemanController < ApplicationController
         provider.destroy_queue
       end
 
-      add_flash(_("Delete initiated for %{count_model}") % {:count_model => pluralize(providers.length, "provider")})
+      add_flash(n_("Delete initiated for %{count} Provider",
+                   "Delete initiated for %{count} Providers",
+                   providers.length) % {:count => providers.length})
     end
     replace_right_cell
   end
@@ -114,24 +121,31 @@ class ProviderForemanController < ApplicationController
     end
 
     if ConfiguredSystem.common_configuration_profiles_for_selected_configured_systems(provisioning_ids)
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to :controller     => "miq_request",
-                         :action         => "prov_edit",
-                         :prov_id        => provisioning_ids,
-                         :org_controller => "configured_system",
-                         :escape         => false
-      end
+      javascript_redirect :controller     => "miq_request",
+                          :action         => "prov_edit",
+                          :prov_id        => provisioning_ids,
+                          :org_controller => "configured_system",
+                          :escape         => false
     else
-      add_flash(_("No common configuration profiles available for the selected configured %s") % n_('system', 'systems', provisioning_ids.size), :error)
+      add_flash(n_("No common configuration profiles available for the selected configured system",
+                   "No common configuration profiles available for the selected configured systems",
+                   provisioning_ids.size), :error)
       replace_right_cell
     end
   end
 
   def tagging
-    assert_privileges("provider_foreman_configured_system_tag") if x_active_accord == :configuration_manager_providers
-    assert_privileges("configured_system_tag") if x_active_accord == :cs_filter
-    tagging_edit('ConfiguredSystem', false)
+    case x_active_accord
+    when :configuration_manager_providers
+      assert_privileges("provider_foreman_configured_system_tag")
+      tagging_edit('ConfiguredSystem', false)
+    when :cs_filter
+      assert_privileges("configured_system_tag")
+      tagging_edit('ConfiguredSystem', false)
+    when :configuration_scripts
+      assert_privileges("configuration_script_tag")
+      tagging_edit('ManageIQ::Providers::AnsibleTower::ConfigurationManager::ConfigurationScript', false)
+    end
     render_tagging_form
   end
 
@@ -172,11 +186,10 @@ class ProviderForemanController < ApplicationController
       replace_right_cell([:configuration_manager_providers])
     else
       @provider_cfgmgmt.errors.each do |field, msg|
-        @in_a_form = false
         @sb[:action] = nil
         add_flash("#{field.to_s.capitalize} #{msg}", :error)
       end
-      replace_right_cell
+      render_flash
     end
   end
 
@@ -195,11 +208,17 @@ class ProviderForemanController < ApplicationController
 
   def provider_foreman_form_fields
     assert_privileges("provider_foreman_edit_provider")
+    # set value of read only zone text box, when there is only single zone
+    return render :json => {
+                             :zone => Zone.in_my_region.size >= 1 ? Zone.in_my_region.first.name : nil
+                           } if params[:id] == "new"
+
     config_mgr = find_record(ManageIQ::Providers::ConfigurationManager, params[:id])
     provider   = config_mgr.provider
 
     render :json => {:provtype   => model_to_name(config_mgr.type),
                      :name       => provider.name,
+                     :zone       => provider.zone.name,
                      :url        => provider.url,
                      :verify_ssl => provider.verify_ssl,
                      :log_userid => provider.authentications.first.userid}
@@ -212,7 +231,7 @@ class ProviderForemanController < ApplicationController
 
     begin
       @provider_cfgmgmt.verify_credentials(params[:type])
-    rescue StandardError => error
+    rescue => error
       render_flash(_("Credential validation was not successful: %{details}") % {:details => error}, :error)
     else
       render_flash(_("Credential validation was successful"))
@@ -229,7 +248,7 @@ class ProviderForemanController < ApplicationController
     @record = if configuration_profile_record?
                 find_record(ConfigurationProfile, id || params[:id])
               elsif inventory_group_record?
-                find_record(InventoryRootGroup, id || params[:id])
+                find_record(ManageIQ::Providers::ConfigurationManager::InventoryGroup, id || params[:id])
               else
                 find_record(ConfiguredSystem, id || params[:id])
               end
@@ -284,7 +303,7 @@ class ProviderForemanController < ApplicationController
     if x_active_tree != :cs_filter_tree || x_node == "root"
       listnav_search_selected(0)
     else
-      @nodetype, id = valid_active_node(x_node).split("_").last.split("-")
+      @nodetype, id = parse_nodetype_and_id(valid_active_node(x_node))
 
       if x_active_tree == :cs_filter_tree && (@nodetype == "xx-csf" || @nodetype == "xx-csa")
         search_id = @nodetype == "root" ? 0 : from_cid(id)
@@ -300,25 +319,14 @@ class ProviderForemanController < ApplicationController
   end
 
   def x_show
-    @explorer = true
     tree_record unless unassigned_configuration_profile?(params[:id])
 
-    respond_to do |format|
-      format.js do
-        unless @record
-          check_for_unassigned_configuration_profile
-          return
-        end
-        params[:id] = x_build_node_id(@record)  # Get the tree node id
-        tree_select
-      end
-      format.html do                # HTML, redirect to explorer
-        tree_node_id = TreeBuilder.build_node_id(@record)
-        session[:exp_parms] = {:id => tree_node_id}
-        redirect_to :action => "explorer"
-      end
-      format.any { head :not_found }  # Anything else, just send 404
+    if request.format.js? && !@record
+      check_for_unassigned_configuration_profile
+      return
     end
+
+    generic_x_show
   end
 
   def tree_record
@@ -341,7 +349,7 @@ class ProviderForemanController < ApplicationController
   end
 
   def tree_select_unprovisioned_configured_system
-    if unassigned_configuration_profile?(params[:id])
+    if unassigned_configuration_profile?(x_node)
       params[:id] = "cs-#{params[:id]}"
       tree_select
     else
@@ -396,7 +404,7 @@ class ProviderForemanController < ApplicationController
     end
 
     if @record.kind_of?(ConfiguredSystem)
-      rec_cls = "#{model_to_name(@record.class.to_s).downcase.tr(' ', '_')}_configured_system"
+      rec_cls = "#{model_to_type_name(@record.ext_management_system.class.to_s)}_configured_system"
     end
     return unless %w(download_pdf main).include?(@display)
     @showtype     = "main"
@@ -427,22 +435,24 @@ class ProviderForemanController < ApplicationController
     if params[:button]
       @miq_after_onload = "miqAjax('/#{controller_name}/x_button?pressed=#{params[:button]}');"
     end
+
+    build_accordions_and_trees
+
     params.instance_variable_get(:@parameters).merge!(session[:exp_parms]) if session[:exp_parms]  # Grab any explorer parm overrides
     session.delete(:exp_parms)
     @in_a_form = false
+
     if params[:id] # If a tree node id came in, show in one of the trees
       nodetype, id = params[:id].split("-")
       # treebuilder initializes x_node to root first time in locals_for_render,
       # need to set this here to force & activate node when link is clicked outside of explorer.
       @reselect_node = self.x_node = "#{nodetype}-#{to_cid(id)}"
+      get_node_info(x_node)
     end
-
-    build_accordions_and_trees
-
     render :layout => "application"
   end
 
-  def tree_autoload_dynatree
+  def tree_autoload
     @view ||= session[:view]
     super
   end
@@ -480,7 +490,7 @@ class ProviderForemanController < ApplicationController
       get_node_info("root")
     else
       show_record(from_cid(id))
-      model_string = ui_lookup(:model => (model || TreeBuilder.get_model_for_prefix(@nodetype))).to_s
+      model_string = ui_lookup(:model => @record.class.to_s)
       @right_cell_text = _("%{model} \"%{name}\"") % {:name => @record.name, :model => model_string}
     end
   end
@@ -498,7 +508,7 @@ class ProviderForemanController < ApplicationController
     @provider_cfgmgmt.name       = params[:name]
     @provider_cfgmgmt.url        = params[:url]
     @provider_cfgmgmt.verify_ssl = params[:verify_ssl].eql?("on")
-    @provider_cfgmgmt.zone       = Zone.find_by_name(MiqServer.my_zone)
+    @provider_cfgmgmt.zone       = Zone.find_by_name(params[:zone].to_s)
   end
 
   def features
@@ -534,7 +544,7 @@ class ProviderForemanController < ApplicationController
 
   def get_node_info(treenodeid)
     @sb[:action] = nil
-    @nodetype, id = valid_active_node(treenodeid).split("_").last.split("-")
+    @nodetype, id = parse_nodetype_and_id(valid_active_node(treenodeid))
 
     model = TreeBuilder.get_model_for_prefix(@nodetype)
     if model == "Hash"
@@ -692,7 +702,7 @@ class ProviderForemanController < ApplicationController
     @listicon = "configuration_script"
     if x_active_tree == :configuration_scripts_tree
       options = {:model => model.to_s}
-      @right_cell_text = _("All %{title}") % {:title => model_to_cs_name(model)}
+      @right_cell_text = _("All Ansible Tower Job Templates")
       process_show_list(options)
     end
   end
@@ -735,20 +745,22 @@ class ProviderForemanController < ApplicationController
     update_title(presenter)
     rebuild_toolbars(false, presenter)
     handle_bottom_cell(presenter, r)
-    render :js => presenter.to_html
+
+    render :json => presenter.for_render
   end
 
   def render_tagging_form
     return if %w(cancel save).include?(params[:button])
     @in_a_form = true
-    @right_cell_text = _("Edit Tags for Configured Systems")
+    @right_cell_text = _("Edit Tags")
     clear_flash_msg
     presenter, r = rendering_objects
     update_tagging_partials(presenter, r)
     update_title(presenter)
     rebuild_toolbars(false, presenter)
     handle_bottom_cell(presenter, r)
-    render :js => presenter.to_html
+
+    render :json => presenter.for_render
   end
 
   def render_service_dialog_form
@@ -760,7 +772,8 @@ class ProviderForemanController < ApplicationController
     rebuild_toolbars(false, presenter)
     handle_bottom_cell(presenter, r)
     presenter[:right_cell_text] = @right_cell_text
-    render :js => presenter.to_html
+
+    render :json => presenter.for_render
   end
 
   def update_tree_and_render_list(replace_trees)
@@ -772,7 +785,8 @@ class ProviderForemanController < ApplicationController
     presenter.update(:main_div, r[:partial => 'layouts/x_gtl'])
     rebuild_toolbars(false, presenter)
     handle_bottom_cell(presenter, r)
-    render :js => presenter.to_html
+
+    render :json => presenter.for_render
   end
 
   def update_title(presenter)
@@ -809,24 +823,23 @@ class ProviderForemanController < ApplicationController
     presenter[:right_cell_text] = @right_cell_text
     presenter[:osf_node] = x_node  # Open, select, and focus on this node
 
-    # Render the JS responses to update the explorer screen
-    render :js => presenter.to_html
+    render :json => presenter.for_render
   end
 
   def leaf_record
     get_node_info(x_node)
     @delete_node = params[:id] if @replace_trees
-    type, _id = x_node.split("_").last.split("-")
+    type, _id = parse_nodetype_and_id(x_node)
     type && %w(ConfiguredSystem ConfigurationScript).include?(TreeBuilder.get_model_for_prefix(type))
   end
 
   def configuration_profile_record?(node = x_node)
-    type, _id = node.split("_").last.split("-")
+    type, _id = parse_nodetype_and_id(node)
     type && %w(ConfigurationProfile).include?(TreeBuilder.get_model_for_prefix(type))
   end
 
   def inventory_group_record?(node = x_node)
-    type, _id = node.split("_").last.split("-")
+    type, _id = parse_nodetype_and_id(node)
     type && %w(EmsFolder).include?(TreeBuilder.get_model_for_prefix(type))
   end
 
@@ -961,17 +974,17 @@ class ProviderForemanController < ApplicationController
 
     presenter.set_visibility(h_tb.present? || c_tb.present? || v_tb.present?, :toolbar)
 
-    presenter[:record_id] = @record ? @record.id : nil
+    presenter[:record_id] = @record.try(:id)
 
     # Hide/show searchbox depending on if a list is showing
     presenter.set_visibility(display_adv_searchbox, :adv_searchbox_div)
-    presenter[:clear_search_show_or_hide] = clear_search_show_or_hide
+    presenter[:clear_search_toggle] = clear_search_status
 
     presenter.hide(:blocker_div) unless @edit && @edit[:adv_search_open]
     presenter.hide(:quicksearchbox)
     presenter[:hide_modal] = true
 
-    presenter[:lock_unlock_trees][x_active_tree] = @in_a_form
+    presenter.lock_tree(x_active_tree, @in_a_form)
   end
 
   def display_adv_searchbox
@@ -1000,24 +1013,11 @@ class ProviderForemanController < ApplicationController
                    :verify_ssl => params[:verify_ssl]}
   end
 
-  def locals_for_tagging
-    {:action_url   => 'tagging',
-     :multi_record => true,
-     :record_id    => @sb[:rec_id] || @edit[:object_ids] && @edit[:object_ids][0]
-    }
-  end
-
   def locals_for_service_dialog
     {:action_url => 'service_dialog',
+     :no_reset    => true,
      :record_id  => @sb[:rec_id] || @edit[:object_ids] && @edit[:object_ids][0]
     }
-  end
-
-  def update_tagging_partials(presenter, r)
-    presenter.update(:main_div, r[:partial => 'layouts/tagging',
-                                  :locals  => locals_for_tagging])
-    presenter.update(:form_buttons_div, r[:partial => 'layouts/x_edit_buttons',
-                                          :locals  => locals_for_tagging])
   end
 
   def update_service_dialog_partials(presenter, r)
@@ -1025,13 +1025,10 @@ class ProviderForemanController < ApplicationController
                                   :locals  => locals_for_service_dialog])
     locals = {:record_id  => @edit[:rec_id],
               :action_url => "configscript_service_dialog_submit",
+              :no_reset    => true,
               :serialize  => true}
     presenter.update(:form_buttons_div, r[:partial => 'layouts/x_edit_buttons',
                                           :locals  => locals])
-  end
-
-  def clear_flash_msg
-    @flash_array = nil if params[:button] != "reset"
   end
 
   def breadcrumb_name(_model)
@@ -1048,7 +1045,7 @@ class ProviderForemanController < ApplicationController
   end
 
   def unassigned_configuration_profile?(node)
-    _type, _pid, nodeinfo = node.split("_").last.split("-")
+    _type, _pid, nodeinfo = parse_nodetype_and_id(node)
     nodeinfo == "unassigned"
   end
 
@@ -1143,7 +1140,7 @@ class ProviderForemanController < ApplicationController
   def process_show_list(options = {})
     options[:dbname] = case x_active_accord
                        when :configuration_manager_providers
-                         :cm_providers
+                         options[:model] && options[:model] == 'ConfiguredSystem' ? :cm_configured_systems : :cm_providers
                        when :cs_filter
                          :cm_configured_systems
                        when :configuration_scripts
@@ -1164,11 +1161,6 @@ class ProviderForemanController < ApplicationController
       end
     end
     record
-  end
-
-  def set_root_node
-    self.x_node = "root"
-    get_node_info(x_node)
   end
 
   def get_session_data
@@ -1206,10 +1198,7 @@ class ProviderForemanController < ApplicationController
     rescue => bang
       add_flash(_("Error when creating Service Dialog: %{error_message}") %
                   {:error_message => bang.message}, :error)
-      render :update do |page|
-        page << javascript_prologue
-        page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-      end
+      javascript_flash
     else
       add_flash(_("Service Dialog \"%{name}\" was successfully created") %
                   {:name => @edit[:new][:dialog_name]}, :success)
@@ -1222,7 +1211,9 @@ class ProviderForemanController < ApplicationController
   def cs_edit_get_form_vars
     @edit[:new][:name] = params[:name] if params[:name]
     @edit[:new][:description] = params[:description] if params[:description]
-    @edit[:new][:draft] = params[:draft] == "true" ? true : false if params[:draft]
+    @edit[:new][:draft] = params[:draft] == "true" if params[:draft]
     @edit[:new][:dialog_name] = params[:dialog_name] if params[:dialog_name]
   end
+
+  menu_section :conf
 end

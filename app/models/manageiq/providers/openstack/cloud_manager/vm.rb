@@ -2,6 +2,14 @@ class ManageIQ::Providers::Openstack::CloudManager::Vm < ManageIQ::Providers::Cl
   include_concern 'Operations'
   include_concern 'RemoteConsole'
   include_concern 'Resize'
+  include_concern 'AssociateIp'
+
+  supports :smartstate_analysis do
+    feature_supported, reason = check_feature_support('smartstate_analysis')
+    unless feature_supported
+      unsupported_reason_add(:smartstate_analysis, reason)
+    end
+  end
 
   POWER_STATES = {
     "ACTIVE"            => "on",
@@ -19,12 +27,7 @@ class ManageIQ::Providers::Openstack::CloudManager::Vm < ManageIQ::Providers::Cl
     "MIGRATING"         => "migrating",
   }.freeze
 
-  belongs_to :cloud_tenant
-
-  has_many :cloud_networks, :through => :cloud_subnets
   alias_method :private_networks, :cloud_networks
-  has_many :cloud_subnets, :through    => :network_ports,
-                           :class_name => "ManageIQ::Providers::Openstack::NetworkManager::CloudSubnet"
   has_many :public_networks, :through => :cloud_subnets
 
   def floating_ip
@@ -33,22 +36,29 @@ class ManageIQ::Providers::Openstack::CloudManager::Vm < ManageIQ::Providers::Cl
     floating_ips.first
   end
 
-  def cloud_network
-    # TODO(lsmola) NetworkProvider Backwards compatibility layer with simplified architecture where VM has only one
-    # network. Put this into ManageIQ::Providers::CloudManager::Vm when NetworkProvider is done in all providers
-    cloud_networks.first
-  end
-
-  def cloud_subnet
-    # TODO(lsmola) NetworkProvider Backwards compatibility layer with simplified architecture where VM has only one
-    # network. Put this into ManageIQ::Providers::CloudManager::Vm when NetworkProvider is done in all providers
-    cloud_subnets.first
-  end
-
   def provider_object(connection = nil)
     connection ||= ext_management_system.connect
     connection.servers.get(ems_ref)
   end
+
+  def with_provider_object
+    super(connection_options)
+  end
+
+  def with_provider_connection
+    super(connection_options)
+  end
+
+  def self.connection_options(cloud_tenant = nil)
+    connection_options = { :service => 'Compute' }
+    connection_options[:tenant_name] = cloud_tenant.name if cloud_tenant
+    connection_options
+  end
+
+  def connection_options
+    self.class.connection_options(cloud_tenant)
+  end
+  private :connection_options
 
   def self.calculate_power_state(raw_power_state)
     POWER_STATES[raw_power_state] || "unknown"
@@ -110,7 +120,7 @@ class ManageIQ::Providers::Openstack::CloudManager::Vm < ManageIQ::Providers::Cl
     true
   end
 
-  def validate_smartstate_analysis
-    validate_supported_check("Smartstate Analysis")
+  def supports_snapshots?
+    true
   end
 end

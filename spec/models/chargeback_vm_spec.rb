@@ -11,7 +11,7 @@ describe ChargebackVm do
 
     @admin = FactoryGirl.create(:user_admin)
 
-    @vm1 = FactoryGirl.create(:vm_vmware, :name => "test_vm", :evm_owner => @admin)
+    @vm1 = FactoryGirl.create(:vm_vmware, :name => "test_vm", :evm_owner => @admin, :ems_ref => "ems_ref")
     @vm1.tag_with(@tag.name, :ns => '*')
 
     @host1   = FactoryGirl.create(:host, :hardware => FactoryGirl.create(:hardware, :memory_mb => 8124, :cpu_total_cores => 1, :cpu_speed => 9576), :vms => [@vm1])
@@ -50,12 +50,172 @@ describe ChargebackVm do
     Timecop.return
   end
 
+  describe "#get_rate_parents" do
+    let(:vm) do
+      FactoryGirl.create(:vm_vmware, :name => "test_vm", :evm_owner => @admin, :ems_ref => "ems_ref",
+                         :ems_cluster => @ems_cluster, :storage => @storage, :host => @host1,
+                         :ext_management_system => @ems
+                        )
+    end
+
+    let(:metric_rollup_without_parents) do
+      FactoryGirl.create(:metric_rollup_vm_hr,
+                         :cpu_usagemhz_rate_average         => @cpu_usagemhz_rate,
+                         :derived_vm_numvcpus               => @cpu_count,
+                         :derived_memory_available          => @memory_available,
+                         :derived_memory_used               => @memory_used,
+                         :disk_usage_rate_average           => @disk_usage_rate,
+                         :net_usage_rate_average            => @net_usage_rate,
+                         :derived_vm_used_disk_storage      => @vm_used_disk_storage.gigabytes,
+                         :derived_vm_allocated_disk_storage => @vm_allocated_disk_storage.gigabytes,
+                         :tag_names                         => "environment/prod",
+                         :resource                          => vm
+                        )
+    end
+
+    let(:metric_rollup_with_parents) do
+      FactoryGirl.create(:metric_rollup_vm_hr,
+                         :cpu_usagemhz_rate_average         => @cpu_usagemhz_rate,
+                         :derived_vm_numvcpus               => @cpu_count,
+                         :derived_memory_available          => @memory_available,
+                         :derived_memory_used               => @memory_used,
+                         :disk_usage_rate_average           => @disk_usage_rate,
+                         :net_usage_rate_average            => @net_usage_rate,
+                         :derived_vm_used_disk_storage      => @vm_used_disk_storage.gigabytes,
+                         :derived_vm_allocated_disk_storage => @vm_allocated_disk_storage.gigabytes,
+                         :tag_names                         => "environment/prod",
+                         :resource                          => vm,
+                         :parent_host_id                    => @host1.id,
+                         :parent_ems_cluster_id             => @ems_cluster.id,
+                         :parent_ems_id                     => @ems.id,
+                         :parent_storage_id                 => @storage.id,
+                        )
+    end
+
+    it "uses resource's host, cluster, storage and ems" do
+      parents = described_class.new.send(:get_rate_parents, metric_rollup_without_parents)
+
+      expected_array = [
+        vm.host,
+        vm.ems_cluster,
+        vm.storage,
+        vm.ext_management_system,
+        vm.tenant,
+        MiqEnterprise.my_enterprise
+      ].compact
+
+      expect(parents).to match_array(expected_array)
+    end
+
+    it "uses host, cluster, storage ems from MetricRollup record" do
+      parents = described_class.new.send(:get_rate_parents, metric_rollup_with_parents)
+
+      expected_array = [
+        metric_rollup_with_parents.parent_host,
+        metric_rollup_with_parents.parent_ems_cluster,
+        metric_rollup_with_parents.parent_storage,
+        metric_rollup_with_parents.parent_ems,
+        vm.tenant,
+        MiqEnterprise.my_enterprise
+      ].compact
+
+      expect(parents).to match_array(expected_array)
+    end
+  end
+
+  let(:report_static_fields) { %w(vm_name) }
+
+  it "uses static fields" do
+    expect(described_class.report_static_cols).to match_array(report_static_fields)
+  end
+
   it "succeeds without a userid" do
     @options.delete(:userid)
     expect { ChargebackVm.build_results_for_report_ChargebackVm(@options) }.not_to raise_error
   end
 
+  context "by service" do
+    before(:each) do
+      @options[:interval] = "monthly"
+
+      tz = Metric::Helper.get_time_zone(@options[:ext_options])
+      ts = Time.now.in_time_zone(tz)
+      time     = ts.beginning_of_month.utc
+      end_time = ts.end_of_month.utc
+
+      @vm2 = FactoryGirl.create(:vm_vmware, :name => "test_vm 2", :evm_owner => @admin)
+
+      while time < end_time
+        [@vm1, @vm2].each do |vm|
+          vm.metric_rollups << FactoryGirl.create(:metric_rollup_vm_hr,
+                                                  :timestamp                         => time,
+                                                  :cpu_usagemhz_rate_average         => @cpu_usagemhz_rate,
+                                                  :derived_vm_numvcpus               => @cpu_count,
+                                                  :derived_memory_available          => @memory_available,
+                                                  :derived_memory_used               => @memory_used,
+                                                  :disk_usage_rate_average           => @disk_usage_rate,
+                                                  :net_usage_rate_average            => @net_usage_rate,
+                                                  :derived_vm_used_disk_storage      => @vm_used_disk_storage.gigabytes,
+                                                  :derived_vm_allocated_disk_storage => @vm_allocated_disk_storage.gigabytes,
+                                                  :tag_names                         => "environment/prod",
+                                                  :parent_host_id                    => @host1.id,
+                                                  :parent_ems_cluster_id             => @ems_cluster.id,
+                                                  :parent_ems_id                     => @ems.id,
+                                                  :parent_storage_id                 => @storage.id,
+                                                  :resource_name                     => @vm1.name,
+                                                 )
+        end
+
+        time += 12.hours
+      end
+
+      @service = FactoryGirl.create(:service)
+      @service << @vm1
+      @service.save
+
+      cbrd = FactoryGirl.build(:chargeback_rate_detail_cpu_used,
+                               :chargeback_rate_id => @cbr.id,
+                               :per_time           => "hourly"
+                              )
+      cbt = FactoryGirl.create(:chargeback_tier,
+                               :chargeback_rate_detail_id => cbrd.id,
+                               :start                     => 0,
+                               :finish                    => Float::INFINITY,
+                               :fixed_rate                => 0.0,
+                               :variable_rate             => @hourly_rate.to_s
+                              )
+      cbrd.chargeback_tiers = [cbt]
+      cbrd.save
+      cbrd = FactoryGirl.build(:chargeback_rate_detail_cpu_allocated,
+                               :chargeback_rate_id => @cbr.id,
+                               :per_time           => "hourly"
+                              )
+      cbt = FactoryGirl.create(:chargeback_tier,
+                               :chargeback_rate_detail_id => cbrd.id,
+                               :start                     => 0,
+                               :finish                    => Float::INFINITY,
+                               :fixed_rate                => 0.0,
+                               :variable_rate             => @count_hourly_rate.to_s
+                              )
+      cbrd.chargeback_tiers = [cbt]
+      cbrd.save
+
+      @options.merge!(:interval_size => 4,
+                      :ext_options   => {:tz => "Eastern Time (US & Canada)"},
+                      :service_id    => @service.id
+                     )
+    end
+
+    it "only includes VMs belonging to service in results" do
+      result = described_class.build_results_for_report_ChargebackVm(@options)
+      expect(result).not_to be_nil
+      expect(result.first.all? { |r| r.vm_name == "test_vm" })
+    end
+  end
+
   context "Daily" do
+    let(:hours_in_day) { 24 }
+
     before  do
       @options[:interval] = "daily"
 
@@ -78,7 +238,6 @@ describe ChargebackVm do
                                                   :resource_name                     => @vm1.name,
                                                  )
       end
-      @metric_size = @vm1.metric_rollups.size
     end
 
     subject { ChargebackVm.build_results_for_report_ChargebackVm(@options).first.first }
@@ -110,13 +269,16 @@ describe ChargebackVm do
                               )
       cbrd.chargeback_tiers = [cbt]
       cbrd.save
-      expect(subject.cpu_allocated_metric).to eq(@cpu_count * @metric_size)
-      expect(subject.cpu_used_metric).to eq(@cpu_usagemhz_rate * @metric_size)
-      expect(subject.cpu_metric).to eq(subject.cpu_allocated_metric + subject.cpu_used_metric)
 
-      expect(subject.cpu_allocated_cost).to eq(@cpu_count * @count_hourly_rate * @metric_size)
-      expect(subject.cpu_used_cost).to eq(@cpu_usagemhz_rate * @hourly_rate * @metric_size)
+      expect(subject.cpu_allocated_metric).to eq(@cpu_count)
+      expect(subject.cpu_used_metric).to eq(@cpu_usagemhz_rate)
+      expect(subject.cpu_allocated_cost).to eq(@cpu_count * @count_hourly_rate * hours_in_day)
+      expect(subject.cpu_used_cost).to eq(@cpu_usagemhz_rate * @hourly_rate * hours_in_day)
       expect(subject.cpu_cost).to eq(subject.cpu_allocated_cost + subject.cpu_used_cost)
+    end
+
+    it "reports Vm Guid" do
+      expect(subject.vm_guid).to eq(@vm1.guid)
     end
 
     it "cpu_vm_and_cpu_container_project" do
@@ -159,12 +321,11 @@ describe ChargebackVm do
       cbrd.chargeback_tiers = [cbt]
       cbrd.save
 
-      expect(subject.cpu_allocated_metric).to eq(@cpu_count * @metric_size)
-      expect(subject.cpu_used_metric).to eq(@cpu_usagemhz_rate * @metric_size)
-      expect(subject.cpu_metric).to eq(subject.cpu_allocated_metric + subject.cpu_used_metric)
+      expect(subject.cpu_allocated_metric).to eq(@cpu_count)
+      expect(subject.cpu_used_metric).to eq(@cpu_usagemhz_rate)
 
-      expect(subject.cpu_allocated_cost).to eq(@cpu_count * @count_hourly_rate * @metric_size)
-      expect(subject.cpu_used_cost).to eq(@cpu_usagemhz_rate * @hourly_rate * @metric_size)
+      expect(subject.cpu_allocated_cost).to eq(@cpu_count * @count_hourly_rate * hours_in_day)
+      expect(subject.cpu_used_cost).to eq(@cpu_usagemhz_rate * @hourly_rate * hours_in_day)
       expect(subject.cpu_cost).to eq(subject.cpu_allocated_cost + subject.cpu_used_cost)
     end
 
@@ -196,12 +357,12 @@ describe ChargebackVm do
       cbrd.chargeback_tiers = [cbt]
       cbrd.save
 
-      expect(subject.memory_allocated_metric).to eq(@memory_available * @metric_size)
-      expect(subject.memory_used_metric).to eq(@memory_used * @metric_size)
+      expect(subject.memory_allocated_metric).to eq(@memory_available)
+      expect(subject.memory_used_metric).to eq(@memory_used)
       expect(subject.memory_metric).to eq(subject.memory_allocated_metric + subject.memory_used_metric)
 
-      expect(subject.memory_allocated_cost).to eq(@memory_available * @hourly_rate * @metric_size)
-      expect(subject.memory_used_cost).to eq(@memory_used * @hourly_rate * @metric_size)
+      expect(subject.memory_allocated_cost).to eq(@memory_available * @hourly_rate * hours_in_day)
+      expect(subject.memory_used_cost).to eq(@memory_used * @hourly_rate * hours_in_day)
       expect(subject.memory_cost).to eq(subject.memory_allocated_cost + subject.memory_used_cost)
     end
 
@@ -220,10 +381,9 @@ describe ChargebackVm do
       cbrd.chargeback_tiers = [cbt]
       cbrd.save
 
-      expect(subject.disk_io_used_metric).to eq(@disk_usage_rate * @metric_size)
+      expect(subject.disk_io_used_metric).to eq(@disk_usage_rate)
       expect(subject.disk_io_metric).to eq(subject.disk_io_metric)
-
-      expect(subject.disk_io_used_cost).to eq(@disk_usage_rate * @hourly_rate * @metric_size)
+      expect(subject.disk_io_used_cost).to be_within(0.01).of(@disk_usage_rate * @hourly_rate * hours_in_day)
       expect(subject.disk_io_cost).to eq(subject.disk_io_used_cost)
     end
 
@@ -242,10 +402,8 @@ describe ChargebackVm do
       cbrd.chargeback_tiers = [cbt]
       cbrd.save
 
-      expect(subject.net_io_used_metric).to eq(@net_usage_rate * @metric_size)
-      expect(subject.net_io_metric).to eq(subject.net_io_metric)
-
-      expect(subject.net_io_used_cost).to eq(@net_usage_rate * @hourly_rate * @metric_size)
+      expect(subject.net_io_used_metric).to eq(@net_usage_rate)
+      expect(subject.net_io_used_cost).to eq(@net_usage_rate * @hourly_rate * hours_in_day)
       expect(subject.net_io_cost).to eq(subject.net_io_used_cost)
     end
 
@@ -284,14 +442,58 @@ describe ChargebackVm do
       cbrd.chargeback_tiers = [cbt]
       cbrd.save
 
-      expect(subject.storage_allocated_metric).to eq(@vm_allocated_disk_storage.gigabytes * @metric_size)
-      expect(subject.storage_used_metric).to eq(@vm_used_disk_storage.gigabytes * @metric_size)
+      expect(subject.storage_allocated_metric).to eq(@vm_allocated_disk_storage.gigabytes)
+      expect(subject.storage_used_metric).to eq(@vm_used_disk_storage.gigabytes)
       expect(subject.storage_metric).to eq(subject.storage_allocated_metric + subject.storage_used_metric)
 
-      expect(subject.storage_allocated_cost).to eq(@vm_allocated_disk_storage.gigabytes *
-                                                   @count_hourly_rate *
-                                                   @metric_size)
-      expect(subject.storage_used_cost).to eq(@vm_used_disk_storage.gigabytes * @count_hourly_rate * @metric_size)
+      storage_allocated_cost = @vm_allocated_disk_storage * @count_hourly_rate * hours_in_day
+      expect(subject.storage_allocated_cost).to eq(storage_allocated_cost)
+      expect(subject.storage_used_cost).to eq(@vm_used_disk_storage * @count_hourly_rate * hours_in_day)
+      expect(subject.storage_cost).to eq(subject.storage_allocated_cost + subject.storage_used_cost)
+    end
+
+    let(:hourly_fixed_rate) { 10.0 }
+
+    it "storage with only fixed rates" do
+      cbdm = FactoryGirl.create(:chargeback_rate_detail_measure_bytes)
+      cbrd = FactoryGirl.build(:chargeback_rate_detail_storage_used,
+                               :chargeback_rate_id                => @cbr.id,
+                               :per_time                          => "hourly",
+                               :chargeback_rate_detail_measure_id => cbdm.id)
+
+      cbt = FactoryGirl.create(:chargeback_tier,
+                               :chargeback_rate_detail_id => cbrd.id,
+                               :start                     => 0,
+                               :finish                    => Float::INFINITY,
+                               :fixed_rate                => hourly_fixed_rate,
+                               :variable_rate             => 0.0)
+
+      cbrd.chargeback_tiers = [cbt]
+      cbrd.save
+      cbrd = FactoryGirl.build(:chargeback_rate_detail_storage_allocated,
+                               :chargeback_rate_id                => @cbr.id,
+                               :per_time                          => "hourly",
+                               :chargeback_rate_detail_measure_id => cbdm.id)
+
+      cbt = FactoryGirl.create(:chargeback_tier,
+                               :chargeback_rate_detail_id => cbrd.id,
+                               :start                     => 0,
+                               :finish                    => Float::INFINITY,
+                               :fixed_rate                => hourly_fixed_rate,
+                               :variable_rate             => 0.0)
+
+      cbrd.chargeback_tiers = [cbt]
+      cbrd.save
+
+      expect(subject.storage_allocated_metric).to eq(@vm_allocated_disk_storage.gigabytes)
+      expect(subject.storage_used_metric).to eq(@vm_used_disk_storage.gigabytes)
+      expect(subject.storage_metric).to eq(subject.storage_allocated_metric + subject.storage_used_metric)
+
+      expected_value = hourly_fixed_rate * hours_in_day
+      expect(subject.storage_allocated_cost).to be_within(0.01).of(expected_value)
+
+      expected_value = hourly_fixed_rate * hours_in_day
+      expect(subject.storage_used_cost).to be_within(0.01).of(expected_value)
       expect(subject.storage_cost).to eq(subject.storage_allocated_cost + subject.storage_used_cost)
     end
   end
@@ -350,6 +552,8 @@ describe ChargebackVm do
       time     = ts.beginning_of_month.utc
       end_time = ts.end_of_month.utc
 
+      @hours_in_month = Time.days_in_month(time.month, time.year) * 24
+
       while time < end_time
         @vm1.metric_rollups << FactoryGirl.create(:metric_rollup_vm_hr,
                                                   :timestamp                         => time,
@@ -370,7 +574,6 @@ describe ChargebackVm do
                                                  )
         time += 12.hour
       end
-      @metric_size = @vm1.metric_rollups.size
     end
 
     subject { ChargebackVm.build_results_for_report_ChargebackVm(@options).first.first }
@@ -384,7 +587,7 @@ describe ChargebackVm do
                                :chargeback_rate_detail_id => cbrd.id,
                                :start                     => 0,
                                :finish                    => Float::INFINITY,
-                               :fixed_rate                => 0.0,
+                               :fixed_rate                => 0,
                                :variable_rate             => @hourly_rate.to_s
                               )
       cbrd.chargeback_tiers = [cbt]
@@ -397,19 +600,59 @@ describe ChargebackVm do
                                :chargeback_rate_detail_id => cbrd.id,
                                :start                     => 0,
                                :finish                    => Float::INFINITY,
-                               :fixed_rate                => 0.0,
+                               :fixed_rate                => 0,
                                :variable_rate             => @count_hourly_rate.to_s
                               )
       cbrd.chargeback_tiers = [cbt]
       cbrd.save
 
-      expect(subject.cpu_allocated_metric).to eq(@cpu_count * @metric_size)
-      expect(subject.cpu_used_metric).to eq(@cpu_usagemhz_rate * @metric_size)
-      expect(subject.cpu_metric).to eq(subject.cpu_allocated_metric + subject.cpu_used_metric)
+      expect(subject.cpu_allocated_metric).to eq(@cpu_count)
+      expect(subject.cpu_used_metric).to eq(@cpu_usagemhz_rate)
+      expect(subject.cpu_allocated_cost).to be_within(0.01).of(@cpu_count * @count_hourly_rate * @hours_in_month)
+      expect(subject.cpu_used_cost).to be_within(0.01).of(@cpu_usagemhz_rate * @hourly_rate * @hours_in_month)
+    end
 
-      expect(subject.cpu_allocated_cost).to eq(@cpu_count * @count_hourly_rate * @metric_size)
-      expect(subject.cpu_used_cost).to eq(@cpu_usagemhz_rate * @hourly_rate * @metric_size)
-      expect(subject.cpu_cost).to eq(subject.cpu_allocated_cost + subject.cpu_used_cost)
+    let(:fixed_rate) { 10.0 }
+
+    it "cpu with fixed and variable rate " do
+      cbrd = FactoryGirl.build(:chargeback_rate_detail_cpu_used,
+                               :chargeback_rate_id => @cbr.id,
+                               :per_time           => "hourly")
+
+      cbt = FactoryGirl.create(:chargeback_tier,
+                               :chargeback_rate_detail_id => cbrd.id,
+                               :start                     => 0,
+                               :finish                    => Float::INFINITY,
+                               :fixed_rate                => fixed_rate,
+                               :variable_rate             => @hourly_rate.to_s)
+
+      cbrd.chargeback_tiers = [cbt]
+      cbrd.save
+
+      cbrd = FactoryGirl.build(:chargeback_rate_detail_cpu_allocated,
+                               :chargeback_rate_id => @cbr.id,
+                               :per_time           => "hourly")
+
+      cbt = FactoryGirl.create(:chargeback_tier,
+                               :chargeback_rate_detail_id => cbrd.id,
+                               :start                     => 0,
+                               :finish                    => Float::INFINITY,
+                               :fixed_rate                => fixed_rate,
+                               :variable_rate             => @count_hourly_rate.to_s)
+
+      cbrd.chargeback_tiers = [cbt]
+      cbrd.save
+
+      expect(subject.cpu_allocated_metric).to eq(@cpu_count)
+      expect(subject.cpu_used_metric).to eq(@cpu_usagemhz_rate)
+
+      fixed = fixed_rate * @hours_in_month
+      variable = @cpu_count * @count_hourly_rate * @hours_in_month
+      expect(subject.cpu_allocated_cost).to be_within(0.01).of(fixed + variable)
+
+      fixed = fixed_rate * @hours_in_month
+      variable = @cpu_usagemhz_rate * @hourly_rate * @hours_in_month
+      expect(subject.cpu_used_cost).to be_within(0.01).of(fixed + variable)
     end
 
     it "memory" do
@@ -439,12 +682,13 @@ describe ChargebackVm do
                               )
       cbrd.chargeback_tiers = [cbt]
       cbrd.save
-      expect(subject.memory_allocated_metric).to eq(@memory_available * @metric_size)
-      expect(subject.memory_used_metric).to eq(@memory_used * @metric_size)
+      expect(subject.memory_allocated_metric).to eq(@memory_available)
+      expect(subject.memory_used_metric).to eq(@memory_used)
       expect(subject.memory_metric).to eq(subject.memory_allocated_metric + subject.memory_used_metric)
 
-      expect(subject.memory_allocated_cost).to eq(@memory_available * @hourly_rate * @metric_size)
-      expect(subject.memory_used_cost).to eq(@memory_used * @hourly_rate * @metric_size)
+      memory_allocated_cost = @memory_available * @hourly_rate * @hours_in_month
+      expect(subject.memory_allocated_cost).to be_within(0.01).of(memory_allocated_cost)
+      expect(subject.memory_used_cost).to be_within(0.01).of(@memory_used * @hourly_rate * @hours_in_month)
       expect(subject.memory_cost).to eq(subject.memory_allocated_cost + subject.memory_used_cost)
     end
 
@@ -463,10 +707,9 @@ describe ChargebackVm do
       cbrd.chargeback_tiers = [cbt]
       cbrd.save
 
-      expect(subject.disk_io_used_metric).to eq(@disk_usage_rate * @metric_size)
-      expect(subject.disk_io_metric).to eq(subject.disk_io_metric)
+      expect(subject.disk_io_used_metric).to eq(@disk_usage_rate)
 
-      expect(subject.disk_io_used_cost).to eq(@disk_usage_rate * @hourly_rate * @metric_size)
+      expect(subject.disk_io_used_cost).to be_within(0.01).of(@disk_usage_rate * @hourly_rate * @hours_in_month)
       expect(subject.disk_io_cost).to eq(subject.disk_io_used_cost)
     end
 
@@ -484,11 +727,55 @@ describe ChargebackVm do
                               )
       cbrd.chargeback_tiers = [cbt]
       cbrd.save
-      expect(subject.net_io_used_metric).to eq(@net_usage_rate * @metric_size)
-      expect(subject.net_io_metric).to eq(subject.net_io_metric)
+      expect(subject.net_io_used_metric).to eq(@net_usage_rate)
 
-      expect(subject.net_io_used_cost).to eq(@net_usage_rate * @hourly_rate * @metric_size)
+      expect(subject.net_io_used_cost).to be_within(0.01).of(@net_usage_rate * @hourly_rate * @hours_in_month)
       expect(subject.net_io_cost).to eq(subject.net_io_used_cost)
+    end
+
+    let(:hourly_fixed_rate) { 10 }
+
+    it "storage with only fixed rates" do
+      cbdm = FactoryGirl.create(:chargeback_rate_detail_measure_bytes)
+      cbrd = FactoryGirl.build(:chargeback_rate_detail_storage_used,
+                               :chargeback_rate_id                => @cbr.id,
+                               :per_time                          => "hourly",
+                               :chargeback_rate_detail_measure_id => cbdm.id)
+
+      cbt = FactoryGirl.create(:chargeback_tier,
+                               :chargeback_rate_detail_id => cbrd.id,
+                               :start                     => 0,
+                               :finish                    => Float::INFINITY,
+                               :fixed_rate                => hourly_fixed_rate,
+                               :variable_rate             => 0.0)
+
+      cbrd.chargeback_tiers = [cbt]
+      cbrd.save
+      cbrd = FactoryGirl.build(:chargeback_rate_detail_storage_allocated,
+                               :chargeback_rate_id                => @cbr.id,
+                               :per_time                          => "hourly",
+                               :chargeback_rate_detail_measure_id => cbdm.id)
+
+      cbt = FactoryGirl.create(:chargeback_tier,
+                               :chargeback_rate_detail_id => cbrd.id,
+                               :start                     => 0,
+                               :finish                    => Float::INFINITY,
+                               :fixed_rate                => hourly_fixed_rate,
+                               :variable_rate             => 0.0)
+
+      cbrd.chargeback_tiers = [cbt]
+      cbrd.save
+
+      expect(subject.storage_allocated_metric).to eq(@vm_allocated_disk_storage.gigabytes)
+      expect(subject.storage_used_metric).to eq(@vm_used_disk_storage.gigabytes)
+      expect(subject.storage_metric).to eq(subject.storage_allocated_metric + subject.storage_used_metric)
+
+      expected_value = hourly_fixed_rate * @hours_in_month
+      expect(subject.storage_allocated_cost).to be_within(0.01).of(expected_value)
+
+      expected_value = hourly_fixed_rate * @hours_in_month
+      expect(subject.storage_used_cost).to be_within(0.01).of(expected_value)
+      expect(subject.storage_cost).to eq(subject.storage_allocated_cost + subject.storage_used_cost)
     end
 
     it "storage" do
@@ -521,14 +808,14 @@ describe ChargebackVm do
                               )
       cbrd.chargeback_tiers = [cbt]
       cbrd.save
-      expect(subject.storage_allocated_metric).to eq(@vm_allocated_disk_storage.gigabytes * @metric_size)
-      expect(subject.storage_used_metric).to eq(@vm_used_disk_storage.gigabytes * @metric_size)
+      expect(subject.storage_allocated_metric).to eq(@vm_allocated_disk_storage.gigabytes)
+      expect(subject.storage_used_metric).to eq(@vm_used_disk_storage.gigabytes)
       expect(subject.storage_metric).to eq(subject.storage_allocated_metric + subject.storage_used_metric)
 
-      expect(subject.storage_allocated_cost).to eq(@vm_allocated_disk_storage.gigabytes *
-                                                   @count_hourly_rate *
-                                                   @metric_size)
-      expect(subject.storage_used_cost).to eq(@vm_used_disk_storage.gigabytes * @count_hourly_rate * @metric_size)
+      expected_value = @vm_allocated_disk_storage * @count_hourly_rate * @hours_in_month
+      expect(subject.storage_allocated_cost).to be_within(0.01).of(expected_value)
+      expected_value = @vm_used_disk_storage * @count_hourly_rate * @hours_in_month
+      expect(subject.storage_used_cost).to be_within(0.01).of(expected_value)
       expect(subject.storage_cost).to eq(subject.storage_allocated_cost + subject.storage_used_cost)
     end
 
@@ -556,7 +843,7 @@ describe ChargebackVm do
 
   describe "#get_rates" do
     let(:chargeback_rate)         { FactoryGirl.create(:chargeback_rate, :rate_type => "Compute") }
-    let(:chargeback_vm)           { FactoryGirl.build(:chargeback_vm) }
+    let(:chargeback_vm)           { ChargebackVm.new }
     let(:rate_assignment_options) { {:cb_rate => @cbr, :object => Tenant.root_tenant} }
     let(:metric_rollup) do
       FactoryGirl.create(:metric_rollup_vm_hr, :timestamp => "2012-08-31T07:00:00Z", :tag_names => "environment/prod",
@@ -592,10 +879,98 @@ describe ChargebackVm do
 
       extra_fields = ChargebackVm.get_keys_and_extra_fields(metric_rollup, timestamp_key)
       expected_fields = {"vm_name" => @vm1.name, "owner_name" => @admin.name, "provider_name" => @ems.name,
-                         "provider_uid" => @ems.guid}
+                         "provider_uid" => @ems.guid, "vm_uid" => "ems_ref", "vm_guid" => @vm1.guid,
+                         "vm_id" => @vm1.id}
 
       expect("#{metric_rollup.resource_id}_#{timestamp_key}").to eq(extra_fields.first)
       expect(extra_fields.second).to eq(expected_fields)
+    end
+
+    let(:metric_rollup_without_ems) do
+      FactoryGirl.create(:metric_rollup_vm_hr, :timestamp => timestamp_key, :tag_names => "environment/prod",
+                         :parent_host_id => @host1.id, :parent_ems_cluster_id => @ems_cluster.id,
+                         :parent_storage_id => @storage.id,
+                         :resource => @vm1, :resource_name => @vm1.name)
+    end
+
+    it "return extra fields when parent ems is missing" do
+      ChargebackVm.instance_variable_set(:@vm_owners, vm_owners)
+
+      extra_fields = ChargebackVm.get_keys_and_extra_fields(metric_rollup_without_ems, timestamp_key)
+      expected_fields = {"vm_name" => @vm1.name, "owner_name" => @admin.name, "provider_name" => nil,
+                         "provider_uid" => nil, "vm_uid" => "ems_ref", "vm_guid" => @vm1.guid,
+                         "vm_id" => @vm1.id}
+
+      expect("#{metric_rollup.resource_id}_#{timestamp_key}").to eq(extra_fields.first)
+      expect(extra_fields.second).to eq(expected_fields)
+    end
+  end
+
+  context "Group by tags" do
+    before  do
+      @options[:interval] = "monthly"
+      @options[:groupby_tag] = "environment"
+
+      tz = Metric::Helper.get_time_zone(@options[:ext_options])
+      ts = Time.now.in_time_zone(tz)
+      time     = ts.beginning_of_month.utc
+      end_time = ts.end_of_month.utc
+
+      while time < end_time
+        @vm1.metric_rollups << FactoryGirl.create(:metric_rollup_vm_hr,
+                                                  :timestamp                         => time,
+                                                  :cpu_usagemhz_rate_average         => @cpu_usagemhz_rate,
+                                                  :derived_vm_numvcpus               => @cpu_count,
+                                                  :derived_memory_available          => @memory_available,
+                                                  :derived_memory_used               => @memory_used,
+                                                  :disk_usage_rate_average           => @disk_usage_rate,
+                                                  :net_usage_rate_average            => @net_usage_rate,
+                                                  :derived_vm_used_disk_storage      => @vm_used_disk_storage.gigabytes,
+                                                  :derived_vm_allocated_disk_storage => @vm_allocated_disk_storage.gigabytes,
+                                                  :tag_names                         => "environment/prod",
+                                                  :parent_host_id                    => @host1.id,
+                                                  :parent_ems_cluster_id             => @ems_cluster.id,
+                                                  :parent_ems_id                     => @ems.id,
+                                                  :parent_storage_id                 => @storage.id,
+                                                  :resource_name                     => @vm1.name,
+        )
+        time += 12.hour
+      end
+    end
+
+    subject { ChargebackVm.build_results_for_report_ChargebackVm(@options).first.first }
+
+    it "cpu" do
+      cbrd = FactoryGirl.build(:chargeback_rate_detail_cpu_used,
+                               :chargeback_rate_id => @cbr.id,
+                               :per_time           => "hourly"
+      )
+      cbt = FactoryGirl.create(:chargeback_tier,
+                               :chargeback_rate_detail_id => cbrd.id,
+                               :start                     => 0,
+                               :finish                    => Float::INFINITY,
+                               :fixed_rate                => 0.0,
+                               :variable_rate             => @hourly_rate.to_s
+      )
+      cbrd.chargeback_tiers = [cbt]
+      cbrd.save
+      cbrd = FactoryGirl.build(:chargeback_rate_detail_cpu_allocated,
+                               :chargeback_rate_id => @cbr.id,
+                               :per_time           => "hourly"
+      )
+      cbt = FactoryGirl.create(:chargeback_tier,
+                               :chargeback_rate_detail_id => cbrd.id,
+                               :start                     => 0,
+                               :finish                    => Float::INFINITY,
+                               :fixed_rate                => 0.0,
+                               :variable_rate             => @count_hourly_rate.to_s
+      )
+      cbrd.chargeback_tiers = [cbt]
+      cbrd.save
+
+      expect(subject.cpu_allocated_metric).to eq(@cpu_count)
+      expect(subject.cpu_used_metric).to eq(@cpu_usagemhz_rate)
+      expect(subject.tag_name).to eq('Production')
     end
   end
 end

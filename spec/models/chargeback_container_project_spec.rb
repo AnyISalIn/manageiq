@@ -7,16 +7,15 @@ describe ChargebackContainerProject do
     @ems = FactoryGirl.create(:ems_openshift)
 
     @project = FactoryGirl.create(:container_project, :name => "my project", :ext_management_system => @ems)
-    @live_group = FactoryGirl.create(:container_group, :name => "live group", :ext_management_system => @ems)
-    @disconnected_group = FactoryGirl.create(:container_group,
-                                             :name                  => "disconnected group",
-                                             :ext_management_system => @ems)
-    @project.container_groups << @live_group
-    @project.container_groups << @disconnected_group
 
     @cbr = FactoryGirl.create(:chargeback_rate, :rate_type => "compute")
     temp = {:cb_rate => @cbr, :object => @ems}
     ChargebackRate.set_assignments(:compute, [temp])
+
+    cat = FactoryGirl.create(:classification, :description => "Environment", :name => "environment", :single_value => true, :show => true)
+    c = FactoryGirl.create(:classification, :name => "prod", :description => "Production", :parent_id => cat.id)
+    @tag = c.tag
+    @project.tag_with(@tag.name, :ns => '*')
 
     @hourly_rate       = 0.01
     @count_hourly_rate = 1.00
@@ -28,12 +27,8 @@ describe ChargebackContainerProject do
 
     @options = {:interval_size       => 1,
                 :end_interval_offset => 0,
-                :tag                 => "/managed/environment/prod",
                 :ext_options         => {:tz => "Pacific Time (US & Canada)"},
-                :entity_id           => @project.id
     }
-
-    @disconnected_group.disconnect_inv
 
     Timecop.travel(Time.parse("2012-09-01 00:00:00 UTC"))
   end
@@ -43,11 +38,15 @@ describe ChargebackContainerProject do
   end
 
   context "Daily" do
+    let(:hours_in_day) { 24 }
+
     before do
       @options[:interval] = "daily"
+      @options[:entity_id] = @project.id
+      @options[:tag] = nil
 
       ["2012-08-31T07:00:00Z", "2012-08-31T08:00:00Z", "2012-08-31T09:00:00Z", "2012-08-31T10:00:00Z"].each do |t|
-        @live_group.metric_rollups << FactoryGirl.create(:metric_rollup_vm_hr,
+        @project.metric_rollups << FactoryGirl.create(:metric_rollup_vm_hr,
                                                          :timestamp                => t,
                                                          :cpu_usage_rate_average   => @cpu_usage_rate,
                                                          :derived_vm_numvcpus      => @cpu_count,
@@ -56,20 +55,10 @@ describe ChargebackContainerProject do
                                                          :net_usage_rate_average   => @net_usage_rate,
                                                          :parent_ems_id            => @ems.id,
                                                          :tag_names                => "",
-                                                         :resource_name            => @live_group.name)
-
-        @disconnected_group.metric_rollups << FactoryGirl.create(:metric_rollup_vm_hr,
-                                                                 :timestamp                => t,
-                                                                 :cpu_usage_rate_average   => @cpu_usage_rate,
-                                                                 :derived_vm_numvcpus      => @cpu_count,
-                                                                 :derived_memory_available => @memory_available,
-                                                                 :derived_memory_used      => @memory_used,
-                                                                 :net_usage_rate_average   => @net_usage_rate,
-                                                                 :parent_ems_id            => @ems.id,
-                                                                 :tag_names                => "",
-                                                                 :resource_name            => @live_group.name)
+                                                         :resource_name            => @project.name)
       end
-      @metric_size = @live_group.metric_rollups.size + @disconnected_group.metric_rollups.size
+
+      @metric_size = @project.metric_rollups.size
     end
 
     subject { ChargebackContainerProject.build_results_for_report_ChargebackContainerProject(@options).first.first }
@@ -86,8 +75,9 @@ describe ChargebackContainerProject do
                                :variable_rate             => @hourly_rate.to_s)
       cbrd.chargeback_tiers = [cbt]
       cbrd.save
-      expect(subject.cpu_cores_used_metric).to eq(@cpu_usage_rate * @metric_size)
-      expect(subject.cpu_cores_used_cost).to eq(@cpu_usage_rate * @hourly_rate * @metric_size)
+
+      expect(subject.cpu_cores_used_metric).to eq(@cpu_usage_rate)
+      expect(subject.cpu_cores_used_cost).to be_within(0.01).of(@cpu_usage_rate * @hourly_rate * hours_in_day)
     end
 
     it "memory" do
@@ -103,8 +93,8 @@ describe ChargebackContainerProject do
       cbrd.chargeback_tiers = [cbt]
       cbrd.save
 
-      expect(subject.memory_used_metric).to eq(@memory_used * @metric_size)
-      expect(subject.memory_used_cost).to eq(@memory_used * @hourly_rate * @metric_size)
+      expect(subject.memory_used_metric).to eq(@memory_used)
+      expect(subject.memory_used_cost).to be_within(0.01).of(@memory_used * @hourly_rate * hours_in_day)
     end
 
     it "net io" do
@@ -120,22 +110,44 @@ describe ChargebackContainerProject do
       cbrd.chargeback_tiers = [cbt]
       cbrd.save
 
-      expect(subject.net_io_used_metric).to eq(@net_usage_rate * @metric_size)
-      expect(subject.net_io_used_cost).to eq(@net_usage_rate * @hourly_rate * @metric_size)
+      expect(subject.net_io_used_metric).to eq(@net_usage_rate)
+      expect(subject.net_io_used_cost).to be_within(0.01).of(@net_usage_rate * @hourly_rate * hours_in_day)
+    end
+
+    let(:cbt) { FactoryGirl.create(:chargeback_tier,
+                                   :start                     => 0,
+                                   :finish                    => Float::INFINITY,
+                                   :fixed_rate                => 0.0,
+                                   :variable_rate             => @hourly_rate.to_s) }
+    let!(:cbrd) do
+      FactoryGirl.create(:chargeback_rate_detail_fixed_compute_cost,
+                         :source             => "compute_1",
+                         :chargeback_rate_id => @cbr.id,
+                         :per_time           => "hourly",
+                         :chargeback_tiers   => [cbt])
+    end
+
+    it "fixed_compute" do
+      expect(subject.fixed_compute_1_cost).to eq(@hourly_rate * hours_in_day)
+      expect(subject.fixed_compute_metric).to eq(@metric_size)
     end
   end
 
   context "Monthly" do
     before do
       @options[:interval] = "monthly"
+      @options[:entity_id] = @project.id
+      @options[:tag] = nil
 
       tz = Metric::Helper.get_time_zone(@options[:ext_options])
       ts = Time.now.in_time_zone(tz)
       time     = ts.beginning_of_month.utc
       end_time = ts.end_of_month.utc
 
+      @hours_in_month = Time.days_in_month(time.month, time.year) * 24
+
       while time < end_time
-        @live_group.metric_rollups << FactoryGirl.create(:metric_rollup_vm_hr,
+        @project.metric_rollups << FactoryGirl.create(:metric_rollup_vm_hr,
                                                          :timestamp                => time,
                                                          :cpu_usage_rate_average   => @cpu_usage_rate,
                                                          :derived_vm_numvcpus      => @cpu_count,
@@ -144,21 +156,12 @@ describe ChargebackContainerProject do
                                                          :net_usage_rate_average   => @net_usage_rate,
                                                          :parent_ems_id            => @ems.id,
                                                          :tag_names                => "",
-                                                         :resource_name            => @live_group.name)
+                                                         :resource_name            => @project.name)
 
-        @disconnected_group.metric_rollups << FactoryGirl.create(:metric_rollup_vm_hr,
-                                                                 :timestamp                => time,
-                                                                 :cpu_usage_rate_average   => @cpu_usage_rate,
-                                                                 :derived_vm_numvcpus      => @cpu_count,
-                                                                 :derived_memory_available => @memory_available,
-                                                                 :derived_memory_used      => @memory_used,
-                                                                 :net_usage_rate_average   => @net_usage_rate,
-                                                                 :parent_ems_id            => @ems.id,
-                                                                 :tag_names                => "",
-                                                                 :resource_name            => @live_group.name)
         time += 12.hours
       end
-      @metric_size = @live_group.metric_rollups.size + @disconnected_group.metric_rollups.size
+
+      @metric_size = @project.metric_rollups.size
     end
 
     subject { ChargebackContainerProject.build_results_for_report_ChargebackContainerProject(@options).first.first }
@@ -175,8 +178,9 @@ describe ChargebackContainerProject do
                                :variable_rate             => @hourly_rate.to_s)
       cbrd.chargeback_tiers = [cbt]
       cbrd.save
-      expect(subject.cpu_cores_used_metric).to eq(@cpu_usage_rate * @metric_size)
-      expect(subject.cpu_cores_used_cost).to eq(@cpu_usage_rate * @hourly_rate * @metric_size)
+
+      expect(subject.cpu_cores_used_metric).to eq(@cpu_usage_rate)
+      expect(subject.cpu_cores_used_cost).to be_within(0.01).of(@cpu_usage_rate * @hourly_rate * @hours_in_month)
     end
 
     it "memory" do
@@ -191,8 +195,9 @@ describe ChargebackContainerProject do
                                :variable_rate             => @hourly_rate.to_s)
       cbrd.chargeback_tiers = [cbt]
       cbrd.save
-      expect(subject.memory_used_metric).to eq(@memory_used * @metric_size)
-      expect(subject.memory_used_cost).to eq(@memory_used * @hourly_rate * @metric_size)
+
+      expect(subject.memory_used_metric).to eq(@memory_used)
+      expect(subject.memory_used_cost).to be_within(0.01).of(@memory_used * @hourly_rate * @hours_in_month)
     end
 
     it "net io" do
@@ -207,8 +212,191 @@ describe ChargebackContainerProject do
                                :variable_rate             => @hourly_rate.to_s)
       cbrd.chargeback_tiers = [cbt]
       cbrd.save
-      expect(subject.net_io_used_metric).to eq(@net_usage_rate * @metric_size)
-      expect(subject.net_io_used_cost).to eq(@net_usage_rate * @hourly_rate * @metric_size)
+
+      expect(subject.net_io_used_metric).to eq(@net_usage_rate)
+      expect(subject.net_io_used_cost).to be_within(0.01).of(@net_usage_rate * @hourly_rate * @hours_in_month)
+    end
+
+    let(:cbt) { FactoryGirl.create(:chargeback_tier,
+                                   :start                     => 0,
+                                   :finish                    => Float::INFINITY,
+                                   :fixed_rate                => 0.0,
+                                   :variable_rate             => @hourly_rate.to_s) }
+    let!(:cbrd) do
+      FactoryGirl.create(:chargeback_rate_detail_fixed_compute_cost,
+                         :source             => "compute_1",
+                         :chargeback_rate_id => @cbr.id,
+                         :per_time           => "hourly",
+                         :chargeback_tiers   => [cbt])
+    end
+
+    it "fixed_compute" do
+      # .to be_within(0.01) is used since theres a float error here
+      expect(subject.fixed_compute_1_cost).to be_within(0.01).of(@hourly_rate * @hours_in_month)
+      expect(subject.fixed_compute_metric).to eq(@metric_size)
+    end
+  end
+
+  context "tagged project" do
+    before do
+      @options[:interval] = "monthly"
+      @options[:entity_id] = nil
+      @options[:tag] = "/managed/environment/prod"
+
+      tz = Metric::Helper.get_time_zone(@options[:ext_options])
+      ts = Time.now.in_time_zone(tz)
+      time     = ts.beginning_of_month.utc
+      end_time = ts.end_of_month.utc
+
+      @hours_in_month = Time.days_in_month(time.month, time.year) * 24
+
+      while time < end_time
+        @project.metric_rollups << FactoryGirl.create(:metric_rollup_vm_hr,
+                                                         :timestamp                => time,
+                                                         :cpu_usage_rate_average   => @cpu_usage_rate,
+                                                         :derived_vm_numvcpus      => @cpu_count,
+                                                         :derived_memory_available => @memory_available,
+                                                         :derived_memory_used      => @memory_used,
+                                                         :net_usage_rate_average   => @net_usage_rate,
+                                                         :parent_ems_id            => @ems.id,
+                                                         :tag_names                => "",
+                                                         :resource_name            => @project.name)
+        time += 12.hours
+      end
+    end
+
+    subject { ChargebackContainerProject.build_results_for_report_ChargebackContainerProject(@options).first.first }
+
+    it "cpu" do
+      cbrd = FactoryGirl.build(:chargeback_rate_detail_cpu_cores_used,
+                               :chargeback_rate_id => @cbr.id,
+                               :per_time           => "hourly")
+      cbt = FactoryGirl.create(:chargeback_tier,
+                               :chargeback_rate_detail_id => cbrd.id,
+                               :start                     => 0,
+                               :finish                    => Float::INFINITY,
+                               :fixed_rate                => 0.0,
+                               :variable_rate             => @hourly_rate.to_s)
+      cbrd.chargeback_tiers = [cbt]
+      cbrd.save
+
+      expect(subject.cpu_cores_used_metric).to eq(@cpu_usage_rate)
+      expect(subject.cpu_cores_used_cost).to be_within(0.01).of(@cpu_usage_rate * @hourly_rate * @hours_in_month)
+    end
+  end
+
+  context "group results by tag" do
+    before do
+      @options[:interval] = "monthly"
+      @options[:entity_id] = nil
+      @options[:provider_id] = "all"
+      @options[:groupby_tag] = "environment"
+
+      tz = Metric::Helper.get_time_zone(@options[:ext_options])
+      ts = Time.now.in_time_zone(tz)
+      time     = ts.beginning_of_month.utc
+      end_time = ts.end_of_month.utc
+
+      @hours_in_month = Time.days_in_month(time.month, time.year) * 24
+
+      while time < end_time
+        @project.metric_rollups << FactoryGirl.create(:metric_rollup_vm_hr,
+                                                      :timestamp                => time,
+                                                      :cpu_usage_rate_average   => @cpu_usage_rate,
+                                                      :derived_vm_numvcpus      => @cpu_count,
+                                                      :derived_memory_available => @memory_available,
+                                                      :derived_memory_used      => @memory_used,
+                                                      :net_usage_rate_average   => @net_usage_rate,
+                                                      :parent_ems_id            => @ems.id,
+                                                      :tag_names                => "environment/prod",
+                                                      :resource_name            => @project.name)
+
+        time += 12.hours
+      end
+    end
+
+    subject { ChargebackContainerProject.build_results_for_report_ChargebackContainerProject(@options).first.first }
+
+    it "cpu" do
+      cbrd = FactoryGirl.build(:chargeback_rate_detail_cpu_cores_used,
+                               :chargeback_rate_id => @cbr.id,
+                               :per_time           => "hourly")
+      cbt = FactoryGirl.create(:chargeback_tier,
+                               :chargeback_rate_detail_id => cbrd.id,
+                               :start                     => 0,
+                               :finish                    => Float::INFINITY,
+                               :fixed_rate                => 0.0,
+                               :variable_rate             => @hourly_rate.to_s)
+      cbrd.chargeback_tiers = [cbt]
+      cbrd.save
+
+      expect(subject.cpu_cores_used_metric).to eq(@cpu_usage_rate)
+      expect(subject.cpu_cores_used_cost).to be_within(0.01).of(@cpu_usage_rate * @hourly_rate * @hours_in_month)
+      expect(subject.tag_name).to eq('Production')
+    end
+  end
+
+  context "ignore empty metrics in fixed_compute" do
+    before do
+      @options[:interval] = "monthly"
+      @options[:entity_id] = @project.id
+      @options[:tag] = nil
+
+      tz = Metric::Helper.get_time_zone(@options[:ext_options])
+      ts = Time.now.in_time_zone(tz)
+      time     = ts.beginning_of_month.utc
+      end_time = ts.end_of_month.utc
+
+      @hours_in_month = Time.days_in_month(time.month, time.year) * 24
+
+      while time < end_time
+        @project.metric_rollups << FactoryGirl.create(:metric_rollup_vm_hr,
+                                                      :timestamp                => time,
+                                                      :cpu_usage_rate_average   => @cpu_usage_rate,
+                                                      :derived_vm_numvcpus      => @cpu_count,
+                                                      :derived_memory_available => @memory_available,
+                                                      :derived_memory_used      => @memory_used,
+                                                      :net_usage_rate_average   => @net_usage_rate,
+                                                      :parent_ems_id            => @ems.id,
+                                                      :tag_names                => "",
+                                                      :resource_name            => @project.name)
+
+        time += 12.hours
+
+        # Empty metric for fixed compute
+        @project.metric_rollups << FactoryGirl.create(:metric_rollup_vm_hr,
+                                                      :timestamp                => "2012-08-31T07:00:00Z",
+                                                      :cpu_usage_rate_average   => 0.0,
+                                                      :derived_memory_used      => 0.0,
+                                                      :parent_ems_id            => @ems.id,
+                                                      :tag_names                => "",
+                                                      :resource_name            => @project.name)
+
+        time += 12.hours
+      end
+
+      @metric_size = @project.metric_rollups.size
+    end
+
+    subject { ChargebackContainerProject.build_results_for_report_ChargebackContainerProject(@options).first.first }
+
+    let(:cbt) { FactoryGirl.create(:chargeback_tier,
+                                   :start                     => 0,
+                                   :finish                    => Float::INFINITY,
+                                   :fixed_rate                => 0.0,
+                                   :variable_rate             => @hourly_rate.to_s) }
+    let!(:cbrd) do
+      FactoryGirl.create(:chargeback_rate_detail_fixed_compute_cost,
+                         :chargeback_rate_id => @cbr.id,
+                         :per_time           => "hourly",
+                         :chargeback_tiers   => [cbt],
+                         :source             => "compute_1")
+    end
+
+    it "fixed_compute" do
+      # .to be_within(0.01) is used since theres a float error here
+      expect(subject.fixed_compute_1_cost).to be_within(0.01).of(@hourly_rate * @hours_in_month)
+      expect(subject.fixed_compute_metric).to eq(@metric_size / 2)
     end
   end
 end

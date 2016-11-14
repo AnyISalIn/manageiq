@@ -108,7 +108,7 @@ describe ApplicationController do
     it "sets Processors details successfully" do
       host_hardware = FactoryGirl.create(:hardware, :cpu_sockets => 2, :cpu_cores_per_socket => 4, :cpu_total_cores => 8)
       host = FactoryGirl.create(:host, :hardware => host_hardware)
-      set_user_privileges
+      stub_user(:features => :all)
 
       controller.send(:set_config, host)
       expect(response.status).to eq(200)
@@ -119,7 +119,7 @@ describe ApplicationController do
       disk = FactoryGirl.create(:disk, :filename => nil, :controller_type => nil, :device_type => 'disk', :mode => "foo")
       host_hardware = FactoryGirl.create(:hardware, :cpu_sockets => 2, :cpu_cores_per_socket => 4, :cpu_total_cores => 8, :disks => [disk])
       host = FactoryGirl.create(:host, :hardware => host_hardware)
-      set_user_privileges
+      stub_user(:features => :all)
 
       controller.send(:set_config, host)
       expect(response.status).to eq(200)
@@ -130,7 +130,7 @@ describe ApplicationController do
       disk = FactoryGirl.create(:disk, :controller_type => nil)
       host_hardware = FactoryGirl.create(:hardware, :cpu_sockets => 2, :cpu_cores_per_socket => 4, :cpu_total_cores => 8, :disks => [disk])
       host = FactoryGirl.create(:host, :hardware => host_hardware)
-      set_user_privileges
+      stub_user(:features => :all)
 
       controller.send(:set_config, host)
       expect(response.status).to eq(200)
@@ -164,6 +164,52 @@ describe ApplicationController do
                                                   :miq_grid_checks => "#{vm1.id},#{vm2.id}")
       controller.set_response!(response)
       controller.send(:prov_redirect, "migrate")
+      expect(controller.send(:flash_errors?)).to be_falsey
+      expect(assigns(:org_controller)).to eq("vm")
+    end
+  end
+
+  context "#prov_redirect" do
+    before do
+      login_as FactoryGirl.create(:user, :features => "image_miq_request_new")
+      allow(User).to receive(:server_timezone).and_return("UTC")
+      controller.request.parameters[:pressed] = "image_miq_request_new"
+      controller.instance_variable_set(:@explorer, true)
+    end
+
+    it "returns flash message when Provisioning button is pressed from list and selected Image is archived" do
+      template = FactoryGirl.create(:miq_template,
+                                    :name     => "template 1",
+                                    :vendor   => "vmware",
+                                    :location => "template1.vmtx")
+      controller.instance_variable_set(:@_params,
+                                       :pressed         => "image_miq_request_new",
+                                       :miq_grid_checks => template.id.to_s)
+      controller.set_response!(response)
+      expect(controller).not_to receive(:vm_pre_prov)
+      controller.send(:prov_redirect)
+      expect(assigns(:flash_array).first[:message]).to include("does not apply to at least one of the selected")
+    end
+
+    let(:ems)     { FactoryGirl.create(:ems_openstack) }
+    let(:storage) { FactoryGirl.create(:storage) }
+
+    it "sets provisioning data and skips pre provisioning dialog" do
+      template = FactoryGirl.create(:template_openstack,
+                                    :name                  => "template 1",
+                                    :vendor                => "vmware",
+                                    :location              => "template1.vmtx",
+                                    :ext_management_system => ems)
+      controller.instance_variable_set(:@_params,
+                                       :pressed         => "image_miq_request_new",
+                                       :miq_grid_checks => template.id.to_s)
+      controller.instance_variable_set(:@breadcrumbs, [])
+      controller.instance_variable_set(:@sb, {})
+      controller.set_response!(response)
+      expect(controller).to receive(:vm_pre_prov)
+      expect(controller).not_to receive(:build_vm_grid)
+      allow(controller).to receive(:replace_right_cell)
+      controller.send(:prov_redirect)
       expect(controller.send(:flash_errors?)).to be_falsey
       expect(assigns(:org_controller)).to eq("vm")
     end

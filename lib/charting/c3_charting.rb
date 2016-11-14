@@ -6,7 +6,7 @@ class C3Charting < Charting
 
   # for Charting.detect_available_plugin
   def self.priority
-    2 # TODO: set to value > JqplotCharting.priority to take effect
+    1000 # TODO: set to value > JqplotCharting.priority to take effect
   end
 
   # backend identifier
@@ -66,7 +66,7 @@ class C3Charting < Charting
 
   # list of themes - in options_for_select format
   def chart_themes_for_select
-    %w(Default default)
+    [%w(Default default)]
   end
 
   def serialized(data)

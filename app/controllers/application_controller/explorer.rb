@@ -7,19 +7,19 @@ module ApplicationController::Explorer
     @hist = x_tree_history[params[:item].to_i]  # Set instance var so we know hist button was pressed
     if @hist[:button]         # Button press from show screen
       self.x_node = @hist[:id]
-      nodetype, params[:id] = x_node.split("_").last.split("-")
+      params[:id] = parse_nodetype_and_id(x_node).last
       params[:x_show] = @hist[:item]
       params[:pressed] = @hist[:button] # Look like we came in with this action
       params[:display] = @hist[:display]
       x_button
     elsif @hist[:display]           # Display link from show screen
       self.x_node = @hist[:id]
-      nodetype, params[:id] = x_node.split("_").last.split("-")
+      params[:id] = parse_nodetype_and_id(x_node).last
       params[:display] = @hist[:display]
       show
     elsif @hist[:action]          # Action link from show screen
       self.x_node = @hist[:id]
-      nodetype, params[:id] = x_node.split("_").last.split("-")
+      params[:id] = parse_nodetype_and_id(x_node).last
       params[:x_show] = @hist[:item]
       params[:action] = @hist[:action]  # Look like we came in with this action
       session[:view] = @hist[:view] if @hist[:view]
@@ -51,6 +51,8 @@ module ApplicationController::Explorer
     'tag'          => :s2, 'timeline'         => :s2, 'resize'          => :s2,
     'live_migrate' => :s2, 'attach'           => :s2, 'detach'          => :s2,
     'evacuate'     => :s2, 'service_dialog'   => :s2,
+    'associate_floating_ip'    => :s2,
+    'disassociate_floating_ip' => :s2,
 
     # specials
     'perf'         => :show,
@@ -62,13 +64,13 @@ module ApplicationController::Explorer
   def x_button
     model, action = pressed2model_action(params[:pressed])
 
-    allowed_models = %w(common image instance vm miq_template provider storage configscript)
+    allowed_models = %w(common image instance vm miq_template provider storage configscript infra_networking)
     raise ActionController::RoutingError.new('invalid button action') unless
       allowed_models.include?(model)
 
-    # guard this 'router' by matching against a list of allowed actions
-    raise ActionController::RoutingError.new('invalid button action') unless
-      X_BUTTON_ALLOWED_ACTIONS.key?(action)
+    unless X_BUTTON_ALLOWED_ACTIONS.key?(action)
+      raise ActionController::RoutingError, _('invalid button action')
+    end
 
     @explorer = true
 
@@ -80,13 +82,16 @@ module ApplicationController::Explorer
     elsif X_BUTTON_ALLOWED_ACTIONS[action] == :s2
       # don't need to set params[:id] and do find_checked_items for methods
       # like ownership, the code in those methods handle it
-      if %w(edit right_size resize attach detach live_migrate evacuate).include?(action)
+      if %w(edit right_size resize attach detach live_migrate evacuate
+            associate_floating_ip disassociate_floating_ip).include?(action)
         @_params[:id] = (params[:id] ? [params[:id]] : find_checked_items)[0]
       end
       if ['protect', 'tag'].include?(action)
         case model
         when 'storage'
           send(method, Storage)
+        when 'infra_networking'
+          send(method, Switch)
         else
           send(method, VmOrTemplate)
         end
@@ -115,20 +120,14 @@ module ApplicationController::Explorer
     # no need to render anything, method will render flash message when async task is completed
 
     if @refresh_partial == "layouts/flash_msg"
-      render :update do |page|
-        page << javascript_prologue
-        page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-      end
+      javascript_flash
     elsif @refresh_partial
       # no need to render anything when download_pdf button is pressed on summary screen
       replace_right_cell unless action == 'download_pdf'
     else
       add_flash(_("Button not yet implemented %{model}:%{action}") %
         {:model => model, :action => action}, :error) unless @flash_array
-      render :update do |page|
-        page << javascript_prologue
-        page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-      end
+      javascript_flash
     end
   end
 
@@ -139,7 +138,67 @@ module ApplicationController::Explorer
     tree_select
   end
 
+  # Tree node selected in explorer
+  def tree_select(node_info = false)
+    @explorer = true
+    @lastaction = "explorer"
+    self.x_active_tree = params[:tree] if params[:tree]
+    self.x_node = params[:id]
+    if node_info
+      get_node_info(x_node)
+      replace_right_cell(x_node)
+    else
+      replace_right_cell
+    end
+  end
+
+  # Accordion selected in explorer
+  def accordion_select(node_info = false)
+    @layout     = "explorer"
+    @lastaction = "explorer"
+    self.x_active_accord = params[:id].sub(/_accord$/, '')
+    self.x_active_tree   = "#{self.x_active_accord}_tree"
+    if node_info
+      get_node_info(x_node)
+      replace_right_cell(x_node)
+    else
+      replace_right_cell
+    end
+  end
+
   private ############################
+
+  def generic_x_button(whitelist)
+    @sb[:action] = action = params[:pressed]
+
+    unless whitelist.key?(action)
+      raise ActionController::RoutingError, _('invalid button action')
+    end
+
+    send_action = whitelist[action]
+    send(send_action)
+    send_action
+  end
+
+  def generic_x_show(x_node_build_options = {})
+    @explorer = true
+    respond_to do |format|
+      format.js do # AJAX, select the node
+        unless @record
+          redirect_to :action => "explorer"
+          return
+        end
+        params[:id] = x_build_node_id(@record, x_node_build_options)
+        tree_select
+      end
+      format.html do # HTML, redirect to explorer
+        tree_node_id = TreeBuilder.build_node_id(@record)
+        session[:exp_parms] = {:id => tree_node_id}
+        redirect_to :action => "explorer"
+      end
+      format.any { head :not_found } # Anything else, just send 404
+    end
+  end
 
   # Add an item to the tree history array
   def x_history_add_item(options)
@@ -149,29 +208,6 @@ module ApplicationController::Explorer
     x_tree_history.unshift(options).slice!(11..-1)
   end
 
-  def x_edit_tags_reset(db)
-    @tagging = session[:tag_db] = db
-    @object_ids = find_checked_items
-    if params[:button] == "reset"
-      id = params[:id] if params[:id]
-      return unless load_edit("#{session[:tag_db]}_edit_tags__#{id}", "replace_cell__explorer")
-      @object_ids = @edit[:object_ids]
-      session[:tag_db] = @tagging = @edit[:tagging]
-    else
-      @object_ids[0] = params[:id] if @object_ids.blank? && params[:id]
-      session[:tag_db] = @tagging = params[:tagging] if params[:tagging]
-    end
-
-    @gtl_type = "list"  # No quad icons for user/group list views
-    x_tags_set_form_vars
-    @in_a_form = true
-    session[:changed] = false
-    add_flash(_("All changes have been reset"), :warning)  if params[:button] == "reset"
-    @right_cell_text = _("Editing %{model} Tags for \"%{name}\"") % {:name  => ui_lookup(:models => @tagging),
-                                                                     :model => current_tenant.name}
-    replace_right_cell(@sb[:action])
-  end
-
   # Set form vars for tag editor
   def x_tags_set_form_vars
     @edit = {}
@@ -179,7 +215,6 @@ module ApplicationController::Explorer
     @edit[:key] = "#{session[:tag_db]}_edit_tags__#{@object_ids[0]}"
     @edit[:object_ids] = @object_ids
     @edit[:tagging] = @tagging
-    session[:assigned_filters] = assigned_filters
     tag_edit_build_screen
     build_targets_hash(@tagitems)
 
@@ -201,17 +236,6 @@ module ApplicationController::Explorer
 
   def x_build_node_id(object, options = {})
     TreeNodeBuilder.build_id(object, nil, options)
-  end
-
-  # Add the children of a node that is being expanded (autoloaded), called by generic tree_autoload method
-  def tree_add_child_nodes(id)
-    TreeBuilder.tree_add_child_nodes(@sb,
-                                     x_tree[:klass_name],
-                                     id)
-  end
-
-  def rbac_filtered_objects(objects, options = {})
-    Rbac.filtered(objects, options)
   end
 
   # FIXME: move partly to Tree once Trees are made from TreeBuilder

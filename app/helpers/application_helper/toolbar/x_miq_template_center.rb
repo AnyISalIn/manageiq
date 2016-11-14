@@ -11,13 +11,15 @@ class ApplicationHelper::Toolbar::XMiqTemplateCenter < ApplicationHelper::Toolba
           'fa fa-refresh fa-lg',
           N_('Refresh relationships and power states for all items related to this Template'),
           N_('Refresh Relationships and Power States'),
-          :confirm => N_("Refresh relationships and power states for all items related to this Template?")),
+          :confirm => N_("Refresh relationships and power states for all items related to this Template?"),
+          :klass => ApplicationHelper::Button::TemplateRefresh),
         button(
           :miq_template_scan,
           'fa fa-search fa-lg',
           N_('Perform SmartState Analysis on this Template'),
           N_('Perform SmartState Analysis'),
-          :confirm => N_("Perform SmartState Analysis on this Template?")),
+          :confirm => N_("Perform SmartState Analysis on this Template?"),
+          :klass => ApplicationHelper::Button::VmInstanceTemplateScan),
         separator,
         button(
           :miq_template_edit,
@@ -32,10 +34,10 @@ class ApplicationHelper::Toolbar::XMiqTemplateCenter < ApplicationHelper::Toolba
         button(
           :miq_template_delete,
           'pficon pficon-delete fa-lg',
-          N_('Remove this Template from the VMDB'),
-          N_('Remove from the VMDB'),
+          N_('Remove this Template'),
+          N_('Remove Template'),
           :url_parms => "&refresh=y",
-          :confirm   => N_("Warning: This Template and ALL of its components will be permanently removed from the Virtual Management Database.  Are you sure you want to remove this Template?")),
+          :confirm   => N_("Warning: This Template and ALL of its components will be permanently removed!")),
       ]
     ),
   ])
@@ -50,12 +52,14 @@ class ApplicationHelper::Toolbar::XMiqTemplateCenter < ApplicationHelper::Toolba
           :miq_template_protect,
           'pficon pficon-edit fa-lg',
           N_('Manage Policies for this Template'),
-          N_('Manage Policies')),
+          N_('Manage Policies'),
+          :klass => ApplicationHelper::Button::VmTemplatePolicy),
         button(
           :miq_template_policy_sim,
           'fa fa-play-circle-o fa-lg',
           N_('View Policy Simulation for this Template'),
-          N_('Policy Simulation')),
+          N_('Policy Simulation'),
+          :klass => ApplicationHelper::Button::VmTemplatePolicy),
         button(
           :miq_template_tag,
           'pficon pficon-edit fa-lg',
@@ -78,10 +82,18 @@ class ApplicationHelper::Toolbar::XMiqTemplateCenter < ApplicationHelper::Toolba
       t,
       :items => [
         button(
+          :miq_template_miq_request_new,
+          'pficon pficon-add-circle-o fa-lg',
+          t = N_('Provision VMs using this Template'),
+          t,
+          :klass => ApplicationHelper::Button::TemplateProvision),
+        button(
           :miq_template_clone,
           'product product-clone fa-lg',
           t = N_('Clone this Template'),
-          t),
+          t,
+          :klass => ApplicationHelper::Button::GenericFeatureButton,
+          :options => {:feature => :clone}),
       ]
     ),
   ])

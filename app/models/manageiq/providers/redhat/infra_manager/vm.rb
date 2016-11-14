@@ -4,6 +4,22 @@ class ManageIQ::Providers::Redhat::InfraManager::Vm < ManageIQ::Providers::Infra
   include_concern 'Reconfigure'
   include_concern 'ManageIQ::Providers::Redhat::InfraManager::VmOrTemplateShared'
 
+  supports :migrate do
+    unless ext_management_system.supports_migrate?
+      unsupported_reason_add(:migrate, 'RHV API version does not support migrate')
+    end
+  end
+
+  supports :reconfigure_disks do
+    if storage.blank?
+      unsupported_reason_add(:reconfigure_disks, _('storage is missing'))
+    elsif ext_management_system.blank?
+      unsupported_reason_add(:reconfigure_disks, _('The virtual machine is not associated with a provider'))
+    elsif !ext_management_system.supports_reconfigure_disks?
+      unsupported_reason_add(:reconfigure_disks, _('The provider does not support reconfigure disks'))
+    end
+  end
+
   POWER_STATES = {
     'up'        => 'on',
     'down'      => 'off',
@@ -34,23 +50,11 @@ class ManageIQ::Providers::Redhat::InfraManager::Vm < ManageIQ::Providers::Infra
     true
   end
 
-  def cloneable?
-    true
-  end
-
   def self.calculate_power_state(raw_power_state)
     POWER_STATES[raw_power_state] || super
   end
 
-  def validate_migrate
-    validate_unsupported("Migrate")
-  end
-
   def validate_publish
     validate_unsupported("Publish VM")
-  end
-
-  def validate_clone
-    validate_unsupported("Clone")
   end
 end

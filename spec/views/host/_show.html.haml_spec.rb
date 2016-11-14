@@ -1,7 +1,7 @@
 describe "host/show.html.haml" do
   shared_examples_for "miq_before_onload JS is needed" do
     it "renders proper JS" do
-      js_string = "var miq_after_onload = \"miqAsyncAjax('/host/#{action}/#{host.id}');\""
+      js_string = "ManageIQ.afterOnload = \"miqAsyncAjax('/host/#{action}/#{host.id}');\""
       render
       expect(rendered).to include(js_string)
     end
@@ -44,7 +44,7 @@ describe "host/show.html.haml" do
       assign(:lastaction, "host_services")
       assign(:view, OpenStruct.new(:table => OpenStruct.new(:data => [])))
       render
-      expect(view).to render_template(partial: 'layouts/gtl', :locals => {:action_url => 'host_services'})
+      expect(view).to render_template(:partial => 'layouts/gtl', :locals => {:action_url => 'host_services'})
     end
   end
 end

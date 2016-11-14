@@ -8,7 +8,7 @@
 #   - Expanding Results     - expand=resources,:subcollection
 #   - Resource actions
 #
-describe ApiController do
+describe "Querying" do
   def create_vms_by_name(names)
     names.each.collect { |name| FactoryGirl.create(:vm_vmware, :name => name) }
   end
@@ -323,9 +323,21 @@ describe ApiController do
 
       run_get vms_url, :expand => "resources", :attributes => "name,vendor"
 
-      expect_query_result(:vms, 1, 1)
-      expect_result_resources_to_have_only_keys("resources", %w(id href name vendor))
-      expect_result_resources_to_match_hash([{"name" => "aa", "id" => vm.id, "href" => vms_url(vm.id)}])
+      expected = {
+        "name"      => "vms",
+        "count"     => 1,
+        "subcount"  => 1,
+        "resources" => [
+          {
+            "id"     => vm.id,
+            "href"   => a_string_matching(vms_url(vm.id)),
+            "name"   => "aa",
+            "vendor" => anything
+          }
+        ]
+      }
+      expect(response.parsed_body).to include(expected)
+      expect(response).to have_http_status(:ok)
     end
 
     it "skips requests of invalid attributes" do
@@ -348,7 +360,7 @@ describe ApiController do
       Classification.classify(vm1, "department", "finance")
       Classification.classify(vm3, "department", "finance")
 
-      run_get vms_url, :expand  => "resources", :by_tag => "/department/finance"
+      run_get vms_url, :expand => "resources", :by_tag => "/department/finance"
 
       expect_query_result(:vms, 2, 3)
       expect_result_resources_to_include_data("resources", "name" => [vm1.name, vm3.name])
@@ -375,8 +387,14 @@ describe ApiController do
 
       run_get vms_url
 
-      expect_query_result(:vms, 2, 2)
-      expect_result_resources_to_have_only_keys("resources", %w(href))
+      expected = {
+        "name"      => "vms",
+        "count"     => 2,
+        "subcount"  => 2,
+        "resources" => Array.new(2) { {"href" => anything} }
+      }
+      expect(response.parsed_body).to include(expected)
+      expect(response).to have_http_status(:ok)
     end
 
     it "supports expanding resources" do
@@ -406,7 +424,7 @@ describe ApiController do
       run_get vms_url(vm1.id)
 
       expect(response).to have_http_status(:ok)
-      expect(response_hash).to_not have_key("actions")
+      expect(response.parsed_body).to_not have_key("actions")
     end
 
     it "returns actions if authorized" do
@@ -425,7 +443,7 @@ describe ApiController do
 
       expect(response).to have_http_status(:ok)
       expect_result_to_have_keys(%w(id href name vendor actions))
-      actions = response_hash["actions"]
+      actions = response.parsed_body["actions"]
       expect(actions.size).to eq(1)
       expect(actions.first["name"]).to eq("suspend")
     end
@@ -439,7 +457,7 @@ describe ApiController do
 
       expect(response).to have_http_status(:ok)
       expect_result_to_have_keys(%w(id href name vendor actions))
-      expect(response_hash["actions"].collect { |a| a["name"] }).to match_array(%w(start stop))
+      expect(response.parsed_body["actions"].collect { |a| a["name"] }).to match_array(%w(start stop))
     end
 
     it "returns actions if asked for with physical attributes" do
@@ -476,6 +494,21 @@ describe ApiController do
 
       expect(response).to have_http_status(:ok)
       expect_result_to_have_only_keys(%w(id href name disconnected))
+    end
+  end
+
+  describe 'OPTIONS /api/vms' do
+    it 'returns the options information' do
+      api_basic_authorize
+      expected = {
+        'attributes'         => (Vm.attribute_names - Vm.virtual_attribute_names).sort.as_json,
+        'virtual_attributes' => Vm.virtual_attribute_names.sort.as_json,
+        'relationships'      => (Vm.reflections.keys | Vm.virtual_reflections.keys.collect(&:to_s)).sort,
+        'data'               => {}
+      }
+      run_options(vms_url)
+      expect(response.parsed_body).to eq(expected)
+      expect(response.headers['Access-Control-Allow-Methods']).to include('OPTIONS')
     end
   end
 end

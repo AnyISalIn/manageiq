@@ -19,10 +19,6 @@ module HostHelper::TextualSummary
     %i(storage_systems storage_volumes logical_disks file_shares)
   end
 
-  def textual_group_compliance
-    %i(compliance_status compliance_history)
-  end
-
   def textual_group_security
     return nil if @record.is_vmware_esxi?
     %i(users groups patches firewall_rules ssh_root)
@@ -57,9 +53,14 @@ module HostHelper::TextualSummary
     textual_openstack_nova_scheduler if @record.openstack_host?
   end
 
-  def textual_group_openstack_status
+  def textual_group_openstack_service_status
     return nil unless @record.kind_of?(ManageIQ::Providers::Openstack::InfraManager::Host)
     textual_generate_openstack_status
+  end
+
+  def textual_group_openstack_hardware_status
+    return nil unless @record.kind_of?(ManageIQ::Providers::Openstack::InfraManager::Host)
+    %i(introspected provision_state)
   end
 
   #
@@ -115,11 +116,11 @@ module HostHelper::TextualSummary
   end
 
   def textual_ipaddress
-    {:label => _("IP Address"), :value => "#{@record.ipaddress}"}
+    {:label => _("IP Address"), :value => @record.ipaddress.to_s}
   end
 
   def textual_ipmi_ipaddress
-    {:label => _("IPMI IP Address"), :value => "#{@record.ipmi_address}"}
+    {:label => _("IPMI IP Address"), :value => @record.ipmi_address.to_s}
   end
 
   def textual_custom_1
@@ -262,7 +263,7 @@ module HostHelper::TextualSummary
   def textual_cluster
     cluster = @record.ems_cluster
     h = {:label => title_for_cluster, :image => "ems_cluster", :value => (cluster.nil? ? _("None") : cluster.name)}
-    if cluster && role_allows(:feature => "ems_cluster_show")
+    if cluster && role_allows?(:feature => "ems_cluster_show")
       h[:title] = _("Show this %{host_title}'s %{cluster_title}") %
                   {:host_title => host_title, :cluster_title => title_for_cluster}
       h[:link]  = url_for(:controller => 'ems_cluster', :action => 'show', :id => cluster)
@@ -283,7 +284,7 @@ module HostHelper::TextualSummary
   end
 
   def textual_drift_history
-    return nil unless role_allows(:feature => "host_drift")
+    return nil unless role_allows?(:feature => "host_drift")
     label = _("Drift History")
     num   = @record.number_of(:drift_states)
     h     = {:label => label, :image => "drift", :value => num}
@@ -301,7 +302,7 @@ module HostHelper::TextualSummary
     h = {:label => label,
          :image => "availability_zone",
          :value => (availability_zone.nil? ? _("None") : availability_zone.name)}
-    if availability_zone && role_allows(:feature => "availability_zone_show")
+    if availability_zone && role_allows?(:feature => "availability_zone_show")
       h[:title] = _("Show this %{title}'s %{label}") % {:title => host_title, :label => label}
       h[:link]  = url_for(:controller => 'availability_zone', :action => 'show', :id => availability_zone)
     end
@@ -319,7 +320,7 @@ module HostHelper::TextualSummary
     label = _("VMs")
     num   = @record.number_of(:vms)
     h     = {:label => label, :image => "vm", :value => num}
-    if num > 0 && role_allows(:feature => "vm_show_list")
+    if num > 0 && role_allows?(:feature => "vm_show_list")
       h[:title] = _("Show all %{label}") % {:label => label}
       h[:link]  = url_for(:action => 'show', :id => @record, :display => 'vms')
     end
@@ -335,7 +336,7 @@ module HostHelper::TextualSummary
     num = @record.storage_systems_size
     label = ui_lookup(:tables => "ontap_storage_system")
     h = {:label => label, :image => "ontap_storage_system", :value => num}
-    if num > 0 && role_allows(:feature => "ontap_storage_system_show_list")
+    if num > 0 && role_allows?(:feature => "ontap_storage_system_show_list")
       h[:title] = _("Show all %{label}") % {:label => label}
       h[:link]  = url_for(:controller => controller.controller_name, :action => 'show', :id => @record, :display => "ontap_storage_systems")
     end
@@ -346,7 +347,7 @@ module HostHelper::TextualSummary
     num = @record.storage_volumes_size
     label = ui_lookup(:tables => "ontap_storage_volume")
     h = {:label => label, :image => "ontap_storage_volume", :value => num}
-    if num > 0 && role_allows(:feature => "ontap_storage_volume_show_list")
+    if num > 0 && role_allows?(:feature => "ontap_storage_volume_show_list")
       h[:title] = _("Show all %{label}") % {:label => label}
       h[:link]  = url_for(:controller => controller.controller_name, :action => 'show', :id => @record, :display => "ontap_storage_volumes")
     end
@@ -357,7 +358,7 @@ module HostHelper::TextualSummary
     num = @record.file_shares_size
     label = ui_lookup(:tables => "ontap_file_share")
     h = {:label => label, :image => "ontap_file_share", :value => num}
-    if num > 0 && role_allows(:feature => "ontap_file_share_show_list")
+    if num > 0 && role_allows?(:feature => "ontap_file_share_show_list")
       h[:title] = _("Show all %{label}") % {:label => label}
       h[:link]  = url_for(:controller => controller.controller_name, :action => 'show', :id => @record, :display => "ontap_file_shares")
     end
@@ -368,7 +369,7 @@ module HostHelper::TextualSummary
     num = @record.logical_disks_size
     label = ui_lookup(:tables => "ontap_logical_disk")
     h = {:label => label, :image => "ontap_logical_disk", :value => num}
-    if num > 0 && role_allows(:feature => "ontap_logical_disk_show_list")
+    if num > 0 && role_allows?(:feature => "ontap_logical_disk_show_list")
       h[:title] = _("Show all %{label}") % {:label => label}
       h[:link]  = url_for(:controller => controller.controller_name, :action => 'show', :id => @record, :display => "ontap_logical_disks")
     end
@@ -376,16 +377,7 @@ module HostHelper::TextualSummary
   end
 
   def textual_compliance_history
-    h = {:label => _("History")}
-    if @record.number_of(:compliances) == 0
-      h[:value] = _("Not Available")
-    else
-      h[:image] = "compliance"
-      h[:value] = _("Available")
-      h[:title] = _("Show Compliance History of this %{title} (Last 10 Checks)") % {:title => host_title}
-      h[:link]  = url_for(:controller => controller.controller_name, :action => 'show', :id => @record, :display => 'compliance_history')
-    end
-    h
+    super(:title => _("Show Compliance History of this %{title} (Last 10 Checks)") % {:title => host_title})
   end
 
   def textual_users
@@ -517,6 +509,14 @@ module HostHelper::TextualSummary
       :enabled_cnt  => @record.cloud_services.where(:scheduling_disabled => false).count,
       :disabled_cnt => @record.cloud_services.where(:scheduling_disabled => true).count
     }
+  end
+
+  def textual_introspected
+    {:label => _("Introspected"), :value => @record.hardware.introspected}
+  end
+
+  def textual_provision_state
+    {:label => _("Provisioning State"), :value => @record.hardware.provision_state}
   end
 
   def host_title

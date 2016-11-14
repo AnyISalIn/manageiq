@@ -9,7 +9,7 @@
 - else
   - edit = !@edit.nil?
 
-.form-group{:id => "field_#{field.id}_tr"}
+.form-group{:id => "field_#{field.id}_tr", :style => field.visible ? 'display:block' : 'display:none'}
   %label.control-label.col-md-2{:title => field.description}
     = field.label
   .col-md-8{:title => field.description}
@@ -34,7 +34,7 @@
       = render(:partial => "shared/dialogs/dialog_field_drop_down_list", :locals => locals)
 
     - when 'DialogFieldButton'
-      = button_tag(_("Save"), :class => edit ? 'btn btn-primary' : 'btn btn-primary btn-disabled')
+      = button_tag(_("Save"), :class => edit ? 'btn btn-primary' : 'btn btn-primary disabled')
 
     - when 'DialogFieldTagControl'
       - category_tags = DialogFieldTagControl.category_tags(field.category).map { |cat| [cat[:description], cat[:id]] }
@@ -56,3 +56,6 @@
         - value = wf.value(field.name) || ''
         - classification_ids = value.split(',')
         = h(Classification.where(:id => classification_ids).collect(&:description).join(', '))
+
+    :javascript
+      dialogFieldRefresh.setVisible($('#field_#{field.id}_tr'), #{field.visible});

@@ -8,14 +8,16 @@ class ApplicationHelper::Button::MiqActionModify < ApplicationHelper::Button::Ba
 
   def calculate_properties
     super
-    node_type = @view_context.x_node.split("_").last.split('-')[0].to_sym
 
-    ent = {
-      :a  => ui_lookup(:model => "MiqAction"),
-      :ev => ui_lookup(:table => "event")
-    }[node_type]
+    if disabled?
+      self[:title] = case @view_context.x_node.split("_").last.split('-')[0]
+                     when 'a'  then N_("This Action belongs to a read only Policy and cannot be modified")
+                     when 'ev' then N_("This Event belongs to a read only Policy and cannot be modified")
+                     end
+    end
+  end
 
-    params = {:entity => ent, :policy => ui_lookup(:model => "MiqPolicy")}
-    self[:title] = N_("This %{entity} belongs to a read only %{policy} and cannot be modified" % params) if disabled?
+  def visible?
+    @view_context.x_active_tree != :event_tree && role_allows?(:feature => 'event_edit')
   end
 end

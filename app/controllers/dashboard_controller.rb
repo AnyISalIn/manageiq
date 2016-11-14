@@ -1,13 +1,14 @@
 class DashboardController < ApplicationController
+  menu_section :vi
+
   @@items_per_page = 8
 
-  before_action :check_privileges, :except => [:csp_report, :window_sizes, :authenticate, :kerberos_authenticate,
+  before_action :check_privileges, :except => [:csp_report, :authenticate, :kerberos_authenticate,
                                                :logout, :login, :login_retry, :wait_for_task,
                                                :saml_login, :initiate_saml_login]
-  before_action :get_session_data, :except => [:csp_report, :window_sizes,
-                                               :authenticate, :kerberos_authenticate, :saml_login]
+  before_action :get_session_data, :except => [:csp_report, :authenticate, :kerberos_authenticate, :saml_login]
   after_action :cleanup_action,    :except => [:csp_report]
-  after_action :set_session_data,  :except => [:csp_report, :window_sizes]
+  after_action :set_session_data,  :except => [:csp_report]
 
   def index
     redirect_to :action => 'show'
@@ -49,28 +50,10 @@ class DashboardController < ApplicationController
     head :ok # No response required
   end
 
-  # Accept window sizes from the client
-  def window_sizes
-    session[:winH] = params[:height] if params[:height]
-    if params[:exp_left] && params[:exp_controller]
-      # Set the left divider position in the controller's sandbox
-      session[:sandboxes][params[:exp_controller]][:exp_left] = params[:exp_left]
-    end
-    head :ok # No response required
-  end
-
   # Redirect to remembered last item clicked under this menu section.
   def redirect_to_remembered(section_id)
     return false unless session[:tab_url].key?(section_id)
-
-    if restful_routed_action?(session[:tab_url][section_id][:controller],
-                              session[:tab_url][section_id][:action])
-      session[:tab_url][section_id].delete(:action)
-      redirect_to(polymorphic_path(session[:tab_url][section_id][:controller],
-                                   session[:tab_url][section_id]))
-    else
-      redirect_to(session[:tab_url][section_id].merge(:only_path => true))
-    end
+    redirect_to(session[:tab_url][section_id])
     true
   end
 
@@ -97,6 +80,8 @@ class DashboardController < ApplicationController
   def show
     @layout    = "dashboard"
     @dashboard = true
+    @display = "dashboard"
+    @lastaction = "show"
 
     records = current_group.ordered_widget_sets
 
@@ -106,7 +91,7 @@ class DashboardController < ApplicationController
     # load first one on intial load, or load tab from params[:tab] changed,
     # or when coming back from another screen load active tab from sandbox
     if active_tab
-      @tabs.unshift([active_tab.id.to_s, ""])
+      @active_tab = active_tab.id.to_s
       @sb[:active_db]    = active_tab.name
       @sb[:active_db_id] = active_tab.id
     end
@@ -152,7 +137,7 @@ class DashboardController < ApplicationController
     # Set tabs now if user's group didnt have any dashboards using default dashboard
     if records.empty?
       db = MiqWidgetSet.find_by_id(@sb[:active_db_id])
-      @tabs.unshift([ws.id.to_s, ""])
+      @active_tab = ws.id.to_s
       @tabs.push([ws.id.to_s, db.description])
     # User's group has dashboards, delete userid|default dashboard if it exists, dont need to keep that
     else
@@ -189,14 +174,14 @@ class DashboardController < ApplicationController
           :id    => w.id,
           :type  => :button,
           :text  => w.title,
-          :image => "#{image}",
+          :image => image.to_s,
           :title => tip
         }
       end
     end
 
-    can_add   = role_allows(:feature => "dashboard_add")
-    can_reset = role_allows(:feature => "dashboard_reset")
+    can_add   = role_allows?(:feature => "dashboard_add")
+    can_reset = role_allows?(:feature => "dashboard_reset")
     if can_add || can_reset
       @widgets_menu = {}
       if widget_list.blank?
@@ -208,6 +193,10 @@ class DashboardController < ApplicationController
       end
       @widgets_menu[:allow_reset] = can_reset
     end
+
+    # Make widget presenter forget chart data from previous HTTP request handled
+    # by this process.
+    WidgetPresenter.reset_data
   end
 
   # Destroy and recreate a user's dashboard from the default
@@ -217,10 +206,7 @@ class DashboardController < ApplicationController
     ws.destroy unless ws.nil?
     ws = create_user_dashboard(@sb[:active_db_id])
     @sb[:dashboards] = nil  # Reset dashboards hash so it gets recreated
-    render :update do |page|
-      page << javascript_prologue
-      page.redirect_to :action => 'show'
-    end
+    javascript_redirect :action => 'show'
   end
 
   # Toggle dashboard item size
@@ -302,10 +288,7 @@ class DashboardController < ApplicationController
       w = MiqWidget.find_by_id(w)
       ws.remove_member(w) if w
       save_user_dashboards
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to :action => 'show'
-      end
+      javascript_redirect :action => 'show'
     else
       head :ok
     end
@@ -329,10 +312,7 @@ class DashboardController < ApplicationController
       if ws.add_member(w).present?
         save_user_dashboards
         w.create_initial_content_for_user(session[:userid])
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to :action => 'show'
-        end
+        javascript_redirect :action => 'show'
       else
         render_flash(_("The widget \"%{widget_name}\" is already part of the edited dashboard") %
          {:widget_name => w.name}, :error)
@@ -371,26 +351,23 @@ class DashboardController < ApplicationController
 
   # AJAX login retry method
   def login_retry
-    render :update do |page|
-      page << javascript_prologue
-      #     if MiqServer.my_server(true).logon_status == :starting
-      logon_details = MiqServer.my_server(true).logon_status_details
-      if logon_details[:status] == :starting
+    #     if MiqServer.my_server(true).logon_status == :starting
+    logon_details = MiqServer.my_server(true).logon_status_details
+    if logon_details[:status] == :starting
+      render :update do |page|
+        page << javascript_prologue
         @login_message = logon_details[:message] if logon_details[:message]
         page.replace("login_message_div", :partial => "login_message")
         page << "setTimeout(\"#{remote_function(:url => {:action => 'login_retry'})}\", 10000);"
-      else
-        page.redirect_to :action => 'login'
       end
+    else
+      javascript_redirect :action => 'login'
     end
   end
 
   # Initiate a SAML Login from the main login page
   def initiate_saml_login
-    render :update do |page|
-      page << javascript_prologue
-      page.redirect_to(saml_protected_page)
-    end
+    javascript_redirect saml_protected_page
   end
 
   # Login support for SAML - GET /saml_login
@@ -465,15 +442,12 @@ class DashboardController < ApplicationController
     }
 
     if params[:user_name].blank? && params[:user_password].blank? &&
-       request.headers["X-Remote-User"].blank? &&
-       get_vmdb_config[:authentication][:mode] == "httpd" &&
-       get_vmdb_config[:authentication][:sso_enabled] &&
-       params[:action] == "authenticate"
+      request.headers["X-Remote-User"].blank? &&
+      get_vmdb_config[:authentication][:mode] == "httpd" &&
+      get_vmdb_config[:authentication][:sso_enabled] &&
+      params[:action] == "authenticate"
 
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to(root_path)
-      end
+      javascript_redirect root_path
       return
     end
 
@@ -502,7 +476,7 @@ class DashboardController < ApplicationController
   end
 
   def generate_ui_api_token(userid)
-    @api_user_token_service ||= ApiUserTokenService.new
+    @api_user_token_service ||= Api::UserTokenService.new
     @api_user_token_service.generate_token(userid, "ui")
   end
 
@@ -558,22 +532,23 @@ class DashboardController < ApplicationController
         'timeline_csv' => "CSV"
       }
       center_tb_buttons['timeline_pdf'] = "PDF" if PdfGenerator.available?
-      if @report
-        page << javascript_highlight("report_#{@report.id}_link", true)
-        status = @report.table.data.length == 0 ? :disabled : :enabled
+      # if @report
+      #   page << javascript_highlight("report_#{@report.id}_link", true)
+      #   status = @report.table.data.length == 0 ? :disabled : :enabled
+      #
+      #   center_tb_buttons.each do |button_id, typ|
+      #     page << "ManageIQ.toolbars.showItem('#center_tb', '#{button_id}');"
+      #     page << tl_toggle_button_enablement(button_id, status, typ)
+      #   end
+      # else
+      #   center_tb_buttons.keys.each do |button_id|
+      #     page << "ManageIQ.toolbars.hideItem('#center_tb', '#{button_id}');"
+      #   end
+      # end
 
-        center_tb_buttons.each do |button_id, typ|
-          page << "ManageIQ.toolbars.showItem('#center_tb', '#{button_id}');"
-          page << tl_toggle_button_enablement(button_id, status, typ)
-        end
-      else
-        center_tb_buttons.keys.each do |button_id|
-          page << "ManageIQ.toolbars.hideItem('#center_tb', '#{button_id}');"
-        end
-      end
       page.replace("tl_div", :partial => "dashboard/tl_detail")
       page << "miqSparkle(false);"
-      session[:last_rpt_id] = @report ? @report.id : nil  # Remember rpt record id to turn off later
+      session[:last_rpt_id] = @report.try(:id)  # Remember rpt record id to turn off later
     end
   end
 
@@ -606,10 +581,7 @@ class DashboardController < ApplicationController
     session_init(db_user)
     session[:group_changed] = true
     url = start_url_for_user(nil) || url_for(:controller => params[:controller], :action => 'show')
-    render :update do |page|
-      page << javascript_prologue
-      page.redirect_to(url)
-    end
+    javascript_redirect url
   end
 
   # Put out error msg if user's role is not authorized for an action
@@ -637,7 +609,7 @@ class DashboardController < ApplicationController
 
   def session_reset
     # save some fields to recover back into session hash after session is cleared
-    keys_to_restore = [:winH, :browser, :user_TZO]
+    keys_to_restore = [:browser, :user_TZO]
     data_to_restore = keys_to_restore.each_with_object({}) { |k, v| v[k] = session[k] }
 
     session.clear
@@ -769,13 +741,8 @@ class DashboardController < ApplicationController
     session[:tl_position] = format_timezone(@report.extras[:tl_position], tz, "tl")
   end
 
-  def get_layout
-    # Don't change layout when window size changes session[:layout]
-    request.parameters["action"] == "window_sizes" ? session[:layout] : "login"
-  end
-
   def get_session_data
-    @layout       = get_layout
+    @layout       = "login"
     @current_page = session[:vm_current_page] # current page number
   end
 

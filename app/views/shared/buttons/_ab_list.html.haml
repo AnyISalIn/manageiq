@@ -8,7 +8,7 @@
     %tbody
       -# CI node level
       - @sb[:obj_list].sort.each do |obj|
-        %tr{:title => _("Click to view details"), :onclick => "miqDynatreeActivateNode('ab_tree', 'xx-#{obj[1].split('_').first}_#{@sb[:target_classes][obj[0]]}')"}
+        %tr{:title => _("Click to view details"), :onclick => "miqTreeActivateNode('ab_tree', 'xx-#{obj[1].split('_').first}_#{@sb[:target_classes][obj[0]]}')"}
           %td
             = obj[0]
 
@@ -31,11 +31,9 @@
       %tbody
         - @sb[:button_groups].each do |obj|
           - if obj.kind_of?(String)
-            %tr{:title => _("Click to view details"), :onclick => "miqDynatreeActivateNode('ab_tree', '-ub-#{@nodetype[1]}')"}
+            %tr{:title => _("Click to view details"), :onclick => "miqTreeActivateNode('ab_tree', '-ub-#{@nodetype[1]}')"}
               %td.narrow
-                %ul.icons.list-unstyled
-                  %li
-                    %span{:class => "pficon pficon-folder-close"}
+                %i{:class => "pficon pficon-folder-close"}
               %td
                 = obj
               %td
@@ -51,11 +49,9 @@
               - typ = "cbg"
               - img = obj[:button_image]
               - rec_type = "Group"
-            %tr{:title => _("Click to view details"), :onclick => "miqDynatreeActivateNode('#{tree_box}', '#{tree_id}_#{typ}-#{to_cid(obj[:id])}')"}
+            %tr{:title => _("Click to view details"), :onclick => "miqTreeActivateNode('#{tree_box}', '#{tree_id}_#{typ}-#{to_cid(obj[:id])}')"}
               %td.narrow
-                %ul.icons.list-unstyled
-                  %li
-                    %span{:class => "product product-custom-#{img}"}
+                %i{:class => "product product-custom-#{img}"}
               %td
                 = obj[:name].split("|").first
               - if x_active_tree == :sandt_tree
@@ -106,20 +102,18 @@
         - @sb[:buttons].each do |obj|
           - tree_box = x_active_tree == :sandt_tree ? 'sandt_tree' : 'ab_tree'
           - id = @nodetype[0].split('-')[1] == "ub" ? "#{@nodetype[0]}_cb-#{to_cid(obj[:id])}" : "#{x_node}_cb-#{to_cid(obj[:id])}"
-          %tr{:title => _("Click to view details"), :onclick => "miqDynatreeActivateNode('#{tree_box}', '#{id}')"}
+          %tr{:title => _("Click to view details"), :onclick => "miqTreeActivateNode('#{tree_box}', '#{id}')"}
             %td.narrow
-              %ul.icons.list-unstyled
-                %li
-                  %span{:class => "product product-custom-#{obj[:button_image]}"}
+              %i{:class => "product product-custom-#{obj[:button_image]}"}
             %td
               = obj[:name]
             %td
               = obj[:description]
-- elsif @custom_button
-  = render :partial => 'shared/buttons/ab_show'
 - elsif %w(ab_group_edit ab_group_new).include?(params[:pressed]) || (params[:button] == "reset" && params[:action] == "group_update")
   = render :partial => 'shared/buttons/group_form'
 - elsif %w(ab_button_edit ab_button_new).include?(params[:pressed]) || (params[:button] == "reset" && params[:action] == "button_update") || (params[:button] == "paste" && params[:action] == "resolve")
   = render :partial => 'shared/buttons/ab_form'
 - elsif params[:pressed] == "ab_group_reorder" || (params[:button] == "reset" && params[:action] == "ab_group_reorder")
   = render :partial => 'shared/buttons/group_order_form'
+- elsif @custom_button
+  = render :partial => 'shared/buttons/ab_show'

@@ -1,8 +1,9 @@
 class ContainerDeploymentService
   def all_data
     {
-      :provision => possible_provision_providers,
-      :providers => possible_providers_and_vms
+      :deployment_types => optional_deployment_types,
+      :provision        => possible_provision_providers,
+      :providers        => possible_providers_and_vms
     }.compact
   end
 
@@ -50,5 +51,13 @@ class ContainerDeploymentService
         :id        => vm.id
       }
     end
+  end
+
+  def self.hide_deployment_wizard?
+    !Settings.product.container_deployment_wizard
+  end
+
+  def optional_deployment_types
+    ContainerDeployment::DEPLOYMENT_TYPES
   end
 end

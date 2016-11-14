@@ -6,7 +6,7 @@ module MiqAeEngine
     include UuidMixin
 
     def self.evmget(token, uri)
-      MiqAeWorkspace.workspace_from_token(token).evmget(uri)
+      workspace_from_token(token).evmget(uri)
     end
 
     def evmget(uri)
@@ -14,7 +14,7 @@ module MiqAeEngine
     end
 
     def self.evmset(token, uri, value)
-      MiqAeWorkspace.workspace_from_token(token).evmset(uri, value)
+      workspace_from_token(token).evmset(uri, value)
     end
 
     def evmset(uri, value)
@@ -25,17 +25,16 @@ module MiqAeEngine
       end
     end
 
-    private
-
     def self.workspace_from_token(token)
       ws = MiqAeWorkspace.find_by_guid(token)
       raise MiqAeException::WorkspaceNotFound, "Workspace Not Found for token=[#{token}]" if ws.nil?
       ws
     end
+    private_class_method(:workspace_from_token)
   end
 
   class MiqAeWorkspaceRuntime
-    attr_accessor :graph, :num_drb_methods, :class_methods
+    attr_accessor :graph, :class_methods, :invoker
     attr_accessor :datastore_cache, :persist_state_hash, :current_state_info
     attr_accessor :ae_user
     include MiqAeStateInfo
@@ -46,7 +45,6 @@ module MiqAeEngine
       @readonly          = options[:readonly] || false
       @nodes             = []
       @current           = []
-      @num_drb_methods   = 0
       @datastore_cache   = {}
       @class_methods     = {}
       @dom_search        = MiqAeDomainSearch.new
@@ -56,11 +54,14 @@ module MiqAeEngine
       @ae_user = nil
     end
 
+    delegate :prepend_namespace=, :to =>  :@dom_search
+
     def readonly?
       @readonly
     end
 
     def self.instantiate(uri, user, attrs = {})
+      User.current_user = user
       workspace = MiqAeWorkspaceRuntime.new(attrs)
       workspace.instantiate(uri, user, nil)
       workspace

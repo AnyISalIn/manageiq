@@ -76,6 +76,14 @@ class EmsEvent < EventStream
     add(ems_id, ManageIQ::Providers::Openstack::NetworkManager::EventParser.event_to_hash(event, ems_id))
   end
 
+  def self.add_cinder(ems_id, event)
+    add(ems_id, ManageIQ::Providers::StorageManager::CinderManager::EventParser.event_to_hash(event, ems_id))
+  end
+
+  def self.add_swift(ems_id, event)
+    add(ems_id, ManageIQ::Providers::StorageManager::SwiftManager::EventParser.event_to_hash(event, ems_id))
+  end
+
   def self.add_openstack_infra(ems_id, event)
     add(ems_id, ManageIQ::Providers::Openstack::InfraManager::EventParser.event_to_hash(event, ems_id))
   end
@@ -90,6 +98,10 @@ class EmsEvent < EventStream
 
   def self.add_google(ems_id, event)
     add(ems_id, ManageIQ::Providers::Google::CloudManager::EventParser.event_to_hash(event, ems_id))
+  end
+
+  def self.add_vmware_vcloud(ems_id, event)
+    add(ems_id, ManageIQ::Providers::Vmware::CloudManager::EventParser.event_to_hash(event, ems_id))
   end
 
   def self.add(ems_id, event_hash)
@@ -227,6 +239,7 @@ class EmsEvent < EventStream
 
     target_type = "src_vm_or_template"  if target_type == "src_vm"
     target_type = "dest_vm_or_template" if target_type == "dest_vm"
+    target_type = "middleware_server"   if event.event_type == "hawkular_event"
 
     event.send(target_type)
   end
@@ -336,49 +349,5 @@ class EmsEvent < EventStream
 
   def ems_refresh_target
     ext_management_system
-  end
-
-  #
-  # Purging methods
-  #
-
-  def self.keep_ems_events
-    VMDB::Config.new("vmdb").config.fetch_path(:ems_events, :history, :keep_ems_events)
-  end
-
-  def self.purge_date
-    keep = keep_ems_events.to_i_with_method.seconds
-    keep = 6.months if keep == 0
-    keep.ago.utc
-  end
-
-  def self.purge_window_size
-    VMDB::Config.new("vmdb").config.fetch_path(:ems_events, :history, :purge_window_size) || 1000
-  end
-
-  def self.purge_timer
-    purge_queue(purge_date)
-  end
-
-  def self.purge_queue(ts)
-    MiqQueue.put(
-      :class_name  => name,
-      :method_name => "purge",
-      :role        => "event",
-      :queue_name  => "ems",
-      :args        => [ts],
-    )
-  end
-
-  def self.purge(older_than, window = nil, limit = nil)
-    _log.info("Purging #{limit || "all"} events older than [#{older_than}]...")
-
-    window ||= purge_window_size
-
-    total = where(arel_table[:timestamp].lteq(older_than)).delete_in_batches(window, limit) do |count, _total|
-      _log.info("Purging #{count} events.")
-    end
-
-    _log.info("Purging #{limit || "all"} events older than [#{older_than}]...Complete - Deleted #{total} records")
   end
 end

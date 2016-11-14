@@ -4,23 +4,36 @@ class TreeBuilderUtilization < TreeBuilderRegion
   has_kids_for EmsFolder, [:x_get_tree_folder_kids, :type]
   has_kids_for EmsCluster, [:x_get_tree_cluster_kids]
 
+  def initialize(name, type, sandbox, build = true, **params)
+    @selected_node = params[:selected_node]
+    super(name, type, sandbox, build)
+  end
+
   private
+
+  def set_locals_for_render
+    locals = super
+    locals.merge!(:onclick     => "miqOnClickSelectOptimizeTreeNode",
+                  :select_node => @selected_node.to_s,
+                  :tree_state  => true)
+  end
 
   def root_options
     if MiqEnterprise.my_enterprise.is_enterprise?
       title = _("Enterprise")
       icon  = :enterprise
     else
-      title = _("CFME Region: %{region_description} [%{region}]") %
-                {:region_description => MiqRegion.my_region.description, :region => MiqRegion.my_region.region}
+      title = _("%{product} Region: %{region_description} [%{region}]") % {:region_description => MiqRegion.my_region.description,
+                                                                           :region => MiqRegion.my_region.region,
+                                                                           :product => I18n.t('product.name')}
       icon  = :miq_region
     end
     [title, title, icon]
   end
 
   def x_get_tree_ems_kids(object, count_only)
-    ems_clusters        = rbac_filtered_objects(object.ems_clusters)
-    non_clustered_hosts = rbac_filtered_objects(object.non_clustered_hosts)
+    ems_clusters        = Rbac.filtered(object.ems_clusters)
+    non_clustered_hosts = Rbac.filtered(object.non_clustered_hosts)
 
     total = ems_clusters.count + non_clustered_hosts.count
 
@@ -43,7 +56,7 @@ class TreeBuilderUtilization < TreeBuilderRegion
       when :vandt then x_get_tree_vandt_datacenter_kids(object)
       when :handc then x_get_tree_handc_datacenter_kids(object)
       end
-    count_only_or_objects(count_only, objects, nil)
+    count_only_or_objects(count_only, objects)
   end
 
   def x_get_tree_vandt_datacenter_kids(object)
@@ -55,7 +68,8 @@ class TreeBuilderUtilization < TreeBuilderRegion
         objects += rbac_filtered_sorted_objects(f.vms_and_templates, "name")
       elsif f.name == "host"            # Don't count host folder children
       else                              # add in other folders
-        objects += rbac_filtered_objects([f], :match_via_descendants => VmOrTemplate)
+        f = Rbac.filtered_object(f, :match_via_descendants => VmOrTemplate)
+        objects << f if f
       end
     end
   end
@@ -69,7 +83,8 @@ class TreeBuilderUtilization < TreeBuilderRegion
         objects += rbac_filtered_sorted_objects(f.clusters, "name")
         objects += rbac_filtered_sorted_objects(f.hosts, "name")
       else                              # add in other folders
-        objects += rbac_filtered_objects([f])
+        f = Rbac.filtered_object(f)
+        objects << f if f
       end
     end
   end
@@ -84,16 +99,16 @@ class TreeBuilderUtilization < TreeBuilderRegion
       objects += rbac_filtered_sorted_objects(object.hosts, "name", :match_via_descendants => VmOrTemplate)
       objects += rbac_filtered_sorted_objects(object.vms_and_templates, "name")
     end
-    count_only_or_objects(count_only, objects, nil)
+    count_only_or_objects(count_only, objects)
   end
 
   def x_get_tree_cluster_kids(object, count_only)
-    objects =  rbac_filtered_sorted_objects(object.hosts, "name")
+    objects = rbac_filtered_sorted_objects(object.hosts, "name")
     # FIXME: is the condition below ever false?
     unless [:bottlenecks, :utilization].include?(@type)
       objects += rbac_filtered_sorted_objects(object.resource_pools, "name")
       objects += rbac_filtered_sorted_objects(object.vms, "name")
     end
-    count_only_or_objects(count_only, objects, nil)
+    count_only_or_objects(count_only, objects)
   end
 end

@@ -9,7 +9,48 @@ class ChargebackRateDetail < ApplicationRecord
   validates :group, :source, :chargeback_rate, :presence => true
   validate :contiguous_tiers?
 
+  delegate :rate_type, :to => :chargeback_rate, :allow_nil => true
+
   FORM_ATTRIBUTES = %i(description per_time per_unit metric group source metric).freeze
+  PER_TIME_TYPES = {
+    "hourly"  => _("Hourly"),
+    "daily"   => _("Daily"),
+    "weekly"  => _("Weekly"),
+    "monthly" => _("Monthly")
+  }.freeze
+
+  attr_accessor :hours_in_interval
+
+  def max_of_metric_from(metric_rollup_records)
+    metric_rollup_records.map(&metric.to_sym).max
+  end
+
+  def avg_of_metric_from(metric_rollup_records)
+    record_count = metric_rollup_records.count
+    metric_sum = metric_rollup_records.sum(&metric.to_sym)
+    metric_sum / record_count
+  end
+
+  def metric_value_by(metric_rollup_records)
+    return 1.0 if fixed?
+
+    metric_rollups_without_nils = metric_rollup_records.select { |x| x.send(metric.to_sym).present? }
+    return 0 if metric_rollups_without_nils.empty?
+    return max_of_metric_from(metric_rollups_without_nils) if allocated?
+    return avg_of_metric_from(metric_rollups_without_nils) if used?
+  end
+
+  def used?
+    source == "used"
+  end
+
+  def allocated?
+    source == "allocated"
+  end
+
+  def fixed?
+    group == "fixed"
+  end
 
   # Set the rates according to the tiers
   def find_rate(value)
@@ -36,21 +77,28 @@ class ChargebackRateDetail < ApplicationRecord
 
   def cost(value)
     return 0.0 unless self.enabled?
-    value = 1 if group == 'fixed'
+
+    value = 1.0 if fixed?
+
     (fixed_rate, variable_rate) = find_rate(value)
-    hourly(fixed_rate) + hourly(variable_rate) * value
+
+    hourly_fixed_rate    = hourly(fixed_rate)
+    hourly_variable_rate = hourly(variable_rate)
+
+    hourly_fixed_rate + rate_adjustment(hourly_variable_rate) * value
   end
 
   def hourly(rate)
-    case per_time
-    when "hourly"  then rate
-    when "daily"   then rate / 24
-    when "weekly"  then rate / 24 / 7
-    when "monthly" then rate / 24 / 30
-    when "yearly"  then rate / 24 / 365
-    else raise "rate time unit of '#{per_time}' not supported"
-    end
+    hourly_rate = case per_time
+                  when "hourly"  then rate
+                  when "daily"   then rate / 24
+                  when "weekly"  then rate / 24 / 7
+                  when "monthly" then rate / @hours_in_interval
+                  when "yearly"  then rate / 24 / 365
+                  else raise "rate time unit of '#{per_time}' not supported"
+                  end
 
+    hourly_rate
   end
 
   # Scale the rate in the unit difine by user to the default unit of the metric
@@ -104,7 +152,7 @@ class ChargebackRateDetail < ApplicationRecord
       "#{fixed_rate + variable_rate} #{per_time.to_s.capitalize}"
     else
       s = ""
-      ChargebackTier.where(:chargeback_rate_detail_id => id).each do |tier|
+      chargeback_tiers.each do |tier|
         # Example: Daily @ .02 per MHz from 0.0 to Infinity
         s += "#{per_time.to_s.capitalize} @ #{tier.fixed_rate} + "\
              "#{tier.variable_rate} per #{per_unit_display} from #{tier.start} to #{tier.finish}\n"
@@ -117,13 +165,8 @@ class ChargebackRateDetail < ApplicationRecord
     detail_measure.nil? ? per_unit.to_s.capitalize : detail_measure.measures.key(per_unit)
   end
 
-  def rate_type
-    # Return parent's rate type
-    chargeback_rate.rate_type unless chargeback_rate.nil?
-  end
-
   # New method created in order to show the rates in a easier to understand way
-  def show_rates(code_currency)
+  def show_rates
     hr = ChargebackRateDetail::PER_TIME_MAP[per_time.to_sym]
     rate_display = "#{detail_currency.code} / #{hr}"
     rate_display_unit = "#{rate_display} / #{per_unit_display}"

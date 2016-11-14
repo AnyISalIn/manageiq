@@ -62,9 +62,10 @@ module Metric::LongTermAverages
       Metric::Aggregation::Process.average(c, nil, results[:avg], counts)
 
       begin
-        results[:dev][c]  = vals[c].deviation
+        results[:dev][c] = vals[c].length == 1 ? 0 : vals[c].stddev
+        raise StandardError, "result was NaN" if results[:dev][c].try(:nan?)
       rescue => err
-        _log.warn("Unable to calculate deviation, '#{err.message}', values: #{vals[c].inspect}")
+        _log.warn("Unable to calculate standard deviation, '#{err.message}', values: #{vals[c].inspect}")
         results[:dev][c] = 0
       end
     end

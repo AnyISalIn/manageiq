@@ -59,12 +59,32 @@ RSpec.describe "users API" do
       expect(response).to have_http_status(:ok)
     end
 
-    it "will not allow the changing of attributes other than the password" do
+    it "can change the user's own email" do
+      api_basic_authorize action_identifier(:users, :edit)
+
+      expect do
+        run_post users_url(@user.id), gen_request(:edit, :email => "tom@cartoons.com")
+      end.to change { @user.reload.email }
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "can change the user's own settings" do
+      api_basic_authorize action_identifier(:users, :edit)
+
+      expect do
+        run_post users_url(@user.id), gen_request(:edit, :settings => {:cartoon => {:tom_jerry => 'y'}})
+      end.to change { @user.reload.settings }
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "will not allow the changing of attributes other than the password, email or settings" do
       api_basic_authorize
 
       expect do
-        run_post users_url(@user.id), gen_request(:edit, :email => "new.email@example.com")
-      end.not_to change { @user.reload.email }
+        run_post users_url(@user.id), gen_request(:edit, :name => "updated_name")
+      end.not_to change { @user.reload.name }
 
       expect(response).to have_http_status(:bad_request)
     end
@@ -76,6 +96,17 @@ RSpec.describe "users API" do
       expect do
         run_post users_url(user.id), gen_request(:edit, :password => "new_password")
       end.not_to change { user.reload.password_digest }
+
+      expect(response).to have_http_status(:forbidden)
+    end
+
+    it "cannot change another user's settings" do
+      api_basic_authorize
+      user = FactoryGirl.create(:user, :settings => {:locale => "en"})
+
+      expect do
+        run_post users_url(user.id), gen_request(:edit, :settings => {:locale => "ja"})
+      end.not_to change { user.reload.settings }
 
       expect(response).to have_http_status(:forbidden)
     end
@@ -122,7 +153,7 @@ RSpec.describe "users API" do
       expect(response).to have_http_status(:ok)
       expect_result_resources_to_include_keys("results", expected_attributes)
 
-      user_id = response_hash["results"].first["id"]
+      user_id = response.parsed_body["results"].first["id"]
       expect(User.exists?(user_id)).to be_truthy
     end
 
@@ -134,7 +165,7 @@ RSpec.describe "users API" do
       expect(response).to have_http_status(:ok)
       expect_result_resources_to_include_keys("results", expected_attributes)
 
-      user_id = response_hash["results"].first["id"]
+      user_id = response.parsed_body["results"].first["id"]
       expect(User.exists?(user_id)).to be_truthy
     end
 
@@ -146,7 +177,7 @@ RSpec.describe "users API" do
       expect(response).to have_http_status(:ok)
       expect_result_resources_to_include_keys("results", expected_attributes)
 
-      results = response_hash["results"]
+      results = response.parsed_body["results"]
       user1_hash, user2_hash = results.first, results.second
       expect(User.exists?(user1_hash["id"])).to be_truthy
       expect(User.exists?(user2_hash["id"])).to be_truthy
@@ -284,6 +315,63 @@ RSpec.describe "users API" do
       expect_result_resources_to_include_hrefs("results", [user1_url, user2_url])
       expect(User.exists?(user1_id)).to be_falsey
       expect(User.exists?(user2_id)).to be_falsey
+    end
+  end
+
+  describe "tags subcollection" do
+    it "can list a user's tags" do
+      user = FactoryGirl.create(:user)
+      FactoryGirl.create(:classification_department_with_tags)
+      Classification.classify(user, "department", "finance")
+      api_basic_authorize
+
+      run_get("#{users_url(user.id)}/tags")
+
+      expect(response.parsed_body).to include("subcount" => 1)
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "can assign a tag to a user" do
+      user = FactoryGirl.create(:user)
+      FactoryGirl.create(:classification_department_with_tags)
+      api_basic_authorize(subcollection_action_identifier(:users, :tags, :assign))
+
+      run_post("#{users_url(user.id)}/tags", :action => "assign", :category => "department", :name => "finance")
+
+      expected = {
+        "results" => [
+          a_hash_including(
+            "success"      => true,
+            "message"      => a_string_matching(/assigning tag/i),
+            "tag_category" => "department",
+            "tag_name"     => "finance"
+          )
+        ]
+      }
+      expect(response.parsed_body).to include(expected)
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "can unassign a tag from a user" do
+      user = FactoryGirl.create(:user)
+      FactoryGirl.create(:classification_department_with_tags)
+      Classification.classify(user, "department", "finance")
+      api_basic_authorize(subcollection_action_identifier(:users, :tags, :unassign))
+
+      run_post("#{users_url(user.id)}/tags", :action => "unassign", :category => "department", :name => "finance")
+
+      expected = {
+        "results" => [
+          a_hash_including(
+            "success"      => true,
+            "message"      => a_string_matching(/unassigning tag/i),
+            "tag_category" => "department",
+            "tag_name"     => "finance"
+          )
+        ]
+      }
+      expect(response.parsed_body).to include(expected)
+      expect(response).to have_http_status(:ok)
     end
   end
 end

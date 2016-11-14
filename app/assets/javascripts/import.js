@@ -3,7 +3,38 @@
 var ImportSetup = {
   listenForPostMessages: function(getAndRenderJsonCallback) {
     window.addEventListener('message', function(event) {
-      ImportSetup.respondToPostMessages(event, getAndRenderJsonCallback);
+      if (event.data.import_file_upload_id) {
+        ImportSetup.respondToPostMessages(event, getAndRenderJsonCallback);
+      }
+    });
+  },
+
+  setUpUploadImportButton: function(button_id) {
+    if ($("#upload_file").val()){
+      $(button_id).prop('disabled', false);
+    } else {
+      $(button_id).prop('disabled', true);
+    }
+  },
+
+  listenForGitPostMessages: function() {
+    window.addEventListener('message', function(event) {
+      var unencodedMessage = event.data.message.replace(/&quot;/g, '"');
+      var messageData = JSON.parse(unencodedMessage);
+
+      if (messageData.level === 'error') {
+        showErrorMessage(messageData.message);
+        $('#git-url-import').prop('disabled', null);
+      } else if (event.data.git_branches || event.data.git_tags) {
+        Automate.renderGitImport(
+          event.data.git_branches,
+          event.data.git_tags,
+          event.data.git_repo_id,
+          event.data.message
+        );
+      }
+
+      miqSparkleOff();
     });
   },
 
@@ -79,7 +110,7 @@ var clearMessages = function() {
   $('.icon-placeholder').removeClass('pficon pficon-ok pficon-layered');
   $('.pficon-error-octagon').removeClass('pficon-error-octagon');
   $('.pficon-error-exclamation').removeClass('pficon-error-exclamation');
-  $('.pficon-warning-triangle').removeClass('pficon-warning-triangle');
+  $('.pficon-warning-triangle-o').removeClass('pficon-warning-triangle-o');
   $('.pficon-warning-exclamation').removeClass('pficon-warning-exclamation');
 };
 
@@ -111,7 +142,7 @@ var showErrorMessage = function(message) {
 var showWarningMessage = function(message) {
   $('.import-flash-message .alert').addClass('alert-warning');
   $('.icon-placeholder').addClass('pficon-layered');
-  $('.icon-placeholder .pficon').first().addClass('pficon-warning-triangle');
+  $('.icon-placeholder .pficon').first().addClass('pficon-warning-triangle-o');
   $('.icon-placeholder .pficon').last().addClass('pficon-warning-exclamation');
   $('.import-flash-message .alert .message').html(message);
   $('.import-flash-message').show();

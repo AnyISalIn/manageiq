@@ -1,14 +1,3 @@
-def set_up_controller_for_show_method(controller, ems_id)
-  controller.instance_variable_set(:@_params, {:display => "download_pdf", :id => ems_id})
-  controller.instance_variable_set(:@settings, :views => {:vm_summary_cool => "summary"})
-  allow(controller).to receive_messages(:record_no_longer_exists? => false)
-  allow(controller).to receive(:drop_breadcrumb)
-  allow(controller).to receive(:disable_client_cache)
-  allow(controller).to receive_messages(:render_to_string => "")
-  allow(controller).to receive(:send_data)
-  allow(PdfGenerator).to receive(:pdf_from_string).with('', 'pdf_summary').and_return("")
-end
-
 describe EmsCloudController do
   context "::EmsCommon" do
     context "#get_form_vars" do
@@ -45,7 +34,7 @@ describe EmsCloudController do
 
     context "#new" do
       before do
-        set_user_privileges
+        stub_user(:features => :all)
         allow(controller).to receive(:drop_breadcrumb)
       end
 
@@ -64,7 +53,7 @@ describe EmsCloudController do
 
     context "#form_field_changed" do
       before :each do
-        set_user_privileges
+        stub_user(:features => :all)
       end
 
       it "form_div should be updated when server type is sent up" do
@@ -85,7 +74,7 @@ describe EmsCloudController do
     context "#set_record_vars" do
       context "strip leading/trailing whitespace from hostname/ipaddress" do
         after :each do
-          set_user_privileges
+          stub_user(:features => :all)
           controller.instance_variable_set(:@edit, :new => {:name     => 'EMS 1',
                                                             :emstype  => @type,
                                                             :hostname => '  10.10.10.10  ',
@@ -138,14 +127,17 @@ describe EmsCloudController do
 
     context "#button" do
       before(:each) do
-        set_user_privileges
+        stub_user(:features => :all)
         EvmSpecHelper.create_guid_miq_server_zone
       end
 
       it "when Retire Button is pressed for a Cloud provider Instance" do
-        allow(controller).to receive(:role_allows).and_return(true)
-        vm = FactoryGirl.create(:vm_vmware)
+        allow(controller).to receive(:role_allows?).and_return(true)
         ems = FactoryGirl.create("ems_vmware")
+        vm = FactoryGirl.create(:vm_vmware,
+                                :ext_management_system => ems,
+                                :storage               => FactoryGirl.create(:storage)
+                               )
         post :button, :params => { :pressed => "instance_retire", "check_#{vm.id}" => "1", :format => :js, :id => ems.id, :display => 'instances' }
         expect(response.status).to eq 200
         expect(response.body).to include('vm/retire')
@@ -160,8 +152,9 @@ describe EmsCloudController do
 
     context "download pdf file" do
       before :each do
-        set_up_controller_for_show_method(controller, ems_openstack.id)
-        controller.send(:show)
+        stub_user(:features => :all)
+        allow(PdfGenerator).to receive(:pdf_from_string).with('', 'pdf_summary').and_return("")
+        get :show, :id => ems_openstack.id, :display => "download_pdf"
       end
 
       it "should not contains string 'ManageIQ' in the title of summary report" do
@@ -177,23 +170,17 @@ end
 
 describe EmsContainerController do
   context "::EmsCommon" do
-    it 'calculate_display_class correctly' do
-      expect(controller.calculate_display_class("container_nodes", nil)).to eq(ContainerNode)
-      expect(controller.calculate_display_class("cloud_tenants", nil)).to eq(CloudTenant)
-      expect(controller.calculate_display_class(nil, "flavors")).to eq(Flavor)
-      expect(controller.calculate_display_class(nil, "container_routes")).to eq(ContainerRoute)
-    end
-
     context "#update" do
       context "updates provider with new token" do
         after :each do
-          set_user_privileges
+          stub_user(:features => :all)
           controller.instance_variable_set(:@_params, :name              => 'EMS 2',
+                                                      :default_userid    => '_',
                                                       :default_hostname  => '10.10.10.11',
                                                       :default_api_port  => '5000',
+                                                      :default_password  => 'valid-token',
                                                       :hawkular_hostname => '10.10.10.10',
                                                       :hawkular_api_port => '8443',
-                                                      :bearer_password   => 'valid-token',
                                                       :emstype           => @type)
           session[:edit] = assigns(:edit)
           controller.send(:set_ems_record_vars, @ems)
@@ -202,7 +189,14 @@ describe EmsContainerController do
           expect(@ems.connection_configurations.hawkular.endpoint.hostname).to eq('10.10.10.10')
           expect(@ems.connection_configurations.hawkular.endpoint.port).to eq(8443)
           expect(@ems.authentication_token("bearer")).to eq('valid-token')
+          expect(@ems.authentication_type("default")).to be_nil
           expect(@ems.hostname).to eq('10.10.10.11')
+
+          controller.remove_instance_variable(:@_params)
+          controller.instance_variable_set(:@_params, :name => 'EMS 3', :default_userid => '_')
+          controller.send(:set_ems_record_vars, @ems)
+          expect(@ems.authentication_token("bearer")).to eq('valid-token')
+          expect(@ems.authentication_type("default")).to be_nil
         end
 
         it "when adding kubernetes EMS" do
@@ -219,12 +213,12 @@ describe EmsContainerController do
 
     context "#button" do
       before(:each) do
-        set_user_privileges
+        stub_user(:features => :all)
         EvmSpecHelper.create_guid_miq_server_zone
       end
 
       it "when VM Migrate is pressed for unsupported type" do
-        allow(controller).to receive(:role_allows).and_return(true)
+        allow(controller).to receive(:role_allows?).and_return(true)
         vm = FactoryGirl.create(:vm_microsoft)
         post :button, :params => { :pressed => "vm_migrate", :format => :js, "check_#{vm.id}" => "1" }
         expect(controller.send(:flash_errors?)).to be_truthy
@@ -235,14 +229,14 @@ describe EmsContainerController do
       let(:storage) { FactoryGirl.create(:storage) }
 
       it "when VM Migrate is pressed for supported type" do
-        allow(controller).to receive(:role_allows).and_return(true)
+        allow(controller).to receive(:role_allows?).and_return(true)
         vm = FactoryGirl.create(:vm_vmware, :storage => storage, :ext_management_system => ems)
         post :button, :params => { :pressed => "vm_migrate", :format => :js, "check_#{vm.id}" => "1" }
         expect(controller.send(:flash_errors?)).not_to be_truthy
       end
 
       it "when VM Migrate is pressed for supported type" do
-        allow(controller).to receive(:role_allows).and_return(true)
+        allow(controller).to receive(:role_allows?).and_return(true)
         vm = FactoryGirl.create(:vm_vmware)
         post :button, :params => { :pressed => "vm_edit", :format => :js, "check_#{vm.id}" => "1" }
         expect(controller.send(:flash_errors?)).not_to be_truthy
@@ -255,9 +249,9 @@ describe EmsContainerController do
 
       context "download pdf file" do
         before :each do
-          controller.instance_variable_set(:@table_name, "ems_container")
-          set_up_controller_for_show_method(controller, ems_kubernetes_container.id)
-          controller.send(:show)
+          stub_user(:features => :all)
+          allow(PdfGenerator).to receive(:pdf_from_string).with('', 'pdf_summary').and_return("")
+          get :show, :id => ems_kubernetes_container.id, :display => "download_pdf"
         end
 
         it "should not contains string 'ManageIQ' in the title of summary report" do
@@ -304,9 +298,9 @@ describe EmsInfraController do
 
     context "download pdf file" do
       before :each do
-        controller.instance_variable_set(:@table_name, "ems_infra")
-        set_up_controller_for_show_method(controller, ems_openstack_infra.id)
-        controller.send(:show)
+        stub_user(:features => :all)
+        allow(PdfGenerator).to receive(:pdf_from_string).with('', 'pdf_summary').and_return("")
+        get :show, :id => ems_openstack_infra.id, :display => "download_pdf"
       end
 
       it "should not contains string 'ManageIQ' in the title of summary report" do

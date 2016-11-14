@@ -1,7 +1,6 @@
-require File.expand_path(File.join(File.dirname(__FILE__), 'job_proxy_dispatcher/job_proxy_dispatcher_helper'))
-include JobProxyDispatcherHelper
-
 describe JobProxyDispatcher do
+  include Spec::Support::JobProxyDispatcherHelper
+
   DISPATCH_ONLY = false
   if DISPATCH_ONLY
     NUM_VMS = 200
@@ -178,7 +177,8 @@ describe JobProxyDispatcher do
 
     context "with container and vms jobs" do
       before(:each) do
-        @jobs = (@vms + @repo_vms + @container_images).collect(&:scan)
+        @jobs = (@vms + @repo_vms).collect(&:scan)
+        @jobs += @container_images.map { |img| img.ext_management_system.raw_scan_job_create(img) }
         @dispatcher = JobProxyDispatcher.new
       end
 

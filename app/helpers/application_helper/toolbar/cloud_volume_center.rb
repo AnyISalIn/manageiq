@@ -1,19 +1,4 @@
 class ApplicationHelper::Toolbar::CloudVolumeCenter < ApplicationHelper::Toolbar::Basic
-  button_group('cloud_volume_policy', [
-                 select(
-                   :cloud_volume_policy_choice,
-                   'fa fa-shield fa-lg',
-                   t = N_('Policy'),
-                   t,
-                   :items => [
-                     button(
-                       :cloud_volume_tag,
-                       'pficon pficon-edit fa-lg',
-                       N_('Edit tags for this Cloud Volume'),
-                       N_('Edit Tags')),
-                   ]
-                 ),
-               ])
   button_group('cloud_volume_vmdb', [
                  select(
                    :cloud_volume_vmdb_choice,
@@ -21,6 +6,33 @@ class ApplicationHelper::Toolbar::CloudVolumeCenter < ApplicationHelper::Toolbar
                    t = N_('Configuration'),
                    t,
                    :items => [
+                     button(
+                       :cloud_volume_backup_create,
+                       'pficon pficon-volume fa-lg',
+                       t = N_('Create a Backup of this Cloud Volume'),
+                       t,
+                       :klass     => ApplicationHelper::Button::GenericFeatureButtonWithDisable,
+                       :options   => {:feature => :backup_create},
+                       :url_parms => 'main_div'
+                     ),
+                     button(
+                       :cloud_volume_backup_restore,
+                       'pficon pficon-volume fa-lg',
+                       t = N_('Restore from a Backup of this Cloud Volume'),
+                       t,
+                       :klass     => ApplicationHelper::Button::GenericFeatureButtonWithDisable,
+                       :options   => {:feature => :backup_restore},
+                       :url_parms => 'main_div'
+                     ),
+                     button(
+                       :cloud_volume_snapshot_create,
+                       'pficon pficon-volume fa-lg',
+                       t = N_('Create a Snapshot of this Cloud Volume'),
+                       t,
+                       :klass     => ApplicationHelper::Button::GenericFeatureButtonWithDisable,
+                       :options   => {:feature => :snapshot_create},
+                       :url_parms => 'main_div'
+                     ),
                      button(
                        :cloud_volume_attach,
                        'pficon pficon-volume fa-lg',
@@ -50,9 +62,24 @@ class ApplicationHelper::Toolbar::CloudVolumeCenter < ApplicationHelper::Toolbar
                        t = N_('Delete this Cloud Volume'),
                        t,
                        :url_parms => 'main_div',
-                       :confirm   => N_('Warning: This Cloud Volume and ALL of its components will be removed. Are you sure you want to remove this Cloud Volume?')
+                       :confirm   => N_('Warning: This Cloud Volume and ALL of its components will be removed!')
                      ),
                    ]
                  )
                ])
+  button_group('cloud_volume_policy', [
+    select(
+      :cloud_volume_policy_choice,
+      'fa fa-shield fa-lg',
+      t = N_('Policy'),
+      t,
+      :items => [
+        button(
+          :cloud_volume_tag,
+          'pficon pficon-edit fa-lg',
+          N_('Edit tags for this Cloud Volume'),
+          N_('Edit Tags')),
+      ]
+    ),
+  ])
 end

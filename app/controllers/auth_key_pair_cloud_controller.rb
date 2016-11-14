@@ -29,20 +29,13 @@ class AuthKeyPairCloudController < ApplicationController
     new if params[:pressed] == 'auth_key_pair_cloud_new'
 
     if !@flash_array.nil? && params[:pressed] == "auth_key_pair_cloud_delete" && @single_delete
-      render :update do |page|
-        page << javascript_prologue
-        # redirect to build the retire screen
-        page.redirect_to :action => 'show_list', :flash_msg => @flash_array[0][:message]
-      end
+      javascript_redirect :action => 'show_list', :flash_msg => @flash_array[0][:message] # redirect to build the retire screen
     elsif params[:pressed] == "auth_key_pair_cloud_new"
       if @flash_array
         show_list
         replace_gtl_main_div
       else
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to :action => "new"
-        end
+        javascript_redirect :action => "new"
       end
     elsif @refresh_div == "main_div" && @lastaction == "show_list"
       replace_gtl_main_div
@@ -104,13 +97,9 @@ class AuthKeyPairCloudController < ApplicationController
 
     case params[:button]
     when "cancel"
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to :action    => 'show_list',
-                         :flash_msg => _("Add of new %{model} was cancelled by the user") % {
-                           :model => ui_lookup(:table => 'auth_key_pair_cloud')
-                         }
-      end
+      javascript_redirect :action    => 'show_list',
+                          :flash_msg => _("Add of new %{model} was cancelled by the user") %
+                          {:model => ui_lookup(:table => 'auth_key_pair_cloud')}
     when "save"
       ext_management_system = find_by_id_filtered(ManageIQ::Providers::CloudManager, options[:ems_id])
       kls = kls.class_by_ems(ext_management_system)
@@ -129,10 +118,7 @@ class AuthKeyPairCloudController < ApplicationController
         @breadcrumbs.pop if @breadcrumbs
         session[:edit] = nil
         session[:flash_msgs] = @flash_array.dup if @flash_array
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to :action => "show_list"
-        end
+        javascript_redirect :action => "show_list"
       else
         @in_a_form = true
         add_flash(kls.is_available_now_error_message(:create_key_pair, ext_management_system, kls))
@@ -140,10 +126,7 @@ class AuthKeyPairCloudController < ApplicationController
           :name => _("Add New %{model}") % {:model => ui_lookup(:table => 'auth_key_pair_cloud')},
           :url  => "/auth_key_pair_cloud/new"
         )
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
       end
     when "validate"
       @in_a_form = true
@@ -154,10 +137,7 @@ class AuthKeyPairCloudController < ApplicationController
       else
         add_flash(kls.is_available_now_error_message(:create_key_pair, ext_management_system, options))
       end
-      render :update do |page|
-        page << javascript_prologue
-        page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-      end
+      javascript_flash
     end
   end
 
@@ -202,7 +182,7 @@ class AuthKeyPairCloudController < ApplicationController
   end
 
   def show_list
-    process_show_list
+    process_show_list(:dbname => :authkeypaircloud)
   end
 
   # delete selected auth key pairs
@@ -266,9 +246,8 @@ class AuthKeyPairCloudController < ApplicationController
       kp.delete_key_pair
       kp.destroy
     end
-    add_flash(_("Delete initiated for %{models}") % {
-      :models => pluralize(key_pairs.length, ui_lookup(:table => 'auth_key_pair_cloud'))
-    })
+    add_flash(n_("Delete initiated for %{number} Key Pair",
+                 "Delete initiated for %{number} Key Pairs", key_pairs.length) % {:number => key_pairs.length})
   end
 
   private
@@ -288,4 +267,6 @@ class AuthKeyPairCloudController < ApplicationController
     session[:auth_key_pair_cloud_filters]    = @filters
     session[:auth_key_pair_cloud_catinfo]    = @catinfo
   end
+
+  menu_section :clo
 end

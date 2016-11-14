@@ -35,6 +35,7 @@ describe ManageIQ::Providers::Redhat::InfraManager::Provision::StateMachine do
       :poll_clone_complete                      => {:signals => 1, :calls => 3},
       :poll_destination_in_vmdb                 => {:signals => 1, :calls => 3},
       :customize_destination                    => {:signals => 1, :calls => 3},
+      :customize_guest                          => {:signals => 1, :calls => 1},
       :poll_destination_powered_off_in_provider => {:signals => 1, :calls => 4},
       :poll_destination_powered_off_in_vmdb     => {:signals => 2, :calls => 2},
       :post_provision                           => {:signals => 1, :calls => 1},
@@ -46,6 +47,10 @@ describe ManageIQ::Providers::Redhat::InfraManager::Provision::StateMachine do
   end
 
   include_examples "End-to-end State Machine Run"
+
+  def test_customize_guest
+    call_method
+  end
 
   def test_create_destination
     call_method
@@ -65,7 +70,6 @@ describe ManageIQ::Providers::Redhat::InfraManager::Provision::StateMachine do
     @test_poll_clone_complete_setup ||= begin
       expect(task).to receive(:clone_complete?).and_return(false, false, true)
       expect(task).to receive(:requeue_phase).twice { requeue_phase }
-      expect(EmsRefresh).to receive(:queue_refresh).once
     end
 
     call_method

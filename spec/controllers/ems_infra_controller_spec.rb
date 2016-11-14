@@ -1,11 +1,11 @@
-include CompressedIds
-
 describe EmsInfraController do
+  include CompressedIds
+
   let!(:server) { EvmSpecHelper.local_miq_server(:zone => zone) }
   let(:zone) { FactoryGirl.build(:zone) }
   context "#button" do
     before(:each) do
-      set_user_privileges
+      stub_user(:features => :all)
       EvmSpecHelper.create_guid_miq_server_zone
 
       ApplicationController.handle_exceptions = true
@@ -97,7 +97,7 @@ describe EmsInfraController do
 
   describe "#scaling" do
     before do
-      set_user_privileges
+      stub_user(:features => :all)
       @ems = FactoryGirl.create(:ems_openstack_infra_with_stack)
       @orchestration_stack_parameter_compute = FactoryGirl.create(:orchestration_stack_parameter_openstack_infra_compute)
 
@@ -167,7 +167,7 @@ describe EmsInfraController do
 
   describe "#scaledown" do
     before do
-      set_user_privileges
+      stub_user(:features => :all)
       @ems = FactoryGirl.create(:ems_openstack_infra_with_stack_and_compute_nodes)
 
       allow_any_instance_of(ManageIQ::Providers::Openstack::InfraManager::OrchestrationStack)
@@ -234,6 +234,55 @@ describe EmsInfraController do
     end
   end
 
+  describe "#register_and_configure_nodes" do
+    before do
+      stub_user(:features => :all)
+      @ems = FactoryGirl.create(:ems_openstack_infra_with_stack_and_compute_nodes)
+      allow_any_instance_of(ManageIQ::Providers::Openstack::InfraManager)
+        .to receive(:openstack_handle).and_return([])
+      allow_any_instance_of(EmsInfraController)
+        .to receive(:parse_json).and_return("{\"nodes\": []}")
+      @nodes_example = {:file => "dummy"}
+    end
+
+    it "when success expected" do
+      allow_any_instance_of(ManageIQ::Providers::Openstack::InfraManager)
+        .to receive(:workflow_service).and_return([])
+      allow_any_instance_of(ManageIQ::Providers::Openstack::InfraManager)
+        .to receive(:register_and_configure_nodes).and_return("SUCCESS")
+      post :register_nodes, :params => {:id => @ems.id, :nodes_json => @nodes_example, :register => 1}
+      expect(controller.send(:flash_errors?)).to be_falsey
+      expect(response.body).to include("redirected")
+      expect(response.body).to include("ems_infra")
+    end
+
+    it "when failure expected, workflow service not reachable" do
+      post :register_nodes, :params => {:id => @ems.id, :nodes_json => @nodes_example, :register => 1}
+      expect(controller.send(:flash_errors?)).to be_truthy
+      flash_messages = assigns(:flash_array)
+      message = _("Cannot connect to workflow service")
+      expect(flash_messages.first[:message]).to include(message)
+    end
+
+    it "when failure expected, workflow cannot be executed" do
+      allow_any_instance_of(ManageIQ::Providers::Openstack::InfraManager)
+        .to receive(:workflow_service).and_return([])
+      post :register_nodes, :params => {:id => @ems.id, :nodes_json => @nodes_example, :register => 1}
+      expect(controller.send(:flash_errors?)).to be_truthy
+      flash_messages = assigns(:flash_array)
+      message = _("Error executing register and configure workflows")
+      expect(flash_messages.first[:message]).to include(message)
+    end
+
+    it "when failure expected, node_json file is not selected" do
+      post :register_nodes, :params => {:id => @ems.id, :register => 1}
+      expect(controller.send(:flash_errors?)).to be_truthy
+      flash_messages = assigns(:flash_array)
+      message = _("Please select a JSON file containing the nodes you would like to register.")
+      expect(flash_messages.first[:message]).to include(message)
+    end
+  end
+
   describe "#show" do
     render_views
     before(:each) do
@@ -266,34 +315,36 @@ describe EmsInfraController do
       controller.instance_variable_set(:@breadcrumbs, [])
       get :show, :params => {:id => @ems.id, :display => 'storages'}
       expect(response.status).to eq(200)
-      expect(response).to render_template('ems_infra/show')
+      expect(response).to render_template('shared/views/ems_common/show')
       expect(assigns(:breadcrumbs)).to eq([{:name=>"Infrastructure Providers",
                                             :url=>"/ems_infra/show_list?page=&refresh=y"},
                                            {:name=>"#{@ems.name} (All Managed Datastores)",
                                             :url=>"/ems_infra/#{@ems.id}?display=storages"}])
+
+      # display needs to be saved to session for GTL pagination and such
+      expect(session[:ems_infra_display]).to eq('storages')
     end
 
     it " can tag associated datastores" do
-      set_user_privileges
+      stub_user(:features => :all)
       datastore = FactoryGirl.create(:storage, :name => 'storage_name')
       datastore.parent = @ems
       controller.instance_variable_set(:@_orig_action, "x_history")
       get :show, :params => {:id => @ems.id, :display => 'storages'}
       post :button, :params => {:id => @ems.id, :display => 'storages', :miq_grid_checks => to_cid(datastore.id), :pressed => "storage_tag", :format => :js}
       expect(response.status).to eq(200)
-      breadcrumbs = controller.instance_variable_get(:@breadcrumbs)
+      _breadcrumbs = controller.instance_variable_get(:@breadcrumbs)
       expect(assigns(:breadcrumbs)).to eq([{:name=>"Infrastructure Providers",
                                             :url=>"/ems_infra/show_list?page=&refresh=y"},
                                            {:name=>"#{@ems.name} (All Managed Datastores)",
                                             :url=>"/ems_infra/#{@ems.id}?display=storages"},
                                            {:name=>"Tag Assignment", :url=>"//tagging_edit"}])
-
     end
   end
 
   describe "#show_list" do
     before(:each) do
-      set_user_privileges
+      stub_user(:features => :all)
       FactoryGirl.create(:ems_vmware)
       get :show_list
     end
@@ -305,7 +356,7 @@ describe EmsInfraController do
     render_views
     context "#form_field_changed" do
       before do
-        set_user_privileges
+        stub_user(:features => :all)
         EvmSpecHelper.create_guid_miq_server_zone
       end
 
@@ -330,7 +381,7 @@ describe EmsInfraController do
 
   describe "breadcrumbs path on a 'show' page of an Infrastructure Provider accessed from Dashboard maintab" do
     before do
-      set_user_privileges
+      stub_user(:features => :all)
       EvmSpecHelper.create_guid_miq_server_zone
     end
     context "when previous breadcrumbs path contained 'Cloud Providers'" do
@@ -580,57 +631,54 @@ describe EmsInfraController do
       allow(controller).to receive(:check_privileges).and_return(true)
       allow(controller).to receive(:assert_privileges).and_return(true)
       login_as FactoryGirl.create(:user, :features => "ems_infra_new")
+      allow_any_instance_of(ManageIQ::Providers::Redhat::InfraManager)
+        .to receive(:supported_api_versions).and_return([3, 4])
     end
 
     render_views
 
-    it 'creates on post' do
-      expect do
-        post :create, :params => {
-          "button"           => "add",
-          "name"             => "foo",
-          "emstype"          => "rhevm",
-          "zone"             => zone.name,
-          "cred_type"        => "default",
-          "default_hostname" => "foo.com",
-          "default_api_port" => "5000",
-          "default_userid"   => "foo",
-          "default_password" => "[FILTERED]",
-          "default_verify"   => "[FILTERED]",
-          "metrics_hostname" => "foo_metrics.com",
-          "metrics_api_port" => "5672",
-          "metrics_userid"   => "metrics_foo",
-          "metrics_password" => "[FILTERED]",
-          "metrics_verify"   => "[FILTERED]"
-        }
-      end.to change { ManageIQ::Providers::Redhat::InfraManager.count }.by(1)
+    let(:creation_params) do
+      {
+        "button"                => "add",
+        "name"                  => "foo_rhevm",
+        "emstype"               => "rhevm",
+        "zone"                  => zone.name,
+        "cred_type"             => "default",
+        "default_hostname"      => "foo.com",
+        "default_api_port"      => "5000",
+        "default_userid"        => "foo",
+        "default_password"      => "[FILTERED]",
+        "default_verify"        => "[FILTERED]",
+        "metrics_hostname"      => "foo_metrics.com",
+        "metrics_api_port"      => "5672",
+        "metrics_userid"        => "metrics_foo",
+        "metrics_password"      => "[FILTERED]",
+        "metrics_verify"        => "[FILTERED]",
+        "metrics_database_name" => "metrics_dwh"
+      }
     end
 
-    it 'creates and updates an authentication record on post' do
+    subject(:create) { post :create, :params => creation_params }
+
+    it 'creates on post' do
       expect do
-        post :create, :params => {
-          "button"           => "add",
-          "name"             => "foo_rhevm",
-          "emstype"          => "rhevm",
-          "zone"             => zone.name,
-          "cred_type"        => "default",
-          "default_hostname" => "foo.com",
-          "default_api_port" => "5000",
-          "default_userid"   => "foo",
-          "default_password" => "[FILTERED]",
-          "default_verify"   => "[FILTERED]",
-          "metrics_hostname" => "foo_metrics.com",
-          "metrics_api_port" => "5672",
-          "metrics_userid"   => "metrics_foo",
-          "metrics_password" => "[FILTERED]",
-          "metrics_verify"   => "[FILTERED]"
-        }
+        create
+      end.to change { ManageIQ::Providers::Redhat::InfraManager.where("name" => creation_params["name"]).count }.by(1)
+    end
+
+    it 'creates authentication records on post' do
+      expect do
+        create
       end.to change { Authentication.count }.by(2)
 
       expect(response.status).to eq(200)
       rhevm = ManageIQ::Providers::Redhat::InfraManager.where(:name => "foo_rhevm").first
       expect(rhevm.authentications.size).to eq(2)
+    end
 
+    it 'updates authentication records on post' do
+      create
+      rhevm = ManageIQ::Providers::Redhat::InfraManager.where(:name => "foo_rhevm").first
       expect do
         post :update, :params => {
           "id"               => rhevm.id,
@@ -646,6 +694,45 @@ describe EmsInfraController do
 
       expect(response.status).to eq(200)
       expect(rhevm.authentications.first).to have_attributes(:userid => "bar", :password => "[FILTERED]")
+    end
+
+    context "Metrics endpoint" do
+      it 'creates endpoints records on post' do
+        create
+        expect(response.status).to eq(200)
+        rhevm = ManageIQ::Providers::Redhat::InfraManager.where(:name => "foo_rhevm").first
+        expect(rhevm.endpoints.size).to eq(2)
+      end
+
+      it 'updates metrics endpoint records on post when button is "save"' do
+        create
+        rhevm = ManageIQ::Providers::Redhat::InfraManager.where(:name => "foo_rhevm").first
+
+        updated_metrics_params = { "default_hostname"      => "host_rhevm",
+                                   "metrics_hostname"      => "foo_metrics.com",
+                                   "metrics_api_port"      => "5672",
+                                   "metrics_userid"        => "metrics_foo",
+                                   "metrics_password"      => "[FILTERED]",
+                                   "metrics_verify"        => "[FILTERED]",
+                                   "metrics_database_name" => "metrics_dwh_updated"
+        }
+
+        expect do
+          post :update, :params => { "id" => rhevm.id, :button => 'save' }.merge(updated_metrics_params)
+        end.not_to change { Endpoint.count }
+
+        expect(Endpoint.where(:path => updated_metrics_params["metrics_database_name"]).count)
+          .to eq(1)
+      end
+
+      it 'tries to varify with the right params on post when button is "validate"' do
+        create
+        rhevm = ManageIQ::Providers::Redhat::InfraManager.where(:name => "foo_rhevm").first
+        expect_any_instance_of(ManageIQ::Providers::Redhat::InfraManager).to receive(:authentication_check)
+          .with("metrics",
+                hash_including(:save => false, :database => creation_params["metrics_database_name"]))
+        post :update, creation_params.merge(:button => "validate", :cred_type => "metrics", :id => rhevm.id)
+      end
     end
   end
 

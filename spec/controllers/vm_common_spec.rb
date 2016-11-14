@@ -1,8 +1,7 @@
 describe VmOrTemplateController do
   context "#snap_pressed" do
     before :each do
-      set_user_privileges
-      allow(controller).to receive(:role_allows).and_return(true)
+      stub_user(:features => :all)
       vm = FactoryGirl.create(:vm_vmware)
       @snapshot = FactoryGirl.create(:snapshot, :vm_or_template_id => vm.id,
                                                 :name              => 'EvmSnapshot',
@@ -23,21 +22,17 @@ describe VmOrTemplateController do
 
     it "snapshot node exists in tree" do
       post :snap_pressed, :params => { :id => @snapshot.id }
-      expect(response).to render_template('vm_common/_snapshots_tree')
       expect(assigns(:flash_array)).to be_blank
     end
 
     it "when snapshot is selected center toolbars are replaced" do
       post :snap_pressed, :params => { :id => @snapshot.id }
-      expect(response).to render_template('vm_common/_snapshots_tree')
-      expect(response.body).to include("center_tb")
+      expect(response.body).to include("sendDataWithRx({redrawToolbar:")
       expect(assigns(:flash_array)).to be_blank
     end
 
     it "deleted node pressed in snapshot tree" do
-      expect(controller).to receive(:build_snapshot_tree)
       post :snap_pressed, :params => { :id => "some_id" }
-      expect(response).to render_template('vm_common/_snapshots_tree')
       expect(assigns(:flash_array).first[:message]).to eq("Last selected Snapshot no longer exists")
       expect(assigns(:flash_array).first[:level]).to eq(:error)
     end
@@ -79,7 +74,7 @@ describe VmOrTemplateController do
     end
 
     it "Redirects user with privileges to vm_infra/explorer" do
-      set_user_privileges
+      stub_user(:features => :all)
       get :show, :params => {:id => @vm.id}
       expect(response.status).to eq(302)
       expect(response).to redirect_to(:controller => "vm_infra", :action => 'explorer')
@@ -110,7 +105,7 @@ describe VmOrTemplateController do
 
       it 'renders javascript to open a popup' do
         allow(controller).to receive(:params).and_return(:task_id => task.id)
-        expect(subject).to include("window.open('/vm_or_template/launch_html5_console?#{task_results.to_query}');")
+        expect(subject).to match(%r{openUrl.*/vm_or_template/launch_html5_console\?#{task_results.to_query}"})
       end
     end
 
@@ -120,7 +115,7 @@ describe VmOrTemplateController do
 
       it 'renders javascript to open a popup' do
         expect(controller).to receive(:params).and_return(:task_id => task.id)
-        expect(subject).to include("window.open('#{url}');")
+        expect(subject).to include("openUrl\":\"#{url}\"")
       end
     end
   end
@@ -146,6 +141,92 @@ describe VmOrTemplateController do
                                                                          :continue_button => false}).exactly(1).times
       controller.send(:replace_right_cell, 'migrate', presenter)
       expect(presenter[:update_partials]).to have_key(:form_buttons_div)
+    end
+  end
+
+  context '#parent_folder_id' do
+    it 'returns id of orphaned folder for orphaned VM/Template' do
+      vm_orph = FactoryGirl.create(:vm_infra, :storage => FactoryGirl.create(:storage))
+      template_orph = FactoryGirl.create(:template_infra, :storage => FactoryGirl.create(:storage))
+      expect(controller.parent_folder_id(vm_orph)).to eq('xx-orph')
+      expect(controller.parent_folder_id(template_orph)).to eq('xx-orph')
+    end
+
+    it 'returns id of archived folder for archived VM/Template' do
+      vm_arch = FactoryGirl.create(:vm_infra)
+      template_arch = FactoryGirl.create(:template_infra)
+      expect(controller.parent_folder_id(vm_arch)).to eq('xx-arch')
+      expect(controller.parent_folder_id(template_arch)).to eq('xx-arch')
+    end
+
+    it 'returns id of Availability Zone folder for Cloud VM that has one' do
+      vm_cloud_with_az = FactoryGirl.create(:vm_cloud,
+                                            :ext_management_system => FactoryGirl.create(:ems_google),
+                                            :storage               => FactoryGirl.create(:storage),
+                                            :availability_zone     => FactoryGirl.create(:availability_zone_google))
+      expect(controller.parent_folder_id(vm_cloud_with_az)).to eq(TreeBuilder.build_node_cid(vm_cloud_with_az.availability_zone))
+    end
+
+    it 'returns id of Provider folder for Cloud VM without Availability Zone' do
+      vm_cloud_without_az = FactoryGirl.create(:vm_cloud,
+                                               :ext_management_system => FactoryGirl.create(:ems_google),
+                                               :storage               => FactoryGirl.create(:storage),
+                                               :availability_zone     => nil)
+      expect(controller.parent_folder_id(vm_cloud_without_az)).to eq(TreeBuilder.build_node_cid(vm_cloud_without_az.ext_management_system))
+    end
+
+    it 'returns id of Provider folder for Cloud Template' do
+      template_cloud = FactoryGirl.create(:template_cloud,
+                                          :ext_management_system => FactoryGirl.create(:ems_google),
+                                          :storage               => FactoryGirl.create(:storage))
+      expect(controller.parent_folder_id(template_cloud)).to eq(TreeBuilder.build_node_cid(template_cloud.ext_management_system))
+    end
+
+    it 'returns id of Provider folder for infra VM/Template without blue folder' do
+      vm_infra = FactoryGirl.create(:vm_infra, :ext_management_system => FactoryGirl.create(:ems_infra))
+      template_infra = FactoryGirl.create(:template_infra, :ext_management_system => FactoryGirl.create(:ems_infra))
+      expect(controller.parent_folder_id(vm_infra)).to eq(TreeBuilder.build_node_cid(vm_infra.ext_management_system))
+      expect(controller.parent_folder_id(template_infra)).to eq(TreeBuilder.build_node_cid(template_infra.ext_management_system))
+    end
+
+    it 'returns id of blue folder for VM/Template with one' do
+      folder = FactoryGirl.create(:ems_folder)
+      vm_infra_folder = FactoryGirl.create(:vm_infra, :ext_management_system => FactoryGirl.create(:ems_infra))
+      vm_infra_folder.with_relationship_type("ems_metadata") { vm_infra_folder.parent = folder } # add folder
+      template_infra_folder = FactoryGirl.create(:template_infra,
+                                                 :ext_management_system => FactoryGirl.create(:ems_infra))
+      template_infra_folder.with_relationship_type("ems_metadata") { template_infra_folder.parent = folder } # add folder
+      expect(controller.parent_folder_id(vm_infra_folder)).to eq(TreeBuilder.build_node_cid(folder))
+      expect(controller.parent_folder_id(template_infra_folder)).to eq(TreeBuilder.build_node_cid(folder))
+    end
+  end
+
+  context "#resolve_node_info" do
+    let(:vm_common) do
+      Class.new do
+        extend VmCommon
+        extend CompressedIds
+      end
+    end
+    before do
+      login_as FactoryGirl.create(:user_with_group, :role => "operator")
+      @vm_arch = FactoryGirl.create(:vm)
+    end
+
+    it 'when VM hidden select parent in tree but show VMs info' do
+      User.current_user.settings[:display] = {:display_vms => false}
+
+      allow(vm_common).to receive(:x_node=) { |id| expect(id).to eq(controller.parent_folder_id(@vm_arch)) }
+      allow(vm_common).to receive(:get_node_info) { |id| expect(id).to eq(TreeBuilder.build_node_cid(@vm_arch)) }
+      vm_common.resolve_node_info("v-#{@vm_arch[:id]}")
+    end
+
+    it 'when VM shown select it in tree and show its info' do
+      User.current_user.settings[:display] = {:display_vms => true}
+
+      allow(vm_common).to receive(:x_node=) { |id| expect(id).to eq(TreeBuilder.build_node_cid(@vm_arch)) }
+      allow(vm_common).to receive(:get_node_info) { |id| expect(id).to eq(TreeBuilder.build_node_cid(@vm_arch)) }
+      vm_common.resolve_node_info("v-#{@vm_arch[:id]}")
     end
   end
 end

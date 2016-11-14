@@ -40,10 +40,10 @@ class ApplicationHelper::Toolbar::EmsCloudsCenter < ApplicationHelper::Toolbar::
         button(
           :ems_cloud_delete,
           'pficon pficon-delete fa-lg',
-          N_('Remove selected Cloud Providers from the VMDB'),
-          N_('Remove Cloud Providers from the VMDB'),
+          N_('Remove selected Cloud Providers'),
+          N_('Remove Cloud Providers'),
           :url_parms => "main_div",
-          :confirm   => N_("Warning: The selected Cloud Providers and ALL of their components will be permanently removed from the Virtual Management Database.  Are you sure you want to remove the selected Cloud Providers?"),
+          :confirm   => N_("Warning: The selected Cloud Providers and ALL related components will be permanently removed!"),
           :enabled   => false,
           :onwhen    => "1+"),
       ]
@@ -76,5 +76,25 @@ class ApplicationHelper::Toolbar::EmsCloudsCenter < ApplicationHelper::Toolbar::
           :onwhen    => "1+"),
       ]
     ),
+  ])
+  button_group('ems_cloud_authentication', [
+    select(
+      :ems_cloud_authentication_choice,
+      'fa fa-lock fa-lg',
+      t = N_('Authentication'),
+      t,
+      :enabled => false,
+      :onwhen  => "1+",
+      :items   => [
+        button(
+          :ems_cloud_recheck_auth_status,
+          'fa fa-search fa-lg',
+          N_('Re-check Authentication Status for the selected Cloud Providers'),
+          N_('Re-check Authentication Status'),
+          :url_parms => "main_div",
+          :enabled   => false,
+          :onwhen    => "1+"),
+          ]
+      ),
   ])
 end

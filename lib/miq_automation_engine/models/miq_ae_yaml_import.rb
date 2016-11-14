@@ -55,7 +55,10 @@ class MiqAeYamlImport
       @domain_name = directory.split("/").last
       import_domain(directory, @domain_name)
     end
-    MiqAeDatastore.reset_default_namespace if @restore && !@preview
+    if @restore && !@preview
+      MiqAeDatastore.reset_default_namespace
+      MiqAeDomain.reset_priorities
+    end
     domains
   end
 
@@ -103,14 +106,33 @@ class MiqAeYamlImport
   def reset_manageiq_attributes(domain_yaml)
     domain_yaml.store_path('object', 'attributes', 'name', MiqAeDatastore::MANAGEIQ_DOMAIN)
     domain_yaml.store_path('object', 'attributes', 'priority', MiqAeDatastore::MANAGEIQ_PRIORITY)
-    domain_yaml.store_path('object', 'attributes', 'system', true)
+    domain_yaml.store_path('object', 'attributes', 'source', MiqAeDomain::SYSTEM_SOURCE)
     domain_yaml.store_path('object', 'attributes', 'enabled', true)
+    domain_yaml.delete_path('object', 'attributes', 'system')
   end
 
   def reset_domain_attributes(domain_yaml)
     domain_yaml.delete_path('object', 'attributes', 'enabled') unless @restore
     domain_yaml.delete_path('object', 'attributes', 'tenant_id') unless @restore
     domain_yaml.delete_path('object', 'attributes', 'priority')
+    source_from_system(domain_yaml) if domain_yaml.has_key_path?('object', 'attributes', 'system')
+    enable_system_domains(domain_yaml) if domain_yaml.has_key_path?('object', 'attributes', 'source')
+  end
+
+  def source_from_system(domain_yaml)
+    system = domain_yaml.delete_path('object', 'attributes', 'system')
+    if system == true
+      domain_yaml.store_path('object', 'attributes', 'source', MiqAeDomain::USER_LOCKED_SOURCE)
+    else
+      domain_yaml.store_path('object', 'attributes', 'source', MiqAeDomain::USER_SOURCE)
+    end
+  end
+
+  def enable_system_domains(domain_yaml)
+    source = domain_yaml.fetch_path('object', 'attributes', 'source')
+    if source == MiqAeDomain::SYSTEM_SOURCE
+      domain_yaml.store_path('object', 'attributes', 'enabled', true)
+    end
   end
 
   def import_all_namespaces(namespace_folder, domain_obj, domain_name)
@@ -125,7 +147,11 @@ class MiqAeYamlImport
   end
 
   def process_namespace(domain_obj, namespace_folder, _namespace_yaml, domain_name)
-    fqname = "#{domain_name}#{namespace_folder.sub(domain_folder(@domain_name), '')}"
+    fqname = if @domain_name == '.'
+               "#{domain_name}/#{namespace_folder}"
+             else
+               "#{domain_name}#{namespace_folder.sub(domain_folder(@domain_name), '')}"
+             end
     _log.info("Importing namespace: <#{fqname}>")
     namespace_obj = MiqAeNamespace.find_by_fqname(fqname, false)
     track_stats('namespace', namespace_obj)
@@ -214,7 +240,7 @@ class MiqAeYamlImport
 
   def update_attributes(domain_obj)
     return if domain_obj.name.downcase == MiqAeDatastore::MANAGEIQ_DOMAIN.downcase
-    attrs = @options.slice('enabled', 'system')
+    attrs = @options.slice('enabled', 'source')
     domain_obj.update_attributes(attrs) unless attrs.empty?
   end
 end # class

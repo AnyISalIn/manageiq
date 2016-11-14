@@ -4,16 +4,15 @@ class ChargebackController < ApplicationController
   after_action :cleanup_action
   after_action :set_session_data
 
-  # FIXME: -- is INDEX needed ?
-  def index
-    redirect_to :action => 'explorer'
-  end
+  CB_X_BUTTON_ALLOWED_ACTIONS = {
+    'chargeback_rates_copy'   => :cb_rate_edit,
+    'chargeback_rates_delete' => :cb_rates_delete,
+    'chargeback_rates_edit'   => :cb_rate_edit,
+    'chargeback_rates_new'    => :cb_rate_edit
+  }.freeze
 
   def x_button
-    @sb[:action] = params[:pressed]
-    @_params[:typ] = params[:pressed].split('_').last
-    cb_rate_edit if %w(copy edit new).include?(params[:typ])
-    cb_rates_delete if params[:typ] == "delete"
+    generic_x_button(CB_X_BUTTON_ALLOWED_ACTIONS)
   end
 
   def x_show
@@ -102,17 +101,17 @@ class ChargebackController < ApplicationController
     assert_privileges(params[:pressed]) if params[:pressed]
     case params[:button]
     when "cancel"
-      add_flash("#{params[:id] ?
+      add_flash((params[:id] ?
         _("Edit of %{model} \"%{name}\" was cancelled by the user") %
           {:model => ui_lookup(:model => "ChargebackRate"), :name => session[:edit][:new][:description]} :
         _("Add of new %{model} was cancelled by the user") %
-          {:model => ui_lookup(:model => "ChargebackRate")}}")
+          {:model => ui_lookup(:model => "ChargebackRate")}).to_s)
       get_node_info(x_node)
       @edit = session[:edit] = nil  # clean out the saved info
       session[:changed] =  false
       replace_right_cell
     when "save", "add"
-      id = params[:id] && params[:button] == "save" ? params[:id] : "new"
+      id = params[:button] == "save" ? params[:id] : "new"
       return unless load_edit("cbrate_edit__#{id}", "replace_cell__chargeback")
       @rate = params[:button] == "add" ? ChargebackRate.new : ChargebackRate.find(params[:id])
       if @edit[:new][:description].nil? || @edit[:new][:description] == ""
@@ -158,21 +157,18 @@ class ChargebackController < ApplicationController
           end
         end
         @changed = session[:changed] = (@edit[:new] != @edit[:current])
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
       end
 
     when "reset", nil # displaying edit from for actions: new, edit or copy
       @in_a_form = true
       @_params[:id] ||= find_checked_items[0]
-      session[:changed] = params[:typ] == "copy" ? true : false
+      session[:changed] = params[:pressed] == 'chargeback_rates_copy'
 
-      @rate = params[:typ] == "new" ? ChargebackRate.new : ChargebackRate.find(params[:id])
+      @rate = new_rate_edit? ? ChargebackRate.new : ChargebackRate.find(params[:id])
       @record = @rate
 
-      if params[:typ] == "edit" && @rate.default?
+      if params[:pressed] == 'chargeback_rates_edit' && @rate.default?
         render_flash(_("Default Chargeback Rate \"%{name}\" cannot be edited.") % {:name => @rate.description}, :error)
         return
       end
@@ -214,7 +210,6 @@ class ChargebackController < ApplicationController
 
   def cb_rate_show
     @display = "main"
-    @record.chargeback_rate_details
     if @record.nil?
       redirect_to :action => "cb_rates_list", :flash_msg => _("Error: Record no longer exists in the database"), :flash_error => true
       return
@@ -232,37 +227,23 @@ class ChargebackController < ApplicationController
           {:records => ui_lookup(:models => "ChargebackRate")}, :error)
       end
       process_cb_rates(rates, "destroy")  unless rates.empty?
-      if flash_errors? && @flash_array.count == 1
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
-      else
-        cb_rates_list
-        @right_cell_text = _("%{typ} %{model}") % {:typ => x_node.split('-').last,
-                           :model => ui_lookup(:models => "ChargebackRate")}
-        replace_right_cell([:cb_rates])
-      end
     else # showing 1 rate, delete it
-      if params[:id].nil? || ChargebackRate.find_by_id(params[:id]).nil?
+      cb_rate = ChargebackRate.find_by_id(params[:id])
+      if cb_rate.nil?
         render_flash(_("%{record} no longer exists") % {:record => ui_lookup(:model => "ChargebackRate")}, :error)
       else
         rates.push(params[:id])
+        self.x_node = "xx-#{cb_rate.rate_type}"
       end
-      cb_rate = ChargebackRate.find_by_id(params[:id])
-      process_cb_rates(rates, "destroy")  unless rates.empty?
-      self.x_node = "xx-#{cb_rate.rate_type}"
-      if flash_errors?
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
-      else
-        cb_rates_list
-        @right_cell_text = _("%{typ} %{model}") % {:typ => x_node.split('-').last,
-                           :model => ui_lookup(:models => "ChargebackRate")}
-        replace_right_cell([:cb_rates])
-      end
+    end
+    process_cb_rates(rates, 'destroy') unless rates.empty?
+    if flash_errors?
+      javascript_flash
+    else
+      cb_rates_list
+      @right_cell_text = _("%{typ} %{model}") % {:typ   => x_node.split('-').last,
+                                                 :model => ui_lookup(:models => 'ChargebackRate')}
+      replace_right_cell([:cb_rates])
     end
   end
 
@@ -335,7 +316,7 @@ class ChargebackController < ApplicationController
       rate_type = x_node.split('-').last
       begin
         ChargebackRate.set_assignments(rate_type, @edit[:set_assignments])
-      rescue StandardError => bang
+      rescue => bang
         render_flash(_("Error during 'Rate assignments': %{error_message}") % {:error_message => bang.message}, :error)
       else
         add_flash(_("Rate Assignments saved"))
@@ -370,7 +351,7 @@ class ChargebackController < ApplicationController
   end
 
   def cb_rpts_show_saved_report
-    @sb[:last_savedreports_id] = params[:id].split('_').last.split('-').last if params[:id] && params[:id] != "reports"
+    @sb[:last_savedreports_id] = parse_nodetype_and_id(params[:id]).last if params[:id] && params[:id] != "reports"
     cb_rpts_fetch_saved_report(@sb[:last_savedreports_id])
     @sb[:parent_reports] = nil if @report.blank?
   end
@@ -432,7 +413,7 @@ class ChargebackController < ApplicationController
                            end
         cb_rates_list
       else
-        @record = ChargebackRate.find(from_cid(node.split('_').last.split('-').last))
+        @record = ChargebackRate.find(from_cid(parse_nodetype_and_id(node).last))
         @sb[:action] = nil
         @right_cell_text = _("%{typ} %{model} \"%{name}\"") % {:typ => @record.rate_type, :model => ui_lookup(:model => "ChargebackRate"), :name => @record.description}
         cb_rate_show
@@ -537,7 +518,7 @@ class ChargebackController < ApplicationController
 
     tiers = []
     rate_details = @rate.chargeback_rate_details
-    rate_details = ChargebackRateDetail.default_rate_details_for(@edit[:new][:rate_type]) if params[:typ] == "new"
+    rate_details = ChargebackRateDetail.default_rate_details_for(@edit[:new][:rate_type]) if new_rate_edit?
 
     # Select the currency of the first chargeback_rate_detail. All the chargeback_rate_details have the same currency
     @edit[:new][:currency] = rate_details[0].detail_currency.id
@@ -556,14 +537,14 @@ class ChargebackController < ApplicationController
         temp[:chargeback_rate_detail_measure_id] = detail.detail_measure.id
       end
 
-      temp[:id] = params[:typ] == "copy" ? nil : detail.id
+      temp[:id] = params[:pressed] == 'chargeback_rates_copy' ? nil : detail.id
 
       tiers[detail_index] ||= []
 
       detail.chargeback_tiers.each do |tier|
         new_tier = tier.slice(*ChargebackTier::FORM_ATTRIBUTES)
-        new_tier[:id] = params[:typ] == "copy" ? nil : tier.id
-        new_tier[:chargeback_rate_detail_id] = params[:typ] == "copy" ? nil : detail.id
+        new_tier[:id] = params[:pressed] == 'chargeback_rates_copy' ? nil : tier.id
+        new_tier[:chargeback_rate_detail_id] = params[:pressed] == 'chargeback_rates_copy' ? nil : detail.id
         new_tier[:start] = new_tier[:start].to_f
         new_tier[:finish] = ChargebackTier.to_float(new_tier[:finish])
         tiers[detail_index].push(new_tier)
@@ -574,9 +555,9 @@ class ChargebackController < ApplicationController
       @edit[:new][:details].push(temp)
     end
 
-    @edit[:new][:per_time_types] = {"hourly" => _("Hourly")}
+    @edit[:new][:per_time_types] = ChargebackRateDetail::PER_TIME_TYPES
 
-    if params[:typ] == "copy"
+    if params[:pressed] == 'chargeback_rates_copy'
       @rate.id = nil
       @edit[:new][:description] = "copy of #{@rate.description}"
     end
@@ -728,9 +709,15 @@ class ChargebackController < ApplicationController
     @in_a_form = true
   end
 
+  def new_rate_edit?
+    params[:id] == 'new' || params[:pressed] == 'chargeback_rates_new'
+  end
+
   def get_categories_all
     @edit[:cb_assign][:cats] = {}
-    Classification.categories.collect { |c| c if !c.read_only? && c.show && c.entries.size > 0 }.compact.each { |c| @edit[:cb_assign][:cats][c.id.to_s] = c.description }
+    Classification.categories.select { |c| c.show && !c.entries.empty? }.each do |c|
+      @edit[:cb_assign][:cats][c.id.to_s] = c.description
+    end
   end
 
   def get_tags_all(category)
@@ -753,7 +740,7 @@ class ChargebackController < ApplicationController
       if klass == "enterprise"
         MiqEnterprise.all
       elsif klass == "ext_management_system"
-        ExtManagementSystem.all.reject { |prov| prov.is_a? ManageIQ::Providers::ContainerManager }
+        ExtManagementSystem.all.reject { |prov| prov.kind_of? ManageIQ::Providers::ContainerManager }
       elsif klass == "ems_container"
         ManageIQ::Providers::ContainerManager.all
       else
@@ -810,7 +797,7 @@ class ChargebackController < ApplicationController
 
     # FIXME
     #  if params[:action].ends_with?("_delete")
-    #    page << "miqDynatreeActivateNodeSilently('#{x_active_tree.to_s}', '<%= x_node %>');"
+    #    page << "miqTreeActivateNodeSilently('#{x_active_tree.to_s}', '<%= x_node %>');"
     #  end
     # presenter[:select_node] = x_node if params[:action].ends_with?("_delete")
     presenter[:osf_node] = x_node
@@ -882,9 +869,10 @@ class ChargebackController < ApplicationController
 
     presenter[:right_cell_text]     = @right_cell_text
     unless x_active_tree == :cb_assignments_tree
-      presenter[:lock_unlock_trees][x_active_tree] = @in_a_form && @edit
+      presenter.lock_tree(x_active_tree, @in_a_form && @edit)
     end
-    render :js => presenter.to_html
+
+    render :json => presenter.for_render
   end
 
   def get_session_data
@@ -921,4 +909,6 @@ class ChargebackController < ApplicationController
       page << javascript_for_miq_button_visibility(true)
     end
   end
+
+  menu_section :vi
 end

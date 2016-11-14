@@ -37,7 +37,7 @@ module OpsController::Settings::AnalysisProfiles
         @file = [] if @file.nil?
         @file_stats = {}
         for i in 0...a[:definition]["stats"].length
-          @file_stats["#{a[:definition]["stats"][i]["target"]}"] = a[:definition]["stats"][i]["content"] ? a[:definition]["stats"][i]["content"] : false
+          @file_stats[a[:definition]["stats"][i]["target"].to_s] = a[:definition]["stats"][i]["content"] ? a[:definition]["stats"][i]["content"] : false
           @file.push(a[:definition]["stats"][i]["target"])
         end
       when "registry"
@@ -248,10 +248,7 @@ module OpsController::Settings::AnalysisProfiles
           @changed = session[:changed] = (@edit[:new] != @edit[:current])
           # ap_build_edit_screen
           # replace_right_cell("root",[:settings])
-          render :update do |page|
-            page << javascript_prologue
-            page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-          end
+          javascript_flash
         else
           scanitemset = params[:button] == "add" ? ScanItemSet.new : ScanItemSet.find_by_id(@edit[:scan_id])    # get the current record
           ap_set_record_vars_set(scanitemset)
@@ -264,7 +261,7 @@ module OpsController::Settings::AnalysisProfiles
               # mems.each { |c| scanitemset.remove_member(ScanItem.find(c)) if !mems.include?(c.id) }
               # scanitemset.remove_all_members
               # scanitemset.add_member()
-            rescue StandardError => bang
+            rescue => bang
               title = params[:button] == "add" ? "add" : "update"
               add_flash(_("Error during '%{title}': %{message}") % {:title => title, :message => bang.message}, :error)
             end
@@ -288,10 +285,7 @@ module OpsController::Settings::AnalysisProfiles
             @edit[:current] = ap_sort_array(@edit[:current])
             @changed = session[:changed] = (@edit[:new] != @edit[:current])
             # ap_build_edit_screen
-            render :update do |page|
-              page << javascript_prologue
-              page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-            end
+            javascript_flash
           end
         end
       when "reset", nil
@@ -374,10 +368,7 @@ module OpsController::Settings::AnalysisProfiles
 
     render :update do |page|
       page << javascript_prologue
-      if changed != session[:changed]
-        session[:changed] = changed
-        page << javascript_for_miq_button_visibility(changed)
-      end
+      page << javascript_for_miq_button_visibility_changed(changed)
     end
   end
 
@@ -521,7 +512,7 @@ module OpsController::Settings::AnalysisProfiles
             scanitemset.add_member(scanitem)
             # resetting flash_array to not show a message for each memmber that is saved for a scanitemset
             @flash_array = []
-          rescue StandardError => bang
+          rescue => bang
             add_flash(_("%{model} \"%{name}\": Error during '%{task}': %{message}") %
                         {:model => ui_lookup(:model => "ScanItemSet"),
                          :name  => scanitem.name, :task => "update", :message => bang.message},

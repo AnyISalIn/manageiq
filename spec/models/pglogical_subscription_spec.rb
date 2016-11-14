@@ -45,10 +45,10 @@ describe PglogicalSubscription do
     ]
   end
 
-  let(:pglogical) { double }
+  let(:pglogical)      { double }
+  let!(:remote_region) { FactoryGirl.create(:miq_region, :region => 0, :description => "The region") }
 
   before do
-    FactoryGirl.create(:miq_region, :region => 0, :description => "The region")
     allow(described_class).to receive(:pglogical).and_return(pglogical)
   end
 
@@ -280,7 +280,7 @@ describe PglogicalSubscription do
       allow(pglogical).to receive(:subscriptions).and_return([])
       allow(pglogical).to receive(:enabled?).and_return(true)
       allow(MiqRegionRemote).to receive(:with_remote_connection).and_yield(double(:connection))
-      allow(MiqRegionRemote).to receive(:region_number_from_sequence).and_return(2, 3, 4)
+      allow(MiqRegionRemote).to receive(:region_number_from_sequence).and_return(2, 2, 3, 3)
       with_valid_schemas
 
       # node created
@@ -315,7 +315,7 @@ describe PglogicalSubscription do
       allow(pglogical).to receive(:subscriptions).and_return([])
       allow(pglogical).to receive(:enabled?).and_return(true)
       allow(MiqRegionRemote).to receive(:with_remote_connection).and_yield(double(:connection))
-      allow(MiqRegionRemote).to receive(:region_number_from_sequence).and_return(2, 3, 4)
+      allow(MiqRegionRemote).to receive(:region_number_from_sequence).and_return(2, 2, 3, 3, 4, 4)
       with_valid_schemas
 
       # node created
@@ -344,18 +344,59 @@ describe PglogicalSubscription do
   end
 
   describe "#delete" do
-    it "drops the node when this is the last subscription" do
+    before do
       allow(pglogical).to receive(:enabled?).and_return(true)
-      allow(pglogical).to receive(:subscriptions).and_return([subscriptions.first], [])
+    end
 
-      sub = described_class.find(:first)
+    let(:sub) { described_class.find(:first) }
+
+    it "drops the node when this is the last subscription" do
+      allow(pglogical).to receive(:subscriptions).and_return([subscriptions.first], [])
 
       expect(pglogical).to receive(:subscription_drop).with("region_0_subscription", true)
       expect(MiqRegion).to receive(:destroy_region)
         .with(instance_of(ActiveRecord::ConnectionAdapters::PostgreSQLAdapter), 0)
       expect(pglogical).to receive(:node_drop).with("region_#{MiqRegion.my_region_number}", true)
+      expect(pglogical).to receive(:disable)
 
       sub.delete
+    end
+
+    it "removes the region authentication key if present" do
+      allow(pglogical).to receive(:subscriptions).and_return(subscriptions, [subscriptions.last])
+      expect(pglogical).to receive(:subscription_drop).with("region_0_subscription", true)
+
+      EvmSpecHelper.create_guid_miq_server_zone
+      FactoryGirl.create(
+        :auth_token,
+        :resource_id   => remote_region.id,
+        :resource_type => "MiqRegion",
+        :auth_key      => "this is the encryption key!",
+        :authtype      => "system_api"
+      )
+      expect(remote_region.auth_key_configured?).to be true
+
+      sub.delete
+      remote_region.reload
+
+      expect(remote_region.auth_key_configured?).to be false
+    end
+  end
+
+  describe "#validate" do
+    it "validates existing subscriptions with new parameters" do
+      allow(pglogical).to receive(:enabled?).and_return(true)
+      allow(pglogical).to receive(:subscriptions).and_return([subscriptions.first])
+      allow(pglogical).to receive(:subscription_show_status).and_return(subscriptions.first)
+
+      sub = described_class.find(:first)
+      expect(sub.host).to eq "example.com"
+      expect(sub.port).to be_blank
+      expect(sub.user).to eq "root"
+
+      expect(MiqRegionRemote).to receive(:validate_connection_settings)
+        .with("another-example.net", 5423, "root", "p=as' s'", "vmdb's_test")
+      sub.validate('host' => "another-example.net", 'port' => 5423)
     end
   end
 end

@@ -11,8 +11,8 @@ describe AutomationRequest do
     @ae_var1     = "vvvv"
     @ae_var2     = "wwww"
     @ae_var3     = "xxxx"
-    @uri_parts   = {'instance' => "#{@ae_instance}", 'message' => "#{@ae_message}"}
-    @parameters  = {'var1' => "#{@ae_var1}", 'var2' => "#{@ae_var2}", 'var3' => "#{@ae_var3}"}
+    @uri_parts   = {'instance' => @ae_instance.to_s, 'message' => @ae_message.to_s}
+    @parameters  = {'var1' => @ae_var1.to_s, 'var2' => @ae_var2.to_s, 'var3' => @ae_var3.to_s}
   end
 
   it ".request_task_class" do
@@ -42,7 +42,7 @@ describe AutomationRequest do
       user_name = 'oleg'
 
       expect do
-        AutomationRequest.create_from_ws(@version, admin, @uri_parts, @parameters, "user_name" => "#{user_name}")
+        AutomationRequest.create_from_ws(@version, admin, @uri_parts, @parameters, "user_name" => user_name.to_s)
       end.to raise_error(ActiveRecord::RecordNotFound)
 
     end
@@ -50,7 +50,7 @@ describe AutomationRequest do
     it "with requester string overriding userid who is in the database" do
       ar = AutomationRequest.create_from_ws(@version, admin,
                                             @uri_parts, @parameters,
-                                            "user_name" => "#{@approver.userid}")
+                                            "user_name" => @approver.userid.to_s)
       expect(ar).to be_kind_of(AutomationRequest)
 
       expect(ar).to eq(AutomationRequest.first)
@@ -70,7 +70,7 @@ describe AutomationRequest do
     it "with requester string overriding userid AND auto_approval" do
       ar = AutomationRequest.create_from_ws(@version, admin,
                                             @uri_parts, @parameters,
-                                            "user_name" => "#{@approver.userid}", 'auto_approve' => 'true')
+                                            "user_name" => @approver.userid.to_s, 'auto_approve' => 'true')
       expect(ar).to be_kind_of(AutomationRequest)
 
       expect(ar).to eq(AutomationRequest.first)
@@ -85,6 +85,67 @@ describe AutomationRequest do
       expect(ar.options[:attrs][:var2]).to eq(@ae_var2)
       expect(ar.options[:attrs][:var3]).to eq(@ae_var3)
       expect(ar.options[:attrs][:userid]).to eq(@approver.userid)
+    end
+  end
+
+  context ".create_from_scheduled_task" do
+    let(:admin) { FactoryGirl.create(:user_miq_request_approver) }
+
+    it "with prescheduled task" do
+      ar = described_class.create_from_scheduled_task(admin, @uri_parts, @parameters)
+      expect(ar).to be_kind_of(AutomationRequest)
+      expect(ar).to eq(AutomationRequest.first)
+      expect(ar).to have_attributes(
+        "request_state"  => "pending",
+        "status"         => "Ok",
+        "approval_state" => "approved",
+        "userid"         => admin.userid.to_s,
+      )
+      expect(ar.options).to have_attributes(
+        :namespace  => "SYSTEM",
+        :class_name => "PROCESS",
+        :user_id    => admin.id
+      )
+    end
+
+    it "allows /System/Process to be passed in" do
+      uri_parts = @uri_parts.merge(:namespace => "/System", :class_name => "Process")
+      ar = AutomationRequest.create_from_scheduled_task(admin, uri_parts, @parameters)
+      expect(ar.options).to have_attributes(
+        :namespace  => "SYSTEM",
+        :class_name => "PROCESS"
+      )
+    end
+
+    it "locks scheduled tasks to /System/Process when other namespaces and class_names are passed in" do
+      uri_parts = @uri_parts.merge(:namespace => "/Test", :class_name => "TestClass")
+      ar = AutomationRequest.create_from_scheduled_task(admin, uri_parts, @parameters)
+      expect(ar.options).to have_attributes(
+        :namespace  => "SYSTEM",
+        :class_name => "PROCESS"
+      )
+    end
+
+    it "locks class_name to Process when something else is passed in" do
+      uri_parts = @uri_parts.merge(:class_name => "TestClass")
+      ar = AutomationRequest.create_from_scheduled_task(admin, uri_parts, @parameters)
+      expect(ar.options).to have_attributes(
+        :class_name => "PROCESS"
+      )
+    end
+
+    it "locks namespace to System when something else is passed in" do
+      uri_parts = @uri_parts.merge(:namespace => "/Test")
+      ar = AutomationRequest.create_from_scheduled_task(admin, uri_parts, @parameters)
+      expect(ar.options).to have_attributes(
+        :namespace  => "SYSTEM"
+      )
+    end
+
+    it "only allow parameters that are stringified" do
+      parameters_sym = {:var1 => @ae_var1.to_s, :var2 => @ae_var2.to_s, :var3 => @ae_var3.to_s}
+      expect(AutomationRequest).to receive(:create_from_ws).with(anything, anything, anything, @parameters, anything)
+      AutomationRequest.create_from_scheduled_task(admin, @uri_parts, parameters_sym)
     end
   end
 
@@ -155,10 +216,10 @@ describe AutomationRequest do
     end
 
     def deliver(zone_name)
-      parameters = {'miq_zone' => "#{zone_name}",
-                    'var1'     => "#{@ae_var1}",
-                    'var2'     => "#{@ae_var2}",
-                    'var3'     => "#{@ae_var3}"}
+      parameters = {'miq_zone' => zone_name.to_s,
+                    'var1'     => @ae_var1.to_s,
+                    'var2'     => @ae_var2.to_s,
+                    'var3'     => @ae_var3.to_s}
       AutomationRequest.create_from_ws(@version, @approver, @uri_parts, parameters, 'auto_approve' => 'true')
       MiqQueue.find_by(:method_name => "create_request_tasks").deliver
     end

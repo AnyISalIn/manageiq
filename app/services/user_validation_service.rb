@@ -5,7 +5,7 @@ class UserValidationService
 
   extend Forwardable
   delegate [:session, :url_for, :initiate_wait_for_task, :session_init, :clear_current_user,
-            :session_reset, :get_vmdb_config, :start_url_for_user] => :@controller
+            :session_reset, :start_url_for_user] => :@controller
 
   ValidateResult = Struct.new(:result, :flash_msg, :url)
 
@@ -22,13 +22,13 @@ class UserValidationService
 
     unless user[:name]
       clear_current_user
-      return ValidateResult.new(:fail, @flash_msg ||= "Error: Authentication failed")
+      return ValidateResult.new(:fail, @flash_msg ||= _("Error: Authentication failed"))
     end
 
     if user[:new_password].present?
       begin
         User.find_by_userid(user[:name]).change_password(user[:password], user[:new_password])
-      rescue StandardError => bang
+      rescue => bang
         return ValidateResult.new(:fail, "Error: " + bang.message)
       end
     end
@@ -39,8 +39,7 @@ class UserValidationService
     feature = missing_user_features(db_user)
     return ValidateResult.new(
       :fail,
-      _("Login not allowed, User's %s is missing. Please contact the administrator") %
-      feature
+      _("Login not allowed, User's %{feature} is missing. Please contact the administrator") % {:feature => feature}
     ) if feature
 
     session_init(db_user)
@@ -49,12 +48,12 @@ class UserValidationService
 
     # Start super admin at the main db if the main db has no records yet
     return validate_user_handle_no_records if db_user.super_admin_user? &&
-                                              get_vmdb_config[:product][:maindb] &&
-                                              !get_vmdb_config[:product][:maindb].constantize.first
+                                              ::Settings.product.maindb &&
+                                              !::Settings.product.maindb.constantize.first
 
     startpage = start_url_for_user(start_url)
     unless startpage
-      return ValidateResult.new(:fail, "The user's role is not authorized for any access, please contact the administrator!")
+      return ValidateResult.new(:fail, _("The user's role is not authorized for any access, please contact the administrator!"))
     end
     ValidateResult.new(:pass, nil, startpage)
   end
@@ -84,11 +83,11 @@ class UserValidationService
                                        :action        => 'explorer',
                                        :flash_warning => true,
                                        :no_refresh    => true,
-                                       :flash_msg     => _("The CFME Server is still starting, you have been redirected to the diagnostics page for problem determination"),
+                                       :flash_msg     => _("The %{product} Server is still starting, you have been redirected to the diagnostics page for problem determination") % {:product => I18n.t('product.name')},
                                        :escape        => false)
                         )
     else
-      ValidateResult.new(:fail, _("The CFME Server is still starting. If this message persists, please contact your CFME administrator."))
+      ValidateResult.new(:fail, _("The %{product} Server is still starting. If this message persists, please contact your %{product} administrator.") % {:product => I18n.t('product.name')})
     end
   end
 
@@ -131,15 +130,15 @@ class UserValidationService
 
   def validate_user_pre_auth_checks(user)
     # Pre_authenticate checks
-    return ValidateResult.new(:fail, "Error: Name is required") if user.blank? || user[:name].blank?
+    return ValidateResult.new(:fail, _("Error: Name is required")) if user.blank? || user[:name].blank?
 
-    return ValidateResult.new(:fail, "Error: New password and verify password must be the same") if
+    return ValidateResult.new(:fail, _("Error: New password and verify password must be the same")) if
       user[:new_password].present? && user[:new_password] != user[:verify_password]
 
-    return ValidateResult.new(:fail, "Error: New password can not be blank") if
+    return ValidateResult.new(:fail, _("Error: New password can not be blank")) if
       user[:new_password] && user[:new_password].blank?
 
-    return ValidateResult.new(:fail, "Error: New password is the same as existing password") if
+    return ValidateResult.new(:fail, _("Error: New password is the same as existing password")) if
       user[:new_password].present? && user[:password] == user[:new_password]
     nil
   end

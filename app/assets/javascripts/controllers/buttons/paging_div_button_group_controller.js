@@ -46,13 +46,13 @@ ManageIQ.angular.app.controller('pagingDivButtonGroupController', ['$scope', 'mi
       var compiledEnabledSave = $compile(enabledSaveHtml)($scope);
 
       $timeout(function () {
-        if (angular.element(document.getElementById('save_enabled')).length == 0) {
-          angular.element(document.getElementById($attrs.pagingDivButtonsId)).append(compiledEnabledSave);
+        if (!miqDomElementExists('save_enabled')) {
+          $('#' + $attrs.pagingDivButtonsId).append(compiledEnabledSave);
         }
       });
     } else {
-      var disabledSaveHtml = '<button name="button" id="save_disabled" type="submit" class="btn btn-primary btn-disabled" ' +
-        'alt={{altText}} title={{altText}} ng-click="disabledClick($event)" style="cursor:not-allowed" ' +
+      var disabledSaveHtml = '<button name="button" id="save_disabled" type="submit" class="btn btn-primary disabled" ' +
+        'alt={{altText}} title={{altText}} ng-click="disabledClick($event)" ' +
         'ng-show="!newRecord && !saveable(angularForm)">{{btnText}}</button>';
       var compiledDisabledSave = $compile(disabledSaveHtml)($scope);
 
@@ -62,12 +62,12 @@ ManageIQ.angular.app.controller('pagingDivButtonGroupController', ['$scope', 'mi
       var compiledEnabledSave = $compile(enabledSaveHtml)($scope);
 
       $timeout(function () {
-        if (angular.element(document.getElementById('save_disabled')).length == 0) {
-          angular.element(document.getElementById($attrs.pagingDivButtonsId)).append(compiledDisabledSave);
+        if (!miqDomElementExists('save_disabled')) {
+          $('#' + $attrs.pagingDivButtonsId).append(compiledDisabledSave);
         }
 
-        if (angular.element(document.getElementById('save_enabled')).length == 0) {
-          angular.element(document.getElementById($attrs.pagingDivButtonsId)).append(compiledEnabledSave);
+        if (!miqDomElementExists('save_enabled')) {
+          $('#' + $attrs.pagingDivButtonsId).append(compiledEnabledSave);
         }
       });
     }
@@ -75,14 +75,14 @@ ManageIQ.angular.app.controller('pagingDivButtonGroupController', ['$scope', 'mi
 
   var resetButton = function() {
     var resetHtml = '<button name="button" id="reset_enabled_disabled" type="submit" ' +
-      'class="btn btn-default btn-disabled" alt={{resetAltText}} title={{resetAltText}} ' +
-      'ng-class="{\'btn-disabled\': angularForm.$pristine}" ng-click="resetClicked()" ' +
+      'class="btn btn-default disabled" alt={{resetAltText}} title={{resetAltText}} ' +
+      'ng-class="{ disabled: angularForm.$pristine }" ng-click="resetClicked()" ' +
       'ng-disabled="angularForm.$pristine" ng-hide="newRecord" disabled="disabled">{{resetBtnText}}</button>';
     var compiledReset = $compile(resetHtml)($scope);
 
     $timeout(function () {
-      if (angular.element(document.getElementById('reset_enabled_disabled')).length == 0) {
-        angular.element(document.getElementById($attrs.pagingDivButtonsId)).append(compiledReset);
+      if (!miqDomElementExists('reset_enabled_disabled')) {
+        $('#' + $attrs.pagingDivButtonsId).append(compiledReset);
       }
     });
   };
@@ -93,8 +93,8 @@ ManageIQ.angular.app.controller('pagingDivButtonGroupController', ['$scope', 'mi
     var compiledCancel = $compile(cancelHtml)($scope);
 
     $timeout(function () {
-      if (angular.element(document.getElementById('cancel_enabled')).length == 0) {
-        angular.element(document.getElementById($attrs.pagingDivButtonsId)).append(compiledCancel);
+      if (!miqDomElementExists('cancel_enabled')) {
+        $('#' + $attrs.pagingDivButtonsId).append(compiledCancel);
       }
     });
   };

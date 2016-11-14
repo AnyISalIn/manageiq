@@ -1,5 +1,5 @@
 class CustomButton < ApplicationRecord
-  has_one       :resource_action, :as => :resource, :dependent => :destroy, :autosave => true
+  has_one :resource_action, :as => :resource, :dependent => :destroy, :autosave => true
 
   serialize :options
   serialize :applies_to_exp
@@ -13,23 +13,21 @@ class CustomButton < ApplicationRecord
   acts_as_miq_set_member
 
   BUTTON_CLASSES = [
-    Vm,
-    Host,
-    ExtManagementSystem,
-    Storage,
+    CloudTenant,
     EmsCluster,
+    ExtManagementSystem,
+    Host,
     MiqTemplate,
     Service,
-    CloudTenant
-  ]
+    Storage,
+    Vm,
+  ].freeze
 
   def self.buttons_for(other, applies_to_id = nil)
     if other.kind_of?(Class)
       applies_to_class = other.base_model.name
-      applies_to_id    = applies_to_id
     elsif other.kind_of?(String)
       applies_to_class = other
-      applies_to_id    = applies_to_id
     else
       raise _("Instance has no id") if other.id.nil?
       applies_to_class = other.class.base_model.name
@@ -40,11 +38,9 @@ class CustomButton < ApplicationRecord
   end
 
   def expanded_serializable_hash
-    button_hash = serializable_hash
-    if resource_action
-      button_hash[:resource_action] = resource_action.serializable_hash
+    serializable_hash.tap do |button_hash|
+      button_hash[:resource_action] = resource_action.serializable_hash if resource_action
     end
-    button_hash
   end
 
   def applies_to
@@ -120,22 +116,17 @@ class CustomButton < ApplicationRecord
   end
 
   def get_resource_action
-    return resource_action unless resource_action.nil?
-    build_resource_action
+    resource_action || build_resource_action
   end
   # End - Helper methods to support moving automate columns to resource_actions table
 
   def self.parse_uri(uri)
-    scheme, userinfo, host, port, registry, path, opaque, query, fragment = MiqAeEngine::MiqAeUri.split(uri)
+    _scheme, _userinfo, _host, _port, _registry, path, _opaque, query, fragment = MiqAeEngine::MiqAeUri.split(uri)
     return path, MiqAeEngine::MiqAeUri.query2hash(query), fragment
   end
 
   def self.button_classes
     BUTTON_CLASSES.collect(&:name)
-  end
-
-  def self.name_to_button_class(name)
-    BUTTON_CLASSES.find { |klass| klass.name == name }
   end
 
   def self.available_for_user(user, group)
@@ -148,8 +139,13 @@ class CustomButton < ApplicationRecord
   end
 
   def self.get_user(user)
-    user = User.in_region.find_by_userid(user) if user.kind_of?(String)
+    user = User.find_by_userid(user) if user.kind_of?(String)
     raise _("Unable to find user '%{user}'") % {:user => user} if user.nil?
     user
+  end
+
+  def copy(options = {})
+    options[:guid] = MiqUUID.new_guid
+    options.each_with_object(dup) { |(k, v), button| button.send("#{k}=", v) }.tap(&:save!)
   end
 end

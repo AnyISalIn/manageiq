@@ -1,11 +1,16 @@
 class ContainerNode < ApplicationRecord
+  include SupportsFeatureMixin
+  include ComplianceMixin
+  include MiqPolicyMixin
   include NewWithTypeStiMixin
+  include TenantIdentityMixin
 
   # :name, :uid, :creation_timestamp, :resource_version
   belongs_to :ext_management_system, :foreign_key => "ems_id"
   has_many   :container_groups
   has_many   :container_conditions, :class_name => ContainerCondition, :as => :container_entity, :dependent => :destroy
   has_many   :containers, :through => :container_groups
+  has_many   :container_images, -> { distinct }, :through => :container_groups
   has_many   :container_services, -> { distinct }, :through => :container_groups
   has_many   :container_routes, -> { distinct }, :through => :container_services
   has_many   :container_replicators, -> { distinct }, :through => :container_groups
@@ -63,5 +68,13 @@ class ContainerNode < ApplicationRecord
 
   def perf_rollup_parents(interval_name = nil)
     [ext_management_system] unless interval_name == 'realtime'
+  end
+
+  def ipaddress
+    labels.find_by_name("kubernetes.io/hostname").try(:value)
+  end
+
+  def cockpit_url
+    URI::HTTP.build(:host => ipaddress, :port => 9090)
   end
 end

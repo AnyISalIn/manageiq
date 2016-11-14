@@ -62,12 +62,13 @@ describe DialogFieldDropDownList do
     context "#initialize_with_values" do
       before(:each) do
         @df.values = [["3", "X"], ["2", "Y"], ["1", "Z"]]
+        @df.load_values_on_init = true
       end
 
-      it "no default value" do
+      it "uses the first as the default value" do
         @df.default_value = nil
         @df.initialize_with_values({})
-        expect(@df.value).to be_nil
+        expect(@df.value).to eq("3")
       end
 
       it "with default value" do
@@ -76,10 +77,10 @@ describe DialogFieldDropDownList do
         expect(@df.value).to eq("1")
       end
 
-      it "with non-matching default value" do
+      it "uses the first when there is a non-matching default value" do
         @df.default_value = "4"
         @df.initialize_with_values({})
-        expect(@df.value).to be_nil
+        expect(@df.value).to eq("3")
       end
     end
 
@@ -110,7 +111,8 @@ describe DialogFieldDropDownList do
         expect(dialog_field.refresh_json_value("789")).to eq(
           :refreshed_values => [["789", 101], ["123", 456]],
           :checked_value    => "789",
-          :read_only        => true
+          :read_only        => true,
+          :visible          => true
         )
       end
     end
@@ -132,7 +134,8 @@ describe DialogFieldDropDownList do
         expect(dialog_field.refresh_json_value("789")).to eq(
           :refreshed_values => [["789", 101], ["123", 456]],
           :checked_value    => "789",
-          :read_only        => true
+          :read_only        => true,
+          :visible          => true
         )
       end
     end
@@ -235,11 +238,27 @@ describe DialogFieldDropDownList do
 
       context "when the raw values are not already set" do
         before do
-          dialog_field.values = %w(original values)
+          dialog_field.values = [%w(original values)]
         end
 
         it "returns the values" do
-          expect(dialog_field.trigger_automate_value_updates).to eq(%w(original values))
+          expect(dialog_field.trigger_automate_value_updates).to eq([%w(original values)])
+        end
+
+        it "sets up the default value" do
+          dialog_field.trigger_automate_value_updates
+          expect(dialog_field.default_value).to eq("original")
+        end
+      end
+
+      context "when the raw values are nil" do
+        before do
+          dialog_field.values = nil
+        end
+
+        it "sets the default value to nil without blowing up" do
+          dialog_field.trigger_automate_value_updates
+          expect(dialog_field.default_value).to eq(nil)
         end
       end
     end

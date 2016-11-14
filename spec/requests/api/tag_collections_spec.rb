@@ -1,7 +1,7 @@
 #
 # REST API Request Tests - Tags subcollection specs for Non-Vm collections
 #
-describe ApiController do
+describe "Tag Collections API" do
   let(:zone)         { FactoryGirl.create(:zone, :name => "api_zone") }
   let(:miq_server)   { FactoryGirl.create(:miq_server, :guid => miq_server_guid, :zone => zone) }
   let(:ems)          { FactoryGirl.create(:ems_vmware, :zone => zone) }
@@ -10,7 +10,6 @@ describe ApiController do
   let(:tag1)         { {:category => "department", :name => "finance", :path => "/managed/department/finance"} }
   let(:tag2)         { {:category => "cc",         :name => "001",     :path => "/managed/cc/001"} }
   let(:tag_paths)    { [tag1[:path], tag2[:path]] }
-  let(:tag_count)    { Tag.count }
 
   def classify_resource(resource)
     Classification.classify(resource, tag1[:category], tag1[:name])
@@ -43,8 +42,8 @@ describe ApiController do
 
       run_get provider_tags_url, :expand => "resources"
 
-      expect_query_result(:tags, 2, :tag_count)
-      expect_result_resources_to_include_data("resources", "name" => :tag_paths)
+      expect_query_result(:tags, 2, Tag.count)
+      expect_result_resources_to_include_data("resources", "name" => tag_paths)
     end
 
     it "does not assign a tag to a Provider without appropriate role" do
@@ -92,8 +91,8 @@ describe ApiController do
 
       run_get host_tags_url, :expand => "resources"
 
-      expect_query_result(:tags, 2, :tag_count)
-      expect_result_resources_to_include_data("resources", "name" => :tag_paths)
+      expect_query_result(:tags, 2, Tag.count)
+      expect_result_resources_to_include_data("resources", "name" => tag_paths)
     end
 
     it "does not assign a tag to a Host without appropriate role" do
@@ -142,8 +141,8 @@ describe ApiController do
 
       run_get ds_tags_url, :expand => "resources"
 
-      expect_query_result(:tags, 2, :tag_count)
-      expect_result_resources_to_include_data("resources", "name" => :tag_paths)
+      expect_query_result(:tags, 2, Tag.count)
+      expect_result_resources_to_include_data("resources", "name" => tag_paths)
     end
 
     it "does not assign a tag to a Data Store without appropriate role" do
@@ -192,8 +191,8 @@ describe ApiController do
 
       run_get rp_tags_url, :expand => "resources"
 
-      expect_query_result(:tags, 2, :tag_count)
-      expect_result_resources_to_include_data("resources", "name" => :tag_paths)
+      expect_query_result(:tags, 2, Tag.count)
+      expect_result_resources_to_include_data("resources", "name" => tag_paths)
     end
 
     it "does not assign a tag to a Resource Pool without appropriate role" do
@@ -249,8 +248,8 @@ describe ApiController do
 
       run_get cluster_tags_url, :expand => "resources"
 
-      expect_query_result(:tags, 2, :tag_count)
-      expect_result_resources_to_include_data("resources", "name" => :tag_paths)
+      expect_query_result(:tags, 2, Tag.count)
+      expect_result_resources_to_include_data("resources", "name" => tag_paths)
     end
 
     it "does not assign a tag to a Cluster without appropriate role" do
@@ -299,8 +298,8 @@ describe ApiController do
 
       run_get service_tags_url, :expand => "resources"
 
-      expect_query_result(:tags, 2, :tag_count)
-      expect_result_resources_to_include_data("resources", "name" => :tag_paths)
+      expect_query_result(:tags, 2, Tag.count)
+      expect_result_resources_to_include_data("resources", "name" => tag_paths)
     end
 
     it "does not assign a tag to a Service without appropriate role" do
@@ -349,8 +348,8 @@ describe ApiController do
 
       run_get service_template_tags_url, :expand => "resources"
 
-      expect_query_result(:tags, 2, :tag_count)
-      expect_result_resources_to_include_data("resources", "name" => :tag_paths)
+      expect_query_result(:tags, 2, Tag.count)
+      expect_result_resources_to_include_data("resources", "name" => tag_paths)
     end
 
     it "does not assign a tag to a Service Template without appropriate role" do
@@ -399,8 +398,8 @@ describe ApiController do
 
       run_get tenant_tags_url, :expand => "resources"
 
-      expect_query_result(:tags, 2, :tag_count)
-      expect_result_resources_to_include_data("resources", "name" => :tag_paths)
+      expect_query_result(:tags, 2, Tag.count)
+      expect_result_resources_to_include_data("resources", "name" => tag_paths)
     end
 
     it "does not assign a tag to a Tenant without appropriate role" do
@@ -435,6 +434,67 @@ describe ApiController do
 
       expect_tagging_result(tag1_results(tenant_url))
       expect_resource_has_tags(tenant, tag2[:path])
+    end
+  end
+
+  context "Blueprint Tag subcollection" do
+    it "can list all the tags of a blueprint" do
+      api_basic_authorize
+      blueprint = FactoryGirl.create(:blueprint)
+
+      run_get("#{blueprints_url(blueprint.id)}/tags")
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "can assign a tag to a blueprint with an appropriate role" do
+      api_basic_authorize subcollection_action_identifier(:blueprints, :tags, :assign)
+      blueprint = FactoryGirl.create(:blueprint)
+
+      run_post("#{blueprints_url(blueprint.id)}/tags",
+               :action   => "assign",
+               :catagory => tag1[:category],
+               :name     => tag1[:name])
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "can unassign a tag from a bluepring with an appropriate role" do
+      api_basic_authorize subcollection_action_identifier(:blueprints, :tags, :unassign)
+      blueprint = FactoryGirl.create(:blueprint)
+      classify_resource(blueprint)
+
+      run_post("#{blueprints_url(blueprint.id)}/tags",
+               :action   => "unassign",
+               :catagory => tag1[:category],
+               :name     => tag1[:name])
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "will not assign tags to blueprints without an appropriate role" do
+      api_basic_authorize
+      blueprint = FactoryGirl.create(:blueprint)
+
+      run_post("#{blueprints_url(blueprint.id)}/tags",
+               :action   => "assign",
+               :catagory => tag1[:category],
+               :name     => tag1[:name])
+
+      expect(response).to have_http_status(:forbidden)
+    end
+
+    it "will not unassign tags from blueprints without an approiate role" do
+      api_basic_authorize
+      blueprint = FactoryGirl.create(:blueprint)
+      classify_resource(blueprint)
+
+      run_post("#{blueprints_url(blueprint.id)}/tags",
+               :action   => "unassign",
+               :catagory => tag1[:category],
+               :name     => tag1[:name])
+
+      expect(response).to have_http_status(:forbidden)
     end
   end
 end

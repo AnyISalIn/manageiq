@@ -8,7 +8,7 @@ module MiqAeDatastore
   DEFAULT_OBJECT_NAMESPACE = "$"
   TEMP_DOMAIN_PREFIX = "TEMP_DOMAIN"
   ALL_DOMAINS = "*"
-  PRESERVED_ATTRS = [:priority, :enabled, :system]
+  PRESERVED_ATTRS = [:priority, :enabled, :source].freeze
 
   # deprecated module
   module Import
@@ -137,7 +137,8 @@ module MiqAeDatastore
     import_yaml_dir(datastore_dir, domain_name, tenant)
     if domain_name.downcase == MANAGEIQ_DOMAIN.downcase
       ns = MiqAeDomain.find_by_fqname(MANAGEIQ_DOMAIN)
-      ns.update_attributes!(:system => true, :enabled => true, :priority => MANAGEIQ_PRIORITY) if ns
+      ns.update_attributes!(:source   => MiqAeDomain::SYSTEM_SOURCE, :enabled => true,
+                            :priority => MANAGEIQ_PRIORITY) if ns
     end
   end
 
@@ -164,13 +165,19 @@ module MiqAeDatastore
   def self.reset_to_defaults
     raise "Datastore directory [#{DATASTORE_DIRECTORY}] not found" unless Dir.exist?(DATASTORE_DIRECTORY)
     saved_attrs = preserved_attrs_for_domains
-    Dir.glob(DATASTORE_DIRECTORY.join("*", MiqAeDomain::DOMAIN_YAML_FILENAME)).each do |domain_file|
-      domain_name = File.basename(File.dirname(domain_file))
+    default_domain_names.each do |domain_name|
       reset_domain(DATASTORE_DIRECTORY, domain_name, Tenant.root_tenant)
     end
 
     restore_attrs_for_domains(saved_attrs)
     reset_default_namespace
+    MiqAeDomain.reset_priorities
+  end
+
+  def self.default_domain_names
+    Dir.glob(DATASTORE_DIRECTORY.join("*", MiqAeDomain::DOMAIN_YAML_FILENAME)).collect do |domain_file|
+      File.basename(File.dirname(domain_file))
+    end
   end
 
   def self.seed
@@ -185,6 +192,8 @@ module MiqAeDatastore
         _log.info "Seeding... Complete"
       end
     end
+    _log.info "Reseting domain priorities at startup..."
+    MiqAeDomain.reset_priorities
   end
 
   def self.get_homonymic_across_domains(user, arclass, fqname, enabled = nil)

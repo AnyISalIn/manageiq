@@ -1,14 +1,16 @@
-class ManageIQ::Providers::Openstack::CloudManager < EmsCloud
+class ManageIQ::Providers::Openstack::CloudManager < ManageIQ::Providers::CloudManager
   require_nested :AuthKeyPair
   require_nested :AvailabilityZone
   require_nested :AvailabilityZoneNull
   require_nested :CloudResourceQuota
   require_nested :CloudTenant
   require_nested :CloudVolume
+  require_nested :CloudVolumeBackup
   require_nested :CloudVolumeSnapshot
   require_nested :EventCatcher
   require_nested :EventParser
   require_nested :Flavor
+  require_nested :HostAggregate
   require_nested :MetricsCapture
   require_nested :MetricsCollectorWorker
   require_nested :OrchestrationServiceOptionConverter
@@ -21,10 +23,62 @@ class ManageIQ::Providers::Openstack::CloudManager < EmsCloud
   require_nested :Template
   require_nested :Vm
 
+  has_many :storage_managers,
+           :foreign_key => :parent_ems_id,
+           :class_name  => "ManageIQ::Providers::StorageManager",
+           :autosave    => true,
+           :dependent   => :destroy
+
+  include CinderManagerMixin
+  include SwiftManagerMixin
   include ManageIQ::Providers::Openstack::ManagerMixin
-  include HasManyCloudNetworksMixin
 
   supports :provisioning
+  supports :cloud_tenant_mapping do
+    if defined?(self.class.parent::CloudManager::CloudTenant) && !tenant_mapping_enabled?
+      unsupported_reason_add(:cloud_tenant_mapping, _("Tenant mapping is disabled on the Provider"))
+    elsif !defined?(self.class.parent::CloudManager::CloudTenant)
+      unsupported_reason_add(:cloud_tenant_mapping, _("Tenant mapping is supported only when CloudTenant exists "\
+                                                      "on the CloudManager"))
+    end
+  end
+  supports :cinder_service
+  supports :swift_service
+  supports :create_host_aggregate
+
+  before_validation :ensure_managers,
+                    :ensure_cinder_managers,
+                    :ensure_swift_managers
+
+  def ensure_network_manager
+    build_network_manager(:type => 'ManageIQ::Providers::Openstack::NetworkManager') unless network_manager
+  end
+
+  def ensure_cinder_manager
+    return false if cinder_manager
+    build_cinder_manager(:type => 'ManageIQ::Providers::StorageManager::CinderManager')
+    true
+  end
+
+  def ensure_swift_manager
+    return false if swift_manager
+    build_swift_manager(:type => 'ManageIQ::Providers::StorageManager::SwiftManager')
+    true
+  end
+
+  def supports_cloud_tenants?
+    true
+  end
+
+  def cinder_service
+    vs = openstack_handle.detect_volume_service
+    vs.name == :cinder ? vs : nil
+  end
+
+  def swift_service
+    vs = openstack_handle.detect_storage_service
+    vs.name == :swift ? vs : nil
+  end
 
   def self.ems_type
     @ems_type ||= "openstack".freeze
@@ -36,10 +90,27 @@ class ManageIQ::Providers::Openstack::CloudManager < EmsCloud
 
   def self.default_blacklisted_event_names
     %w(
+      identity.authenticate
       scheduler.run_instance.start
       scheduler.run_instance.scheduled
       scheduler.run_instance.end
     )
+  end
+
+  def hostname_uniqueness_valid?
+    return unless hostname_required?
+    return unless hostname.present? # Presence is checked elsewhere
+
+    existing_providers = Endpoint.where(:hostname => hostname.downcase)
+                                 .where.not(:resource_id => id).includes(:resource)
+                                 .select do |endpoint|
+                                   unless endpoint.resource.nil?
+                                     endpoint.resource.uid_ems == keystone_v3_domain_id &&
+                                       endpoint.resource.provider_region == provider_region
+                                   end
+                                 end
+
+    errors.add(:hostname, "has already been taken") if existing_providers.any?
   end
 
   def supports_port?
@@ -60,6 +131,14 @@ class ManageIQ::Providers::Openstack::CloudManager < EmsCloud
 
   def supports_provider_id?
     true
+  end
+
+  def supports_cinder_service?
+    openstack_handle.detect_volume_service.name == :cinder
+  end
+
+  def supports_swift_service?
+    openstack_handle.detect_storage_service.name == :swift
   end
 
   def supports_authentication?(authtype)
@@ -122,6 +201,57 @@ class ManageIQ::Providers::Openstack::CloudManager < EmsCloud
     vm.reset
   rescue => err
     _log.error "vm=[#{vm.name}], error: #{err}"
+  end
+
+  def vm_create_snapshot(vm, options = {})
+    log_prefix = "vm=[#{vm.name}]"
+
+    miq_openstack_instance = MiqOpenStackInstance.new(vm.ems_ref, openstack_handle)
+    snapshot = miq_openstack_instance.create_snapshot(options)
+    snapshot_id = snapshot["id"]
+
+    # Add new snapshot to the snapshots table.
+    vm.snapshots.create!(
+      :name        => options[:name],
+      :description => options[:desc],
+      :uid         => snapshot_id,
+      :uid_ems     => snapshot_id,
+      :ems_ref     => snapshot_id,
+      :create_time => snapshot["created"]
+    )
+
+    return snapshot_id
+  rescue => err
+    _log.error "#{log_prefix}, error: #{err}"
+    _log.debug { err.backtrace.join("\n") }
+    raise
+  end
+
+  def vm_remove_snapshot(vm, options = {})
+    snapshot_uid = options[:snMor]
+
+    log_prefix = "snapshot=[#{snapshot_uid}]"
+
+    miq_openstack_instance = MiqOpenStackInstance.new(vm.ems_ref, openstack_handle)
+    miq_openstack_instance.delete_evm_snapshot(snapshot_uid)
+
+    # Remove from the snapshots table.
+    ar_snapshot = vm.snapshots.find_by(:ems_ref  => snapshot_uid)
+    _log.debug "#{log_prefix}: ar_snapshot = #{ar_snapshot.class.name}"
+    ar_snapshot.destroy if ar_snapshot
+
+    # Remove from the vms table.
+    ar_template = miq_templates.find_by(:ems_ref  => snapshot_uid)
+    _log.debug "#{log_prefix}: ar_template = #{ar_template.class.name}"
+    ar_template.destroy if ar_template
+  rescue => err
+    _log.error "#{log_prefix}, error: #{err}"
+    _log.debug { err.backtrace.join("\n") }
+    raise
+  end
+
+  def vm_remove_all_snapshots(vm, options = {})
+    vm.snapshots.each { |snapshot| vm_remove_snapshot(vm, :snMor => snapshot.uid) }
   end
 
   # TODO: Should this be in a VM-specific subclass or mixin?
@@ -191,6 +321,14 @@ class ManageIQ::Providers::Openstack::CloudManager < EmsCloud
   def vm_detach_volume(vm, volume_id)
     volume = find_by_id_filtered(CloudVolume, volume_id)
     volume.raw_detach_volume(vm.ems_ref)
+  end
+
+  def create_host_aggregate(options)
+    ManageIQ::Providers::Openstack::CloudManager::HostAggregate.create_aggregate(self, options)
+  end
+
+  def create_host_aggregate_queue(userid, options)
+    ManageIQ::Providers::Openstack::CloudManager::HostAggregate.create_aggregate_queue(userid, self, options)
   end
 
   def self.event_monitor_class

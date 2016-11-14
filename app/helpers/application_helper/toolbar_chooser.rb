@@ -1,4 +1,6 @@
 class ApplicationHelper::ToolbarChooser
+  include RestfulControllerMixin
+
   # Return a blank tb if a placeholder is needed for AJAX explorer screens, return nil if no center toolbar to be shown
   def center_toolbar_filename
     if @explorer
@@ -39,12 +41,12 @@ class ApplicationHelper::ToolbarChooser
       'compare_view_tb'
     elsif @lastaction == "drift"
       'drift_view_tb'
-    elsif %w(ems_container).include?(@layout)
+    elsif %w(ems_container ems_infra).include?(@layout) && %w(main dashboard topology).include?(@display)
       'dashboard_summary_toggle_view_tb'
     elsif !%w(all_tasks all_ui_tasks timeline diagnostics my_tasks my_ui_tasks miq_server usage).include?(@layout) &&
           (!@layout.starts_with?("miq_request")) && !@treesize_buttons &&
           @display == "main" && @showtype == "main" && !@in_a_form
-      @view_context.send(:restful?) ? "summary_view_restful_tb" : "summary_view_tb"
+      controller_restful? ? "summary_view_restful_tb" : "summary_view_tb"
     else
       'blank_view_tb'
     end
@@ -55,8 +57,9 @@ class ApplicationHelper::ToolbarChooser
   delegate :session, :from_cid, :x_node, :x_active_tree, :super_admin_user?, :render_gtl_view_tb?, :x_gtl_view_tb_render?,
            :to => :@view_context
 
-  def initialize(view_context, instance_data)
+  def initialize(view_context, view_binding, instance_data)
     @view_context = view_context
+    @view_binding = view_binding
 
     instance_data.each do |name, value|
       instance_variable_set(:"@#{name}", value)
@@ -69,7 +72,9 @@ class ApplicationHelper::ToolbarChooser
   def center_toolbar_filename_explorer
     if @record && @button_group &&
        !["catalogs", "chargeback", "miq_capacity_utilization", "miq_capacity_planning", "services"].include?(@layout)
-      if @record.kind_of?(ManageIQ::Providers::Openstack::CloudManager::Vm)
+      if @button_group.eql? "snapshot"
+        return "x_vm_center_tb"
+      elsif @record.kind_of?(ManageIQ::Providers::Openstack::CloudManager::Vm)
         return "openstack_vm_cloud_center_tb"
       elsif @record.kind_of?(ManageIQ::Providers::CloudManager::Vm)
         return "x_vm_cloud_center_tb"
@@ -94,10 +99,10 @@ class ApplicationHelper::ToolbarChooser
                   when :vms_instances_filter_tree then               "vms_center_tb"
                   end
         end
-      elsif @layout == "miq_policy_rsop"
-        return session[:rsop_tree] ? "miq_policy_rsop_center_tb" : "blank_view_tb"
       elsif @layout == "provider_foreman" && [:configuration_manager_providers_tree, :cs_filter_tree, :configuration_scripts_tree].include?(x_active_tree)
         return center_toolbar_filename_configuration_manager_providers
+      elsif [:infra_networking_tree].include?(x_active_tree)
+        return center_toolbar_filename_infra_networking
       else
         if x_active_tree == :ae_tree
           return center_toolbar_filename_automate
@@ -188,11 +193,11 @@ class ApplicationHelper::ToolbarChooser
       elsif @sb[:buttons_node]
         nodes = x_node.split('_')
         if nodes.length == 3 && nodes[2].split('-').first == "xx"
-          return "custom_button_set_center_tb"
+          return "catalogitem_button_set_center_tb"
         elsif nodes.length == 4 && nodes[3].split('-').first == "cbg"
-          return "custom_buttons_center_tb"
+          return "catalogitem_buttons_center_tb"
         else
-          return "custom_button_center_tb"
+          return "catalogitem_button_center_tb"
         end
       else
         return "servicetemplates_center_tb"
@@ -210,7 +215,7 @@ class ApplicationHelper::ToolbarChooser
         return "services_center_tb"
       end
     elsif x_active_tree == :ot_tree
-      if %w(root xx-otcfn xx-othot xx-otazu xx-otvnf).include?(x_node)
+      if %w(root xx-otcfn xx-othot xx-otazu xx-otvnf xx-otvap).include?(x_node)
         return "orchestration_templates_center_tb"
       else
         return "orchestration_template_center_tb"
@@ -432,32 +437,32 @@ class ApplicationHelper::ToolbarChooser
 
     # Original non vmx view code follows
     # toolbar buttons on sub-screens
-    if ((@lastaction == "show" && @view) ||
-        (@lastaction == "show" && @display != "main")) &&
-       !@layout.starts_with?("miq_request")
+    to_display = %w(availability_zones cloud_networks cloud_object_store_containers cloud_subnets
+                    cloud_tenants cloud_volumes ems_clusters flavors floating_ips host_aggregates hosts
+                    load_balancers network_ports network_routers orchestration_stacks resource_pools
+                    security_groups storages middleware_deployments middleware_datasources
+                    middleware_messagings middleware_servers)
+    to_display_center = %w(stack_orchestration_template topology)
+    if @lastaction == 'show' && (@view || @display != 'main') && !@layout.starts_with?("miq_request")
       if @display == "vms" || @display == "all_vms"
         return "vm_infras_center_tb"
-      elsif @display == "ems_clusters"
-        return "ems_clusters_center_tb"
-      elsif @display == "hosts"
-        return "hosts_center_tb"
       elsif @display == "images"
         return "template_clouds_center_tb"
       elsif @display == "instances"
         return "vm_clouds_center_tb"
       elsif @display == "miq_templates"
         return "template_infras_center_tb"
-      elsif @display == "resource_pools"
-        return "resource_pools_center_tb"
-      elsif @display == "storages"
-        return "storages_center_tb"
-      elsif @display == "stack_orchestration_template"
-        return "stack_orchestration_template_center"
       elsif (@layout == "vm" || @layout == "host") && @display == "performance"
         return "#{@explorer ? "x_" : ""}vm_performance_tb"
       elsif @display == "dashboard"
         return "#{@layout}_center_tb"
+      elsif to_display.include?(@display)
+        return "#{@display}_center_tb"
+      elsif to_display_center.include?(@display)
+        return "#{@display}_center"
       end
+    elsif @lastaction == "arbitration_profiles"
+      return @showtype == "item" ? "arbitration_profile_center_tb" : "arbitration_profiles_center_tb"
     elsif @lastaction == "compare_miq" || @lastaction == "compare_compress"
       return "compare_center_tb"
     elsif @lastaction == "drift_history"
@@ -467,14 +472,14 @@ class ApplicationHelper::ToolbarChooser
     else
       # show_list and show screens
       unless @in_a_form
-        if %w(auth_key_pair_cloud availability_zone cloud_object_store_object cloud_object_store_container cloud_tenant
-              cloud_volume cloud_volume_snapshot container_group container_node container_service ems_cloud ems_cluster
-              ems_container ems_middleware container_project container_route container_replicator container_image
-              ems_network security_group floating_ip cloud_subnet network_router network_topology network_port cloud_network
-              container_image_registry ems_infra flavor host container_build
-              ontap_file_share ontap_logical_disk container_topology middleware_topology middleware_server
-              middleware_deployment middleware_datasource
-              ontap_storage_system orchestration_stack resource_pool storage_manager
+        if %w(auth_key_pair_cloud availability_zone host_aggregate cloud_object_store_object cloud_object_store_container cloud_tenant
+              cloud_volume cloud_volume_backup cloud_volume_snapshot configuration_job container_group container_node container_service
+              ems_cloud ems_cluster ems_container ems_middleware container_project container_route container_replicator container_image
+              ems_network security_group floating_ip cloud_subnet network_router network_topology network_port cloud_network load_balancer
+              container_image_registry ems_infra flavor host container_build infra_networking infra_topology ems_storage
+              ontap_file_share ontap_logical_disk container_topology middleware_topology cloud_topology middleware_server
+              middleware_deployment middleware_datasource middleware_domain middleware_server_group middleware_messaging
+              ontap_storage_system orchestration_stack resource_pool storage_manager container_template
               timeline usage).include?(@layout)
           if ["show_list"].include?(@lastaction)
             return "#{@layout.pluralize}_center_tb"
@@ -512,6 +517,11 @@ class ApplicationHelper::ToolbarChooser
     end
   end
 
+  def center_toolbar_filename_infra_networking
+    nodes = x_node.split('-')
+    infra_networking_tree_center_tb(nodes)
+  end
+
   def configuration_manager_providers_tree_center_tb(nodes)
     case nodes.first
     when "root"     then  "provider_foreman_center_tb"
@@ -539,6 +549,14 @@ class ApplicationHelper::ToolbarChooser
       "configuration_scripts_center_tb"
     else
       "configuration_script_center_tb"
+    end
+  end
+
+  def infra_networking_tree_center_tb(nodes)
+    if %w(root e h c).include?(nodes.first)
+      "infra_networkings_center_tb"
+    else
+      "infra_networking_center_tb"
     end
   end
 

@@ -1,5 +1,4 @@
 module ApplicationHelper
-  include_concern 'Chargeback'
   include_concern 'Dialogs'
   include_concern 'Discover'
   include_concern 'PageLayouts'
@@ -25,8 +24,16 @@ module ApplicationHelper
               :class => 'documentation-link', :target => '_blank')
     end
   end
+
+  def valid_html_id(id)
+    id = id.to_s.gsub("::", "__")
+    raise "HTML ID is not valid" if /[^\w_]/.match(id)
+    id
+  end
+
   # Create a collapsed panel based on a condition
   def miq_accordion_panel(title, condition, id, &block)
+    id = valid_html_id(id)
     content_tag(:div, :class => "panel panel-default") do
       out = content_tag(:div, :class => "panel-heading") do
         content_tag(:h4, :class => "panel-title") do
@@ -47,13 +54,18 @@ module ApplicationHelper
     property_name ||= table_name
     ent = record.send(property_name)
     name = ui_lookup(:table => table_name.to_s)
-    if role_allows(:feature => "#{table_name}_show") && !ent.nil?
+    if role_allows?(:feature => "#{table_name}_show") && !ent.nil?
       out = content_tag(:li) do
+        link_params = if restful_routed?(ent)
+                        polymorphic_path(ent)
+                      else
+                        {:controller => table_name, :action => 'show', :id => ent.id.to_s}
+                      end
         link_to("#{name}: #{ent.name}",
-                {:controller => table_name, :action => 'show', :id => ent.id.to_s},
-                :title       => _("Show this %{entity_name}'s parent %{linked_entity_name}") %
-                                {:entity_name        => record.class.name.demodulize.titleize,
-                                 :linked_entity_name => name})
+                link_params,
+                :title => _("Show this %{entity_name}'s parent %{linked_entity_name}") %
+                          {:entity_name        => record.class.name.demodulize.titleize,
+                           :linked_entity_name => name})
       end
     end
     out
@@ -61,7 +73,7 @@ module ApplicationHelper
 
   def multiple_relationship_link(record, table_name)
     out = ''
-    if role_allows(:feature => "#{table_name}_show_list") &&
+    if role_allows?(:feature => "#{table_name}_show_list") &&
        (table_name != 'container_route' || record.respond_to?(:container_routes))
       plural = ui_lookup(:tables => table_name.to_s)
       count = record.number_of(table_name.to_s.pluralize)
@@ -119,26 +131,18 @@ module ApplicationHelper
   end
 
   # Check role based authorization for a UI task
-  def role_allows(options = {})
-    ApplicationHelper.role_allows_intern(options) rescue false
-  end
-  module_function :role_allows
-  public :role_allows
-
-  def role_allows_intern(options = {})
-    userid  = User.current_userid
-    role_id = User.current_user.miq_user_role.try(:id)
-    if options[:feature]
-      auth = options[:any] ? User.current_user.role_allows_any?(:identifiers => [options[:feature]]) :
-                             User.current_user.role_allows?(:identifier => options[:feature])
-      $log.debug("Role Authorization #{auth ? "successful" : "failed"} for: userid [#{userid}], role id [#{role_id}], feature identifier [#{options[:feature]}]")
-    else
-      auth = false
-      $log.debug("Role Authorization #{auth ? "successful" : "failed"} for: userid [#{userid}], role id [#{role_id}], no main tab or feature passed to role_allows")
+  def role_allows?(**options)
+    if options[:feature].nil?
+      $log.debug("Auth failed - no feature was specified (required)")
+      return false
     end
-    auth
+
+    Rbac.role_allows?(options.merge(:user => User.current_user)) rescue false
   end
-  module_function :role_allows_intern
+  module_function :role_allows?
+  public :role_allows?
+  alias_method :role_allows, :role_allows?
+  Vmdb::Deprecation.deprecate_methods(self, :role_allows => :role_allows?)
 
   # NB: This differs from controller_for_model; until they're unified,
   # make sure you have the right one.
@@ -222,6 +226,12 @@ module ApplicationHelper
       if controller == "ems_container" && action == "show"
         return ems_containers_path
       end
+      if controller == "ems_middleware" && action == "show"
+        return ems_middlewares_path
+      end
+      if controller == "ems_network" && action == "show"
+        return ems_networks_path
+      end
       if parent && parent.class.base_model.to_s == "MiqCimInstance" && ["CimBaseStorageExtent", "SniaLocalFileSystem"].include?(view.db)
         return url_for(:controller => controller, :action => action, :id => parent.id) + "?show="
       else
@@ -237,6 +247,7 @@ module ApplicationHelper
                 NetworkPort
                 CloudNetwork
                 CloudSubnet
+                LoadBalancer
                 CloudVolume
                 ).include?(view.db)
             return url_for(:controller => controller, :action => "show") + "/"
@@ -254,7 +265,7 @@ module ApplicationHelper
         else
           controller = "vm_cloud" if controller == "template_cloud"
           controller = "vm_infra" if controller == "template_infra"
-          return url_for(:controller => controller, :action => action) + "/"
+          return url_for(:controller => controller, :action => action, :id => nil) + "/"
         end
       end
 
@@ -272,8 +283,8 @@ module ApplicationHelper
     when "OrchestrationStackOutput"    then "outputs"
     when "OrchestrationStackParameter" then "parameters"
     when "OrchestrationStackResource"  then "resources"
-    when 'AdvancedSetting', 'Filesystem', 'FirewallRule', 'GuestApplication', 'Patch', 'RegistryItem',
-         'ScanHistory', 'OpenscapRuleResult'
+    when 'AdvancedSetting', 'ArbitrationProfile', 'Filesystem', 'FirewallRule', 'GuestApplication', 'Patch',
+         'RegistryItem', 'ScanHistory', 'OpenscapRuleResult'
                                        then view.db.tableize
     when "SystemService"
       case parent.class.base_class.to_s.downcase
@@ -309,6 +320,9 @@ module ApplicationHelper
     when "User", "Group", "Patch", "GuestApplication"
       controller = "vm"
       action = @lastaction
+    when "Host" && action == 'x_show'
+      controller = "infra_networking"
+      action = @lastaction
     when "MiqReportResult"
       controller = "report"
       action = "show_saved"
@@ -340,7 +354,9 @@ module ApplicationHelper
     when "MiqWorker"
       controller = request.parameters[:controller]
       action = "diagnostics_worker_selected"
-    when "OrchestrationStackOutput", "OrchestrationStackParameter", "OrchestrationStackResource"
+    when "OrchestrationStackOutput", "OrchestrationStackParameter", "OrchestrationStackResource",
+        "ManageIQ::Providers::CloudManager::OrchestrationStack",
+        "ManageIQ::Providers::AnsibleTower::ConfigurationManager::Job"
       controller = request.parameters[:controller]
     when "ContainerVolume"
       controller = "persistent_volume"
@@ -412,7 +428,6 @@ module ApplicationHelper
                                                                :include_model   => true,
                                                                :include_my_tags => use_mytags,
                                                                :userid          => session[:userid])
-    @exp_available_tags
   end
 
   # Replacing calls to VMDB::Config.new in the views/controllers
@@ -451,7 +466,7 @@ module ApplicationHelper
     elsif layout == "ops"
       title += _(": Configuration")
     elsif layout == "provider_foreman"
-      title += ": #{ui_lookup(:ui_title => "foreman")} #{ui_lookup(:model => "ExtManagementSystem")}"
+      title += _(": Configuration Management")
     elsif layout == "pxe"
       title += _(": PXE")
     elsif layout == "explorer"
@@ -567,36 +582,9 @@ module ApplicationHelper
     javascript_for_miq_button_visibility(changed)
   end
 
-  # Highlight tree nodes that have been changed
-  def javascript_for_tree_checkbox_clicked(tree_name)
-    tree_name_escaped = j_str(tree_name)
-    js_array = []
-    if params[:check] # Tree checkbox clicked?
-      # MyCompany tag checked or Belongsto checked
-      key = params[:tree_typ] == 'myco' ? :filters : :belongsto
-      future  = @edit[:new][key][params[:id].split('___').last]
-      current = @edit[:current][key][params[:id].split('___').last]
-      title_class = params[:tree_typ] == "vat" || params[:tree_typ] == "hac" ? 'cfme-no-cursor-node' : 'dynatree-title'
-      css_class = future == current ? title_class : 'cfme-blue-bold-node'
-      js_array << "$('##{tree_name_escaped}box').dynatree('getTree').getNodeByKey('#{params[:id].split('___').last}').data.addClass = '#{css_class}';"
-    end
-    # need to redraw the tree to change node colors
-    js_array << "tree = $('##{tree_name_escaped}box').dynatree('getTree');"
-    js_array << "tree.redraw();"
-    js_array.join("\n")
-  end
-
   def javascript_pf_toolbar_reload(div_id, toolbar)
-    out = []
-    out << javascript_update_element(div_id, buttons_to_html(toolbar))
-    out << "miqInitToolbars();"
-    out.join('')
+    "sendDataWithRx({redrawToolbar: #{toolbar_from_hash.to_json}});"
   end
-
-  def javascript_for_ae_node_selection(id, prev_id, select)
-    "miqSetAETreeNodeSelectionClass('#{id}', '#{prev_id}', '#{select ? true : false}');".html_safe
-  end
-  ############# End of methods that generate JS lines for render page blocks
 
   def set_edit_timer_from_schedule(schedule)
     @edit[:new][:timer] ||= ReportHelper::Timer.new
@@ -638,11 +626,37 @@ module ApplicationHelper
   def taskbar_in_header?
     if @show_taskbar.nil?
       @show_taskbar = false
-      if ! (@layout == "" && %w(auth_error change_tab show).include?(controller.action_name) ||
-        %w(about chargeback exception miq_ae_automate_button miq_ae_class miq_ae_export
-           miq_ae_tools miq_capacity_bottlenecks miq_capacity_planning miq_capacity_utilization
-           miq_capacity_waste miq_policy miq_policy_export miq_policy_rsop ops pxe report rss
-           server_build container_topology middleware_topology network_topology container_dashboard).include?(@layout) ||
+      if ! (@layout == "" &&
+        %w(auth_error
+           change_tab
+           show
+          ).include?(controller.action_name) ||
+        %w(about
+           chargeback
+           cloud_topology
+           container_dashboard
+           ems_infra_dashboard
+           exception
+           infra_topology
+           middleware_topology
+           miq_ae_automate_button
+           miq_ae_class
+           miq_ae_export
+           miq_ae_tools
+           miq_capacity_bottlenecks
+           miq_capacity_planning
+           miq_capacity_utilization
+           miq_capacity_waste
+           miq_policy
+           miq_policy_export
+           miq_policy_rsop
+           network_topology
+           ops
+           pxe
+           report
+           rss
+           server_build
+          ).include?(@layout) ||
         (@layout == "configuration" && @tabform != "ui_4")) && !controller.action_name.end_with?("tagging_edit")
         unless @explorer
           @show_taskbar = true
@@ -703,7 +717,7 @@ module ApplicationHelper
   ]
   # Return a blank tb if a placeholder is needed for AJAX explorer screens, return nil if no custom toolbar to be shown
   def custom_toolbar_filename
-    if %w(ems_cloud ems_cluster ems_infra host miq_template storage ems_network cloud_tenant).include?(@layout) # Classic CIs
+    if %w(ems_cloud ems_cluster ems_infra host miq_template storage ems_storage ems_network cloud_tenant).include?(@layout) # Classic CIs
       return "custom_buttons_tb" if @record && @lastaction == "show" && @display == "main"
     end
 
@@ -743,6 +757,7 @@ module ApplicationHelper
   def _toolbar_chooser
     ToolbarChooser.new(
       self,
+      binding,
       :alert_profiles => @alert_profiles,
       :button_group   => @button_group,
       :conditions     => @conditions,
@@ -757,6 +772,7 @@ module ApplicationHelper
       :record         => @record,
       :report         => @report,
       :sb             => @sb,
+      :showtype       => @showtype,
       :tabform        => @tabform,
       :view           => @view,
       :center_toolbar => @center_toolbar
@@ -799,20 +815,68 @@ module ApplicationHelper
   end
 
   def display_adv_search?
-    %w(availability_zone cloud_volume container_group container_node container_service
-       container_route container_project container_replicator container_image
-       container_image_registry persistent_volume container_build
-       ems_container vm miq_template offline retired templates
-       host service storage ems_cloud ems_cluster flavor
-       ems_network security_group floating_ip cloud_subnet network_router network_port cloud_network
-       resource_pool ems_infra ontap_storage_system ontap_storage_volume
-       ontap_file_share snia_local_file_system ontap_logical_disk
-       orchestration_stack cim_base_storage_extent storage storage_manager).include?(@layout)
+    %w(auth_key_pair_cloud
+       availability_zone
+       cim_base_storage_extent
+       cloud_network
+       cloud_object_store_container
+       cloud_subnet
+       cloud_tenant
+       cloud_volume
+       configuration_job
+       container_build
+       container_group
+       container_image
+       container_image_registry
+       container_node
+       container_project
+       container_replicator
+       container_route
+       container_service
+       container_template
+       ems_cloud
+       ems_cluster
+       ems_container
+       ems_infra
+       ems_middleware
+       ems_network
+       ems_storage
+       flavor
+       floating_ip
+       host
+       host_aggregate
+       load_balancer
+       middleware_datasource
+       middleware_deployment
+       middleware_domain
+       middleware_messaging
+       middleware_server
+       miq_template
+       network_port
+       network_router
+       offline
+       ontap_file_share
+       ontap_logical_disk
+       ontap_storage_system
+       ontap_storage_volume
+       orchestration_stack
+       persistent_volume
+       provider_foreman
+       resource_pool
+       retired
+       security_group
+       service
+       snia_local_file_system
+       storage
+       storage_manager
+       templates
+       vm
+      ).include?(@layout)
   end
 
   # Do we show or hide the clear_search link in the list view title
-  def clear_search_show_or_hide
-    @edit && @edit.fetch_path(:adv_search_applied, :text) ? "show" : "hide"
+  def clear_search_status
+    !!(@edit && @edit.fetch_path(:adv_search_applied, :text))
   end
 
   # Should we allow the user input checkbox be shown for an atom in the expression editor
@@ -842,7 +906,7 @@ module ApplicationHelper
   end
 
   def pressed2model_action(pressed)
-    pressed =~ /^(ems_cluster|miq_template)_(.*)$/ ? [$1, $2] : pressed.split('_', 2)
+    pressed =~ /^(ems_cluster|miq_template|infra_networking)_(.*)$/ ? [$1, $2] : pressed.split('_', 2)
   end
 
   def model_for_ems(record)
@@ -880,6 +944,15 @@ module ApplicationHelper
     end
   end
 
+  def controller_for_stack(model)
+    case model.to_s
+    when "ManageIQ::Providers::AnsibleTower::ConfigurationManager::Job"
+      "configuration_job"
+    else
+      model.name.underscore
+    end
+  end
+
   def vm_model_from_active_tree(tree)
     case tree
     when :instances_filter_tree
@@ -890,8 +963,6 @@ module ApplicationHelper
       "ManageIQ::Providers::InfraManager::Vm"
     when :templates_filter_tree
       "ManageIQ::Providers::InfraManager::Template"
-    when :instances_filter_tree
-      "ManageIQ::Providers::CloudManager::Vm"
     when :templates_images_filter_tree
       "MiqTemplate"
     when :vms_instances_filter_tree
@@ -916,11 +987,12 @@ module ApplicationHelper
   # met.
   #
   # args
-  #     :cond         --- bool    - the condition to be met
+  #     :if           --- bool    - the condition to be met
+  #                                 if no condition is passed, it's considered true
   #     :table/tables --- string  - name of entity
   #                               - determines singular/plural case
   #     :link_text    --- string  - to override calculated link text
-  #     :display      --- string  - FIXME
+  #     :display      --- string  - type of display (timeline/performance/main/....)
   #     :[count]      --- fixnum  - number of entities, must be set if :tables
   #                                 is used
   #   args to construct URL
@@ -930,6 +1002,8 @@ module ApplicationHelper
   #
   def li_link(args)
     args[:if] = (args[:count] != 0) if args[:count]
+    args[:if] = true unless args.key?(:if)
+
     link_text, title = build_link_text(args)
 
     if args[:if]
@@ -944,8 +1018,9 @@ module ApplicationHelper
       check_changes = args[:check_changes] || args[:check_changes].nil?
       tag_attrs[:onclick] = 'return miqCheckForChanges()' if check_changes
       content_tag(:li) do
+        link_args = {:display => args[:display], :vat => args[:vat]}.compact
         if args[:record] && restful_routed?(args[:record])
-          link_to(link_text, polymorphic_path(args[:record], :display => args[:display]), tag_attrs)
+          link_to(link_text, polymorphic_path(args[:record], link_args), tag_attrs)
         else
           link_to(link_text, link_params, tag_attrs)
         end
@@ -1002,17 +1077,11 @@ module ApplicationHelper
     link_to(link_text, link_params, tag_args)
   end
 
-  def center_div_height(toolbar = true, min = 200)
-    max = toolbar ? 627 : 757
-    height = @winH < max ? min : @winH - (max - min)
-    height
-  end
-
   def primary_nav_class(nav_id)
     test_layout = @layout
     # FIXME: exception behavior to remove
     test_layout = 'my_tasks' if %w(my_tasks my_ui_tasks all_tasks all_ui_tasks).include?(@layout)
-    test_layout = 'cloud_volume' if @layout == 'cloud_volume_snapshot'
+    test_layout = 'cloud_volume' if @layout == 'cloud_volume_snapshot' || @layout == 'cloud_volume_backup'
     test_layout = 'cloud_object_store_container' if @layout == 'cloud_object_store_object'
 
     Menu::Manager.item_in_section?(test_layout, nav_id) ? 'active' : nil
@@ -1044,12 +1113,66 @@ module ApplicationHelper
     true
   end
 
+  def javascript_redirect(args)
+    render :update do |page|
+      page << javascript_prologue
+      page.redirect_to args
+    end
+  end
+
+  def javascript_flash(**args)
+    add_flash(args[:text], args[:severity]) if args[:text].present?
+
+    flash_div_id = args.key?(:flash_div_id) ? args[:flash_div_id] : 'flash_msg_div'
+    ex = ExplorerPresenter.flash.replace(flash_div_id,
+                                         render_to_string(:partial => "layouts/flash_msg",
+                                                          :locals => {:flash_div_id => flash_div_id}))
+    ex.scroll_top if args[:scroll_top]
+    ex.spinner_off if args[:spinner_off]
+    ex.focus(args[:focus]) if args[:focus]
+    ex.activate_tree_node(args[:activate_node]) if args[:activate_node]
+
+    render :json => ex.for_render
+  end
+
+  def javascript_open_window(url)
+    ex = ExplorerPresenter.open_window(url)
+    ex.spinner_off
+    render :json => ex.for_render
+  end
+
+  # this keeps the main_div wrapping tag, replaces only the inside
+  def replace_main_div(args, options = {})
+    ex = ExplorerPresenter.main_div.update('main_div', render_to_string(args))
+
+    ex.replace("flash_msg_div", render_to_string(:partial => "layouts/flash_msg")) if options[:flash]
+    ex.spinner_off if options[:spinner_off]
+
+    render :json => ex.for_render
+  end
+
+  def javascript_miq_button_visibility(changed)
+    render :json => ExplorerPresenter.buttons(changed).for_render
+  end
+
   def record_no_longer_exists?(what, model = nil)
     return false unless what.nil?
-    add_flash(@bang || model.present? ?
-      _("%{model} no longer exists") % {:model => ui_lookup(:model => model)} :
-      _("Error: Record no longer exists in the database"))
-    session[:flash_msgs] = @flash_array
+
+    if !@bang || @flash_array.empty?
+      # We already added a better flash message in 'identify_record'
+      # in that case we keep that flash message
+      # otherwise we make a new one.
+      # FIXME: a refactoring of identify_record and related is needed
+      add_flash(
+        if model.present?
+          _("%{model} no longer exists") % {:model => ui_lookup(:model => model)}
+        else
+          _("Error: Record no longer exists in the database")
+        end,
+        :error, true)
+      session[:flash_msgs] = @flash_array
+    end
+
     # Error message is displayed in 'show_list' action if such action exists
     # otherwise we assume that the 'explorer' action must exist that will display it.
     redirect_to(:action => respond_to?(:show_list) ? 'show_list' : 'explorer')
@@ -1059,19 +1182,80 @@ module ApplicationHelper
     "#{@options[:page_size] || "US-Legal"} #{@options[:page_layout]}"
   end
 
-  GTL_VIEW_LAYOUTS = %w(action availability_zone auth_key_pair_cloud
-                        cim_base_storage_extent cloud_object_store_container
-                        cloud_object_store_object cloud_tenant cloud_volume cloud_volume_snapshot
-                        condition container_group container_route container_project
-                        container_replicator container_image container_image_registry
-                        container_topology container_dashboard middleware_topology persistent_volume container_build
-                        container_node container_service ems_cloud ems_cluster ems_container ems_infra event
-                        ems_middleware middleware_server middleware_deployment middleware_datasource
-                        ems_network security_group floating_ip cloud_subnet network_router network_topology network_port cloud_network
-                        flavor host miq_schedule miq_template offline ontap_file_share
-                        ontap_logical_disk ontap_storage_system ontap_storage_volume orchestration_stack
-                        policy policy_group policy_profile resource_pool retired scan_profile
-                        service snia_local_file_system storage storage_manager templates)
+  GTL_VIEW_LAYOUTS = %w(action
+                        auth_key_pair_cloud
+                        availability_zone
+                        cim_base_storage_extent
+                        cloud_network
+                        cloud_object_store_container
+                        cloud_object_store_object
+                        cloud_subnet
+                        cloud_tenant
+                        cloud_topology
+                        cloud_volume
+                        cloud_volume_backup
+                        cloud_volume_snapshot
+                        condition
+                        configuration_job
+                        container_build
+                        container_dashboard
+                        container_group
+                        container_image
+                        container_image_registry
+                        container_node
+                        container_project
+                        container_replicator
+                        container_route
+                        container_service
+                        container_template
+                        container_topology
+                        ems_cloud
+                        ems_cluster
+                        ems_container
+                        ems_infra
+                        ems_infra_dashboard
+                        ems_middleware
+                        ems_network
+                        ems_storage
+                        infra_topology
+                        event
+                        flavor
+                        floating_ip
+                        host
+                        host_aggregate
+                        load_balancer
+                        middleware_datasource
+                        middleware_deployment
+                        middleware_domain
+                        middleware_messaging
+                        middleware_server
+                        middleware_server_group
+                        middleware_topology
+                        miq_schedule
+                        miq_template
+                        network_port
+                        network_router
+                        network_topology
+                        offline
+                        ontap_file_share
+                        ontap_logical_disk
+                        ontap_storage_system
+                        ontap_storage_volume
+                        orchestration_stack
+                        persistent_volume
+                        policy
+                        policy_group
+                        policy_profile
+                        resource_pool
+                        retired
+                        scan_profile
+                        security_group
+                        service
+                        snia_local_file_system
+                        storage
+                        storage_manager
+                        templates
+                      )
 
   def render_gtl_view_tb?
     GTL_VIEW_LAYOUTS.include?(@layout) && @gtl_type && !@tagitems &&
@@ -1105,42 +1289,193 @@ module ApplicationHelper
 
   def render_listnav_filename
     if @lastaction == "show_list" && !session[:menu_click] &&
-      %w(auth_key_pair_cloud cloud_object_store_container cloud_object_store_object cloud_volume cloud_volume_snapshot
-         container_node container_service ems_container container_group ems_cloud ems_cluster container_route
-         container_project container_replicator container_image container_image_registry container_build
-         ems_infra host miq_template offline orchestration_stack persistent_volume ems_middleware
-         middleware_server middleware_deployment middleware_datasource
-         ems_network security_group floating_ip cloud_subnet network_router network_port cloud_network
-         resource_pool retired service templates vm).include?(@layout) && !@in_a_form
+       %w(auth_key_pair_cloud
+          availability_zone
+          cloud_network
+          cloud_object_store_container
+          cloud_object_store_object
+          cloud_subnet
+          cloud_tenant
+          cloud_volume
+          cloud_volume_backup
+          cloud_volume_snapshot
+          configuration_job
+          container_build
+          container_group
+          container_image
+          container_image_registry
+          container_node
+          container_project
+          container_replicator
+          container_route
+          container_service
+          container_template
+          ems_cloud
+          ems_cluster
+          ems_container
+          ems_infra
+          ems_middleware
+          ems_network
+          ems_storage
+          flavor
+          floating_ip
+          host
+          middleware_datasource
+          middleware_deployment
+          middleware_domain
+          middleware_messaging
+          middleware_server
+          middleware_server_group
+          miq_template
+          network_port
+          network_router
+          offline
+          orchestration_stack
+          persistent_volume
+          resource_pool
+          retired
+          security_group
+          service
+          storage
+          templates
+          vm).include?(@layout) && !@in_a_form
       "show_list"
     elsif @compare
       "compare_sections"
     elsif @explorer
       "explorer"
-    elsif %w(offline retired templates vm vm_cloud vm_or_template).include?(@layout)
+    elsif %w(offline
+             retired
+             templates
+             vm
+             vm_cloud
+             vm_or_template).include?(@layout)
       "vm"
-    elsif %w(action auth_key_pair_cloud availability_zone cim_base_storage_extent cloud_object_store_container
-             cloud_object_store_object cloud_tenant cloud_volume cloud_volume_snapshot condition container_group
-             container_route container_project container_replicator container_image container_image_registry
-             container_build container_node container_service persistent_volume ems_cloud ems_container ems_cluster ems_infra
-             ems_middleware middleware_server middleware_deployment middleware_datasource flavor
-             ems_network security_group floating_ip cloud_subnet network_router network_port cloud_network
-             host miq_schedule miq_template policy ontap_file_share ontap_logical_disk
-             ontap_storage_system ontap_storage_volume orchestration_stack resource_pool
-             scan_profile service snia_local_file_system storage_manager timeline).include?(@layout)
+    elsif %w(action
+             auth_key_pair_cloud
+             availability_zone
+             cim_base_storage_extent
+             cloud_network
+             cloud_object_store_container
+             cloud_object_store_object
+             cloud_subnet
+             cloud_tenant
+             cloud_volume
+             cloud_volume_backup
+             cloud_volume_snapshot
+             condition
+             configuration_job
+             container_build
+             container_group
+             container_image
+             container_image_registry
+             container_node
+             container_project
+             container_replicator
+             container_route
+             container_service
+             container_template
+             ems_cloud
+             ems_cluster
+             ems_container
+             ems_infra
+             ems_middleware
+             ems_network
+             ems_storage
+             flavor
+             floating_ip
+             host
+             host_aggregate
+             load_balancer
+             middleware_datasource
+             middleware_deployment
+             middleware_domain
+             middleware_messaging
+             middleware_server
+             middleware_server_group
+             miq_schedule
+             miq_template
+             network_port
+             network_router
+             ontap_file_share
+             ontap_logical_disk
+             ontap_storage_system
+             ontap_storage_volume
+             orchestration_stack
+             persistent_volume
+             policy
+             resource_pool
+             scan_profile
+             security_group
+             service
+             snia_local_file_system
+             storage_manager
+             timeline).include?(@layout)
       @layout
     end
   end
 
   def show_adv_search?
-    show_search = %w(availability_zone cim_base_storage_extent cloud_volume cloud_volume_snapshot container_group container_node container_service
-                     container_route container_project container_replicator container_image container_image_registry
-                     persistent_volume container_build
-                     ems_cloud ems_cluster ems_container ems_infra flavor host miq_template offline
-                     ontap_file_share ontap_logical_disk ontap_storage_system ontap_storage_volume
-                     ems_network security_group floating_ip cloud_subnet network_router network_port cloud_network
-                     orchestration_stack resource_pool retired service
-                     snia_local_file_system storage_manager templates vm)
+    show_search = %w(
+      auth_key_pair_cloud
+      availability_zone
+      cim_base_storage_extent
+      cloud_network
+      cloud_object_store_container
+      cloud_subnet
+      cloud_tenant
+      cloud_volume
+      cloud_volume_backup
+      cloud_volume_snapshot
+      configuration_job
+      container_build
+      container_group
+      container_image
+      container_image_registry
+      container_node
+      container_project
+      container_replicator
+      container_route
+      container_service
+      container_template
+      ems_cloud
+      ems_cluster
+      ems_container
+      ems_infra
+      ems_middleware
+      ems_network
+      ems_storage
+      flavor
+      floating_ip
+      host
+      host_aggregate
+      load_balancer
+      middleware_datasource
+      middleware_deployment
+      middleware_domain
+      middleware_messaging
+      middleware_server
+      miq_template
+      network_port
+      network_router
+      offline
+      ontap_file_share
+      ontap_logical_disk
+      ontap_storage_system
+      ontap_storage_volume
+      orchestration_stack
+      persistent_volume
+      provider_foreman
+      resource_pool
+      retired
+      security_group
+      service
+      snia_local_file_system
+      storage_manager
+      templates
+      vm
+    )
+
     (@lastaction == "show_list" && !session[:menu_click] && show_search.include?(@layout) && !@in_a_form) ||
       (@explorer && x_tree && tree_with_advanced_search? && !@record)
   end
@@ -1161,13 +1496,26 @@ module ApplicationHelper
   end
 
   def x_gtl_view_tb_render?
-    no_gtl_view_buttons = %w(chargeback miq_ae_class miq_ae_customization miq_ae_tools miq_capacity_planning
-                             miq_capacity_utilization miq_policy miq_policy_rsop report ops provider_foreman pxe)
+    no_gtl_view_buttons = %w(
+      chargeback
+      generic_object_definition
+      miq_ae_class
+      miq_ae_customization
+      miq_ae_tools
+      miq_capacity_planning
+      miq_capacity_utilization
+      miq_policy
+      miq_policy_rsop
+      ops
+      provider_foreman
+      pxe
+      report
+    )
     @record.nil? && @explorer && !no_gtl_view_buttons.include?(@layout)
   end
 
   def explorer_controller?
-    %w(vm_cloud vm_infra vm_or_template).include?(controller_name)
+    %w(vm_cloud vm_infra vm_or_template infra_networking).include?(controller_name)
   end
 
   def vm_quad_link_attributes(record)
@@ -1183,7 +1531,7 @@ module ApplicationHelper
   end
 
   def vm_cloud_explorer_accords_attributes(record)
-    if role_allows(:feature => "instances_accord") || role_allows(:feature => "instances_filter_accord")
+    if role_allows?(:feature => "instances_accord") || role_allows?(:feature => "instances_filter_accord")
       attributes = {}
       attributes[:link] = true
       attributes[:controller] = "vm_cloud"
@@ -1200,7 +1548,7 @@ module ApplicationHelper
   end
 
   def vm_infra_explorer_accords_attributes(record)
-    if role_allows(:feature => "vandt_accord") || role_allows(:feature => "vms_filter_accord")
+    if role_allows?(:feature => "vandt_accord") || role_allows?(:feature => "vms_filter_accord")
       attributes = {}
       attributes[:link] = true
       attributes[:controller] = "vm_infra"
@@ -1212,7 +1560,7 @@ module ApplicationHelper
 
   def service_workload_attributes(record)
     attributes = {}
-    if role_allows(:feature => "vms_instances_filter_accord")
+    if role_allows?(:feature => "vms_instances_filter_accord")
       attributes[:link] = true
       attributes[:controller] = "vm_or_template"
       attributes[:action] = "explorer"
@@ -1266,14 +1614,14 @@ module ApplicationHelper
                              ontap_storage_system_show_list
                              ontap_storage_volume_show_list
                              storage_manager_show_list)
-    return false if storage_start_pages.include?(start_page) && !get_vmdb_config[:product][:storage]
+    return false if storage_start_pages.include?(start_page) && !::Settings.product.storage
     containers_start_pages = %w(ems_container_show_list
                                 container_node_show_list
                                 container_group_show_list
                                 container_service_show_list
                                 container_view)
-    return false if containers_start_pages.include?(start_page) && !get_vmdb_config[:product][:containers]
-    role_allows(:feature => start_page, :any => true)
+    return false if containers_start_pages.include?(start_page) && !::Settings.product.containers
+    role_allows?(:feature => start_page, :any => true)
   end
 
   def miq_tab_header(id, active = nil, options = {}, &_block)
@@ -1315,9 +1663,22 @@ module ApplicationHelper
   end
 
   def tree_with_advanced_search?
-    %i(containers images cs_filter foreman_providers instances providers vandt
-     images_filter instances_filter templates_filter templates_images_filter containers_filter
-     vms_filter vms_instances_filter storage).include?(x_tree[:type])
+    %i(containers
+       containers_filter
+       cs_filter
+       foreman_providers
+       images
+       images_filter
+       instances
+       instances_filter
+       providers
+       storage
+       templates_filter
+       templates_images_filter
+       vandt
+       vms_filter
+       vms_instances_filter
+      ).include?(x_tree[:type])
   end
 
   def show_advanced_search?
@@ -1420,12 +1781,8 @@ module ApplicationHelper
       glyphicon2 = listicon_glyphicon_tag_for_widget(row)
     end
 
-    content_tag(:ul, :class => 'icons list-unstyled') do
-      content_tag(:li) do
-        content_tag(:span, nil, :class => glyphicon) do
-          content_tag(:span, nil, :class => glyphicon2) if glyphicon2
-        end
-      end
+    content_tag(:i, nil, :class => glyphicon) do
+      content_tag(:i, nil, :class => glyphicon2) if glyphicon2
     end
   end
 
@@ -1447,6 +1804,17 @@ module ApplicationHelper
 
   def appliance_name
     MiqServer.my_server.name
+  end
+
+  def vmdb_build_info(key)
+    case key
+    when :version then Vmdb::Appliance.VERSION
+    when :build then Vmdb::Appliance.BUILD
+    end
+  end
+
+  def user_role_name
+    User.current_user.miq_user_role_name
   end
 
   def rbac_common_feature_for_buttons(pressed)
@@ -1476,10 +1844,24 @@ module ApplicationHelper
     true
   end
 
+  def auth_mode_name
+    case ::Settings.authentication.mode.downcase
+    when "ldap"
+      _("LDAP")
+    when "ldaps"
+      _("LDAPS")
+    when "amazon"
+      _("Amazon")
+    when "httpd"
+      _("External Authentication")
+    when "database"
+      _("Database")
+    end
+  end
+
   def ext_auth?(auth_option = nil)
-    auth_config = get_vmdb_config[:authentication]
-    return false unless auth_config[:mode] == "httpd"
-    auth_option ? auth_config[auth_option] : true
+    return false unless ::Settings.authentication.mode == "httpd"
+    auth_option ? ::Settings.authentication[auth_option] : true
   end
   public :ext_auth?
 end

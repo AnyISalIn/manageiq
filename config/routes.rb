@@ -137,7 +137,7 @@ Vmdb::Application.routes.draw do
         show
         show_list
         tagging_edit
-        tag_edit_form_field_changed,
+        tag_edit_form_field_changed
         ems_form_choices
       ) + compare_get,
       :post => %w(
@@ -146,7 +146,6 @@ Vmdb::Application.routes.draw do
         dynamic_checkbox_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
         quick_search
         show
         show_list
@@ -167,7 +166,7 @@ Vmdb::Application.routes.draw do
                compare_get,
       :post => %w(
         button
-        panel_control
+        listnav_search_selected
         quick_search
         sections_field_changed
         show
@@ -175,6 +174,40 @@ Vmdb::Application.routes.draw do
         tagging_edit
         tag_edit_form_field_changed
         tl_chooser
+        wait_for_task
+      ) + adv_search_post + compare_post + exp_post + perf_post + save_post
+    },
+
+    :host_aggregate           => {
+      :get  => %w(
+        add_host_select
+        download_data
+        edit
+        host_aggregate_form_fields
+        index
+        new
+        perf_top_chart
+        remove_host_select
+        show
+        show_list
+        tagging_edit
+      ) +
+               compare_get,
+      :post => %w(
+        add_host
+        add_host_select
+        button
+        create
+        quick_search
+        remove_host
+        remove_host_select
+        sections_field_changed
+        show
+        show_list
+        tagging_edit
+        tag_edit_form_field_changed
+        tl_chooser
+        update
         wait_for_task
       ) + adv_search_post + compare_post + exp_post + perf_post
     },
@@ -234,7 +267,7 @@ Vmdb::Application.routes.draw do
         st_upload_image
         svc_catalog_provision
         tag_edit_form_field_changed
-        tree_autoload_dynatree
+        tree_autoload
         tree_select
         x_button
         x_history
@@ -247,7 +280,6 @@ Vmdb::Application.routes.draw do
     :chargeback               => {
       :get  => %w(
         explorer
-        index
         render_csv
         render_pdf
         render_txt
@@ -266,11 +298,43 @@ Vmdb::Application.routes.draw do
         cb_tier_add
         cb_tier_remove
         saved_report_paging
-        tree_autoload_dynatree
+        tree_autoload
         tree_select
         x_button
         x_show
       )
+    },
+
+    :configuration_job      => {
+      :get  => %w(
+        download_data
+        index
+        outputs
+        parameters
+        resources
+        show
+        show_list
+        tagging_edit
+        protect
+      ),
+      :post => %w(
+        button
+        outputs
+        listnav_search_selected
+        panel_control
+        parameters
+        quick_search
+        resources
+        sections_field_changed
+        show
+        show_list
+        protect
+        tagging_edit
+        tag_edit_form_field_changed
+      ) +
+        adv_search_post +
+        exp_post +
+        save_post
     },
 
     :consumption                  => {
@@ -293,7 +357,6 @@ Vmdb::Application.routes.draw do
         dynamic_checkbox_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
         quick_search
         show
         show_list
@@ -304,9 +367,11 @@ Vmdb::Application.routes.draw do
 
     :cloud_tenant             => {
       :get => %w(
+        cloud_tenant_form_fields
         download_data
         edit
         index
+        new
         protect
         show
         show_list
@@ -315,16 +380,19 @@ Vmdb::Application.routes.draw do
                compare_get,
       :post => %w(
         button
+        listnav_search_selected
+        create
         protect
+        quick_search
         sections_field_changed
         show
         show_list
         tagging_edit
         tag_edit_form_field_changed
         update
-        panel_control
+        wait_for_task
       ) +
-               compare_post
+               compare_post + adv_search_post + exp_post + save_post
     },
 
     :cloud_object_store_object => {
@@ -344,7 +412,6 @@ Vmdb::Application.routes.draw do
         dynamic_checkbox_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
         quick_search
         show
         show_list
@@ -359,6 +426,9 @@ Vmdb::Application.routes.draw do
         download_data
         attach
         detach
+        backup_new
+        backup_select
+        snapshot_new
         edit
         cloud_volume_form_fields
         cloud_volume_tenants
@@ -372,22 +442,47 @@ Vmdb::Application.routes.draw do
       :post => %w(
         attach_volume
         detach_volume
+        backup_create
+        backup_restore
+        snapshot_create
         button
         create
         dynamic_checkbox_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
         quick_search
         show
         show_list
         tagging_edit
         tag_edit_form_field_changed
         update
+        wait_for_task
       ) + compare_post + adv_search_post + exp_post + save_post
     },
 
     :cloud_volume_snapshot    => {
+      :get  => %w(
+        download_data
+        index
+        show
+        show_list
+        tagging_edit
+        tag_edit_form_field_changed
+      ) + compare_get,
+      :post => %w(
+        button
+        dynamic_checkbox_refresh
+        form_field_changed
+        listnav_search_selected
+        quick_search
+        show
+        show_list
+        tagging_edit
+        tag_edit_form_field_changed
+      ) + compare_post + adv_search_post + exp_post + save_post
+    },
+
+    :cloud_volume_backup    => {
       :get  => %w(
         download_data
         edit
@@ -404,7 +499,6 @@ Vmdb::Application.routes.draw do
         dynamic_checkbox_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
         quick_search
         show
         show_list
@@ -424,6 +518,7 @@ Vmdb::Application.routes.draw do
         timeprofile_copy
         timeprofile_edit
         timeprofile_new
+        time_profile_form_fields
       ),
       :post => %w(
         button
@@ -434,7 +529,7 @@ Vmdb::Application.routes.draw do
         timeprofile_delete
         timeprofile_field_changed
         timeprofile_update
-        tree_autoload_dynatree
+        tree_autoload
         update
         view_selected
       )
@@ -462,7 +557,7 @@ Vmdb::Application.routes.draw do
         wait_for_task
         quick_search
         reload
-        tree_autoload_dynatree
+        tree_autoload
         tree_select
         container_tag
         tag_edit_form_field_changed
@@ -485,6 +580,7 @@ Vmdb::Application.routes.draw do
         show_list
         tagging_edit
         tag_edit_form_field_changed
+        protect
       ),
       :post => %w(
         button
@@ -492,7 +588,6 @@ Vmdb::Application.routes.draw do
         dynamic_checkbox_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
         quick_search
         sections_field_changed
         show
@@ -502,6 +597,8 @@ Vmdb::Application.routes.draw do
         wait_for_task
         tagging_edit
         tag_edit_form_field_changed
+        protect
+        squash_toggle
       ) +
                adv_search_post +
                exp_post +
@@ -520,6 +617,7 @@ Vmdb::Application.routes.draw do
         show_list
         tagging_edit
         tag_edit_form_field_changed
+        protect
       ),
       :post => %w(
         button
@@ -527,7 +625,6 @@ Vmdb::Application.routes.draw do
         dynamic_checkbox_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
         quick_search
         sections_field_changed
         show
@@ -537,6 +634,9 @@ Vmdb::Application.routes.draw do
         wait_for_task
         tagging_edit
         tag_edit_form_field_changed
+        protect
+        squash_toggle
+        launch_cockpit
       ) +
                adv_search_post +
                exp_post +
@@ -555,6 +655,7 @@ Vmdb::Application.routes.draw do
         show_list
         tagging_edit
         tag_edit_form_field_changed
+        protect
       ),
       :post => %w(
         button
@@ -562,7 +663,6 @@ Vmdb::Application.routes.draw do
         dynamic_checkbox_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
         quick_search
         sections_field_changed
         show
@@ -572,6 +672,8 @@ Vmdb::Application.routes.draw do
         wait_for_task
         tagging_edit
         tag_edit_form_field_changed
+        protect
+        squash_toggle
       ) +
                adv_search_post +
                exp_post +
@@ -593,7 +695,6 @@ Vmdb::Application.routes.draw do
         openscap_rule_results
         openscap_html
         protect
-        squash_toggle
       ),
       :post => %w(
         button
@@ -601,7 +702,6 @@ Vmdb::Application.routes.draw do
         dynamic_checkbox_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
         quick_search
         sections_field_changed
         show
@@ -633,7 +733,6 @@ Vmdb::Application.routes.draw do
         dynamic_checkbox_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
         quick_search
         sections_field_changed
         show
@@ -662,7 +761,6 @@ Vmdb::Application.routes.draw do
         dynamic_checkbox_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
         quick_search
         sections_field_changed
         show
@@ -696,7 +794,6 @@ Vmdb::Application.routes.draw do
         dynamic_checkbox_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
         quick_search
         sections_field_changed
         show
@@ -730,7 +827,6 @@ Vmdb::Application.routes.draw do
         dynamic_checkbox_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
         quick_search
         sections_field_changed
         show
@@ -758,7 +854,6 @@ Vmdb::Application.routes.draw do
         dynamic_checkbox_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
         quick_search
         sections_field_changed
         show
@@ -786,7 +881,33 @@ Vmdb::Application.routes.draw do
         dynamic_checkbox_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
+        quick_search
+        sections_field_changed
+        show
+        show_list
+        update
+        tagging_edit
+        tag_edit_form_field_changed
+      ) + adv_search_post + exp_post + save_post
+    },
+
+    :container_template          => {
+      :get  => %w(
+        download_data
+        edit
+        index
+        new
+        show
+        show_list
+        tagging_edit
+        tag_edit_form_field_changed
+      ),
+      :post => %w(
+        button
+        create
+        dynamic_checkbox_refresh
+        form_field_changed
+        listnav_search_selected
         quick_search
         sections_field_changed
         show
@@ -817,6 +938,28 @@ Vmdb::Application.routes.draw do
         data
       )
     },
+
+    :subnet_topology         => {
+      :get => %w(
+        show
+        data
+      )
+    },
+
+    :cloud_topology         => {
+      :get => %w(
+        show
+        data
+      )
+    },
+
+    :infra_topology         => {
+      :get => %w(
+        show
+        data
+      )
+    },
+
     :container_dashboard      => {
       :get => %w(
         show
@@ -852,7 +995,6 @@ Vmdb::Application.routes.draw do
         csp_report
         timeline_data
         login_retry
-        panel_control
         reset_widgets
         resize_layout
         show_timeline
@@ -863,12 +1005,13 @@ Vmdb::Application.routes.draw do
         widget_dd_done
         widget_toggle_minmax
         widget_zoom
-        window_sizes
       )
     },
 
     :ems_cloud                => {
       :get  => %w(
+        arbitration_profiles
+        arbitration_profile_edit
         dialog_load
         discover
         download_data
@@ -879,6 +1022,8 @@ Vmdb::Application.routes.draw do
       ) +
                compare_get,
       :post => %w(
+        arbitration_profiles
+        arbitration_profile_edit
         button
         create
         dynamic_checkbox_refresh
@@ -887,7 +1032,6 @@ Vmdb::Application.routes.draw do
         dynamic_text_box_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
         protect
         provider_type_field_changed
         quick_search
@@ -926,7 +1070,6 @@ Vmdb::Application.routes.draw do
       :post => %w(
         button
         listnav_search_selected
-        panel_control
         protect
         quick_search
         sections_field_changed
@@ -935,8 +1078,7 @@ Vmdb::Application.routes.draw do
         tag_edit_form_field_changed
         tagging_edit
         tl_chooser
-        tree_autoload_dynatree
-        tree_autoload_quads
+        tree_autoload
         wait_for_task
       ) +
                adv_search_post +
@@ -954,6 +1096,8 @@ Vmdb::Application.routes.draw do
         discover
         download_data
         ems_infra_form_fields
+        register_nodes
+        introspect_nodes
         protect
         show_list
         tagging_edit
@@ -965,8 +1109,9 @@ Vmdb::Application.routes.draw do
         button
         create
         form_field_changed
+        register_nodes
+        introspect_nodes
         listnav_search_selected
-        panel_control
         protect
         quick_search
         sections_field_changed
@@ -975,8 +1120,7 @@ Vmdb::Application.routes.draw do
         tag_edit_form_field_changed
         tagging_edit
         tl_chooser
-        tree_autoload_dynatree
-        tree_autoload_quads
+        tree_autoload
         update
         wait_for_task
         scaling
@@ -989,6 +1133,13 @@ Vmdb::Application.routes.draw do
                discover_get_post +
                exp_post +
                save_post
+    },
+
+    :ems_infra_dashboard      => {
+      :get => %w(
+        show
+        data
+      )
     },
 
     :ems_container            => {
@@ -1008,7 +1159,6 @@ Vmdb::Application.routes.draw do
         dynamic_checkbox_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
         protect
         quick_search
         sections_field_changed
@@ -1030,10 +1180,7 @@ Vmdb::Application.routes.draw do
     :ems_middleware            => {
       :get  => %w(
         download_data
-        edit
-        index
-        new
-        show
+        ems_middleware_form_fields
         show_list
         tagging_edit
         tag_edit_form_field_changed
@@ -1045,7 +1192,6 @@ Vmdb::Application.routes.draw do
         dynamic_checkbox_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
         quick_search
         sections_field_changed
         show
@@ -1076,14 +1222,17 @@ Vmdb::Application.routes.draw do
       ) +
                compare_get,
       :post => %w(
+        add_deployment
+        add_jdbc_driver
+        add_datasource
         button
         create
         dynamic_checkbox_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
         perf_chart_chooser
         quick_search
+        run_operation
         sections_field_changed
         show
         show_list
@@ -1117,7 +1266,6 @@ Vmdb::Application.routes.draw do
         dynamic_checkbox_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
         quick_search
         sections_field_changed
         show
@@ -1153,7 +1301,6 @@ Vmdb::Application.routes.draw do
         dynamic_checkbox_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
         quick_search
         sections_field_changed
         perf_chart_chooser
@@ -1171,16 +1318,108 @@ Vmdb::Application.routes.draw do
       save_post
     },
 
+    :middleware_domain => {
+      :get  => %w(
+        download_data
+        edit
+        index
+        show
+        show_list
+        tagging_edit
+        tag_edit_form_field_changed
+      ) +
+        compare_get,
+      :post => %w(
+        button
+        create
+        dynamic_checkbox_refresh
+        form_field_changed
+        listnav_search_selected
+        quick_search
+        sections_field_changed
+        show
+        show_list
+        tl_chooser
+        update
+        wait_for_task
+        tagging_edit
+        tag_edit_form_field_changed
+      ) +
+        adv_search_post +
+        compare_post +
+        exp_post +
+        save_post
+    },
+
+    :middleware_server_group => {
+      :get  => %w(
+        download_data
+        edit
+        index
+        show
+        show_list
+        tagging_edit
+        tag_edit_form_field_changed
+      ) +
+        compare_get,
+      :post => %w(
+        button
+        create
+        dynamic_checkbox_refresh
+        form_field_changed
+        listnav_search_selected
+        quick_search
+        sections_field_changed
+        show
+        show_list
+        tl_chooser
+        update
+        wait_for_task
+        tagging_edit
+        tag_edit_form_field_changed
+      ) +
+        adv_search_post +
+        compare_post +
+        exp_post +
+        save_post
+    },
+
+    :middleware_messaging => {
+      :get  => %w(
+        download_data
+        index
+        perf_chart_chooser
+        show
+        show_list
+        tagging_edit
+        tag_edit_form_field_changed
+      ) +
+      compare_get,
+      :post => %w(
+        button
+        perf_chart_chooser
+        show
+        show_list
+        quick_search
+        listnav_search_selected
+        tl_chooser
+        update
+        wait_for_task
+        tagging_edit
+        tag_edit_form_field_changed
+      ) +
+        adv_search_post +
+        exp_post +
+        save_post
+    },
+
     :ems_network              => {
       :get  => %w(
         dialog_load
         download_data
-        edit
         ems_network_form_fields
         index
-        new
         protect
-        show
         show_list
         tagging_edit
         tag_edit_form_field_changed
@@ -1195,12 +1434,10 @@ Vmdb::Application.routes.draw do
         dynamic_text_box_refresh
         form_field_changed
         listnav_search_selected
-        panel_control
         protect
         provider_type_field_changed
         quick_search
         sections_field_changed
-        show
         show_list
         tag_edit_form_field_changed
         tagging_edit
@@ -1227,7 +1464,7 @@ Vmdb::Application.routes.draw do
       :post => %w(
         button
         quick_search
-        panel_control
+        listnav_search_selected
         show
         show_list
         tag_edit_form_field_changed
@@ -1235,6 +1472,7 @@ Vmdb::Application.routes.draw do
       ) +
         adv_search_post +
         compare_post +
+        save_post +
         exp_post
     },
 
@@ -1250,7 +1488,7 @@ Vmdb::Application.routes.draw do
       :post => %w(
         button
         quick_search
-        panel_control
+        listnav_search_selected
         show
         show_list
         tag_edit_form_field_changed
@@ -1258,13 +1496,17 @@ Vmdb::Application.routes.draw do
       ) +
         adv_search_post +
         compare_post +
+        save_post +
         exp_post
     },
 
     :cloud_subnet             => {
       :get  => %w(
         download_data
+        cloud_subnet_form_fields
+        edit
         index
+        new
         show
         show_list
         tagging_edit
@@ -1272,22 +1514,30 @@ Vmdb::Application.routes.draw do
         compare_get,
       :post => %w(
         button
+        create
+        dynamic_checkbox_refresh
+        form_field_changed
+        listnav_search_selected
         quick_search
-        panel_control
         show
         show_list
         tag_edit_form_field_changed
         tagging_edit
+        update
       ) +
         adv_search_post +
         compare_post +
+        save_post +
         exp_post
     },
 
     :cloud_network             => {
       :get  => %w(
+        cloud_network_form_fields
         download_data
+        edit
         index
+        new
         show
         show_list
         tagging_edit
@@ -1295,15 +1545,20 @@ Vmdb::Application.routes.draw do
         compare_get,
       :post => %w(
         button
+        create
+        dynamic_checkbox_refresh
+        form_field_changed
         quick_search
-        panel_control
+        listnav_search_selected
         show
         show_list
         tag_edit_form_field_changed
         tagging_edit
+        update
       ) +
         adv_search_post +
         compare_post +
+        save_post +
         exp_post
     },
 
@@ -1319,7 +1574,7 @@ Vmdb::Application.routes.draw do
       :post => %w(
         button
         quick_search
-        panel_control
+        listnav_search_selected
         show
         show_list
         tag_edit_form_field_changed
@@ -1327,10 +1582,44 @@ Vmdb::Application.routes.draw do
       ) +
         adv_search_post +
         compare_post +
+        save_post +
         exp_post
     },
 
     :network_router           => {
+      :get  => %w(
+        download_data
+        edit
+        index
+        network_router_form_fields
+        network_router_networks_by_ems
+        new
+        show
+        show_list
+        tagging_edit
+      ) +
+        compare_get,
+      :post => %w(
+        button
+        create
+        form_field_changed
+        listnav_search_selected
+        quick_search
+        sections_field_changed
+        show
+        show_list
+        tagging_edit
+        tag_edit_form_field_changed
+        update
+        wait_for_task
+      ) +
+        adv_search_post +
+        compare_post +
+        save_post +
+        exp_post
+    },
+
+    :load_balancer             => {
       :get  => %w(
         download_data
         index
@@ -1342,14 +1631,15 @@ Vmdb::Application.routes.draw do
       :post => %w(
         button
         quick_search
-        panel_control
         show
         show_list
+        listnav_search_selected
         tag_edit_form_field_changed
         tagging_edit
       ) +
         adv_search_post +
         compare_post +
+        save_post +
         exp_post
     },
 
@@ -1368,8 +1658,8 @@ Vmdb::Application.routes.draw do
                compare_get,
       :post => %w(
         button
+        listnav_search_selected
         quick_search
-        panel_control
         sections_field_changed
         show
         show_list
@@ -1378,7 +1668,8 @@ Vmdb::Application.routes.draw do
       ) +
                adv_search_post +
                compare_post +
-               exp_post
+               exp_post +
+               save_post
     },
 
     :host                     => {
@@ -1432,7 +1723,6 @@ Vmdb::Application.routes.draw do
         host_cloud_services
         listnav_search_selected
         quick_search
-        panel_control
         patches
         protect
         sections_field_changed
@@ -1442,7 +1732,7 @@ Vmdb::Application.routes.draw do
         tag_edit_form_field_changed
         tagging_edit
         tl_chooser
-        tree_autoload_dynatree
+        tree_autoload
         update
         users
         wait_for_task
@@ -1454,6 +1744,54 @@ Vmdb::Application.routes.draw do
                exp_post +
                perf_post +
                save_post
+    },
+
+    :infra_networking         => {
+      :get  => %w(
+        download_data
+        explorer
+        hosts
+        show
+        show_list
+        tagging
+        tagging_edit
+        x_show
+      ),
+      :post => %w(
+        button
+        explorer
+        hosts
+        listnav_search_selected
+        panel_control
+        quick_search
+        reload
+        show
+        show_list
+        tag_edit_form_field_changed
+        tagging
+        tagging_edit
+        tree_select
+        tree_autoload
+        x_button
+        x_show
+        x_search_by_name
+      ) +
+        adv_search_post +
+        exp_post +
+        save_post +
+        x_post
+    },
+
+    :generic_object => {
+      :get => %w(
+        all_object_data
+        explorer
+        object_data
+        tree_data
+      ),
+      :post => %w(
+        create
+      )
     },
 
     :miq_ae_class             => {
@@ -1487,9 +1825,10 @@ Vmdb::Application.routes.draw do
         form_method_field_changed
         form_ns_field_changed
         priority_form_field_changed
+        refresh_git_domain
         reload
         tree_select
-        tree_autoload_dynatree
+        tree_autoload
         update
         update_fields
         update_instance
@@ -1534,7 +1873,7 @@ Vmdb::Application.routes.draw do
         old_dialogs_update
         reload
         resolve
-        tree_autoload_dynatree
+        tree_autoload
         tree_select
         upload_import_file
         x_button
@@ -1552,6 +1891,7 @@ Vmdb::Application.routes.draw do
         import_export
         log
         resolve
+        review_git_import
         review_import
       ),
       :post => %w(
@@ -1559,8 +1899,10 @@ Vmdb::Application.routes.draw do
         cancel_import
         form_field_changed
         import_automate_datastore
+        import_via_git
         reset_datastore
         resolve
+        retrieve_git_datastore
         upload
         upload_import_file
         wait_for_task
@@ -1584,7 +1926,7 @@ Vmdb::Application.routes.draw do
         planning
         planning_option_changed
         reload
-        tree_autoload_dynatree
+        tree_autoload
         util_chart_chooser
         wait_for_task
       )
@@ -1598,7 +1940,6 @@ Vmdb::Application.routes.draw do
         fetch_yaml
         get_json
         import
-        index
         log
         rsop
       ),
@@ -1624,7 +1965,6 @@ Vmdb::Application.routes.draw do
         export
         export_field_changed
         import
-        panel_control
         policy_edit
         policy_get_all
         policy_field_changed
@@ -1636,7 +1976,7 @@ Vmdb::Application.routes.draw do
         rsop_option_changed
         rsop_show_options
         rsop_toggle
-        tree_autoload_dynatree
+        tree_autoload
         tree_select
         upload
         wait_for_task
@@ -1720,6 +2060,49 @@ Vmdb::Application.routes.draw do
                ownership_post
     },
 
+    :ems_storage              => {
+      :get  => %w(
+        dialog_load
+        download_data
+        edit
+        ems_storage_form_fields
+        index
+        new
+        protect
+        show
+        show_list
+        tagging_edit
+        tag_edit_form_field_changed
+      ) +
+        compare_get,
+      :post => %w(
+        button
+        create
+        dynamic_checkbox_refresh
+        dynamic_list_refresh
+        dynamic_radio_button_refresh
+        dynamic_text_box_refresh
+        form_field_changed
+        listnav_search_selected
+        protect
+        provider_type_field_changed
+        quick_search
+        sections_field_changed
+        show
+        show_list
+        tag_edit_form_field_changed
+        tagging_edit
+        tl_chooser
+        update
+        wait_for_task
+      ) +
+        adv_search_post +
+        compare_post +
+        dialog_runner_post +
+        exp_post +
+        save_post
+    },
+
     :ontap_file_share         => {
       :get  => %w(
         cim_base_storage_extents
@@ -1737,7 +2120,6 @@ Vmdb::Application.routes.draw do
         button
         create_ds
         create_ds_field_changed
-        panel_control
         protect
         quick_search
         sections_field_changed
@@ -1765,7 +2147,6 @@ Vmdb::Application.routes.draw do
                compare_get,
       :post => %w(
         button
-        panel_control
         perf_chart_chooser
         protect
         quick_search
@@ -1798,7 +2179,6 @@ Vmdb::Application.routes.draw do
         button
         create_ld
         create_ld_field_changed
-        panel_control
         protect
         quick_search
         sections_field_changed
@@ -1825,7 +2205,6 @@ Vmdb::Application.routes.draw do
                compare_get,
       :post => %w(
         button
-        panel_control
         protect
         quick_search
         sections_field_changed
@@ -1865,6 +2244,7 @@ Vmdb::Application.routes.draw do
         ap_form_field_changed
         ap_set_active_tab
         aps_list
+        automate_schedules_set_vars
         category_delete
         category_edit
         category_field_changed
@@ -1885,13 +2265,20 @@ Vmdb::Application.routes.draw do
         diagnostics_server_list
         diagnostics_tree_select
         diagnostics_worker_selected
+        disable_central_admin
         edit_rhn
+        enable_central_admin
         explorer
         fetch_build
+        fetch_target_ids
         forest_accept
         forest_delete
         forest_form_field_changed
         forest_select
+        label_tag_mapping_delete
+        label_tag_mapping_edit
+        label_tag_mapping_update
+        label_tag_mapping_field_changed
         log_depot_edit
         log_depot_field_changed
         log_depot_validate
@@ -1934,7 +2321,7 @@ Vmdb::Application.routes.draw do
         smartproxy_affinity_field_changed
         tag_edit_form_field_changed
         tl_chooser
-        tree_autoload_dynatree
+        tree_autoload
         tree_select
         update
         upload_csv
@@ -1979,7 +2366,6 @@ Vmdb::Application.routes.draw do
         cloud_networks
         outputs
         listnav_search_selected
-        panel_control
         parameters
         quick_search
         resources
@@ -2019,7 +2405,6 @@ Vmdb::Application.routes.draw do
         exp_token_pressed
         form_field_changed
         new
-        panel_control
         provision
         quick_search
         refresh
@@ -2029,7 +2414,7 @@ Vmdb::Application.routes.draw do
         tagging
         tagging_edit
         tag_edit_form_field_changed
-        tree_autoload_dynatree
+        tree_autoload
         tree_select
         configscript_service_dialog_submit
         cs_form_field_changed
@@ -2067,7 +2452,7 @@ Vmdb::Application.routes.draw do
         template_create_update
         template_form_field_changed
         template_list
-        tree_autoload_dynatree
+        tree_autoload
         tree_select
         x_button
         x_history
@@ -2089,7 +2474,7 @@ Vmdb::Application.routes.draw do
         sample_chart
         sample_timeline
         send_report_data
-        tree_autoload_dynatree
+        tree_autoload
         tree_select
       ),
       :post => %w(
@@ -2120,7 +2505,7 @@ Vmdb::Application.routes.draw do
         schedule_form_field_changed
         show_preview
         show_saved
-        tree_autoload_dynatree
+        tree_autoload
         tree_select
         upload
         upload_widget_import_file
@@ -2150,14 +2535,13 @@ Vmdb::Application.routes.draw do
       :post => %w(
         button
         listnav_search_selected
-        panel_control
         protect
         sections_field_changed
         show
         show_list
         tagging_edit
         tag_edit_form_field_changed
-        tree_autoload_dynatree
+        tree_autoload
         quick_search
       ) +
                adv_search_post +
@@ -2166,15 +2550,23 @@ Vmdb::Application.routes.draw do
                save_post
     },
 
+    :restful_redirect => {
+      :get => %w(
+        index
+      )
+    },
+
     :service                  => {
       :get  => %w(
         download_data
+        edit
         explorer
         retirement_info
         reconfigure_form_fields
         retire
         service_form_fields
         show
+        ownership_form_fields
       ),
       :post => %w(
         button
@@ -2186,7 +2578,7 @@ Vmdb::Application.routes.draw do
         service_edit
         service_tag
         tag_edit_form_field_changed
-        tree_autoload_dynatree
+        tree_autoload
         tree_select
         x_button
         x_history
@@ -2209,7 +2601,6 @@ Vmdb::Application.routes.draw do
         download_data
         explorer
         files
-        index
         perf_chart_chooser
         protect
         show
@@ -2229,11 +2620,11 @@ Vmdb::Application.routes.draw do
         explorer
         files
         listnav_search_selected
-        panel_control
         disk_files
         perf_chart_chooser
         protect
         quick_search
+        reload
         sections_field_changed
         show
         show_association
@@ -2245,7 +2636,7 @@ Vmdb::Application.routes.draw do
         tag_edit_form_field_changed
         tagging
         tagging_edit
-        tree_autoload_dynatree
+        tree_autoload
         tree_select
         vm_misc_files
         vm_ram_files
@@ -2274,7 +2665,6 @@ Vmdb::Application.routes.draw do
         button
         create
         form_field_changed
-        panel_control
         quick_search
         show
         show_list
@@ -2302,10 +2692,15 @@ Vmdb::Application.routes.draw do
         evacuate_form_fields
         live_migrate
         live_migrate_form_fields
+        associate_floating_ip
+        associate_floating_ip_form_fields
+        disassociate_floating_ip
+        disassociate_floating_ip_form_fields
         retire
         right_size
         show
         show_list
+        ownership_form_fields
       ),
       :post => %w(
         edit_vm
@@ -2321,11 +2716,15 @@ Vmdb::Application.routes.draw do
         resize_vm
         evacuate_vm
         live_migrate_vm
+        associate_floating_ip_vm
+        disassociate_floating_ip_vm
         retire
         right_size
         set_checked_items
         show_list
+        tree_autoload
         vmtree_selected
+        ownership_update
       ) +
                ownership_post +
                pre_prov_post
@@ -2354,6 +2753,11 @@ Vmdb::Application.routes.draw do
         detach
         evacuate
         evacuate_form_fields
+        ownership_form_fields
+        associate_floating_ip
+        associate_floating_ip_form_fields
+        disassociate_floating_ip
+        disassociate_floating_ip_form_fields
       ) +
                compare_get,
       :post => %w(
@@ -2366,6 +2770,7 @@ Vmdb::Application.routes.draw do
         event_logs
         explorer
         launch_html5_console
+        launch_cockpit
         filesystems
         filesystem_drivers
         form_field_changed
@@ -2376,7 +2781,6 @@ Vmdb::Application.routes.draw do
         linux_initprocesses
         ownership_field_changed
         ownership_update
-        panel_control
         patches
         perf_chart_chooser
         policies
@@ -2395,6 +2799,7 @@ Vmdb::Application.routes.draw do
         floating_ips
         network_routers
         network_ports
+        load_balancers
         cloud_subnets
         cloud_networks
         cloud_volumes
@@ -2403,7 +2808,7 @@ Vmdb::Application.routes.draw do
         tagging_edit
         tag_edit_form_field_changed
         tl_chooser
-        tree_autoload_dynatree
+        tree_autoload
         tree_select
         users
         vm_pre_prov
@@ -2413,6 +2818,9 @@ Vmdb::Application.routes.draw do
         attach_volume
         detach_volume
         evacuate_vm
+        ownership_update
+        associate_floating_ip_vm
+        disassociate_floating_ip_vm
       ) +
                adv_search_post +
                compare_post +
@@ -2422,6 +2830,7 @@ Vmdb::Application.routes.draw do
                exp_post +
                policy_post +
                pre_prov_post +
+               snap_post +
                x_post
     },
 
@@ -2443,6 +2852,7 @@ Vmdb::Application.routes.draw do
         retire
         show
         tagging_edit
+        ownership_form_fields
       ) +
                compare_get,
       :post => %w(
@@ -2465,7 +2875,6 @@ Vmdb::Application.routes.draw do
         ontap_storage_volume
         ownership_field_changed
         ownership_update
-        panel_control
         patches
         perf_chart_chooser
         policies
@@ -2493,15 +2902,17 @@ Vmdb::Application.routes.draw do
         tagging_edit
         tag_edit_form_field_changed
         tl_chooser
-        tree_autoload_dynatree
+        tree_autoload
         tree_select
         users
         vmrc_console
+        launch_cockpit
         vm_pre_prov
         vm_vdi
         html5_console
         wait_for_task
         win32_services
+        ownership_update
       ) +
                adv_search_post +
                compare_post +
@@ -2533,6 +2944,7 @@ Vmdb::Application.routes.draw do
         util_report_download
         utilization
         vm_show
+        ownership_form_fields
       ) +
                compare_get,
       :post => %w(
@@ -2560,7 +2972,6 @@ Vmdb::Application.routes.draw do
         ontap_storage_systems
         ownership_field_changed
         ownership_update
-        panel_control
         patches
         perf_chart_chooser
         policies
@@ -2604,6 +3015,7 @@ Vmdb::Application.routes.draw do
         x_history
         x_search_by_name
         x_show
+        ownership_update
       ) +
                adv_search_post +
                compare_post +
@@ -2623,22 +3035,55 @@ Vmdb::Application.routes.draw do
   get '/pictures/:basename' => 'picture#show', :basename => /[\da-zA-Z]+\.[\da-zA-Z]+/
 
   # Enablement for the REST API
-  # OPTIONS requests for REST API pre-flight checks
 
   # Semantic Versioning Regex for API, i.e. vMajor.minor.patch[-pre]
-  apiver_regex = /v[\d]+(\.[\da-zA-Z]+)*(\-[\da-zA-Z]+)?/
+  API_VERSION_REGEX = /v[\d]+(\.[\da-zA-Z]+)*(\-[\da-zA-Z]+)?/ unless defined?(API_VERSION_REGEX)
 
-  match '/api/*path'   => 'api#handle_options_request', :via => [:options]
-  get '/api(/:version)'           => 'api#show',    :format => 'json', :version => apiver_regex
+  namespace :api, :path => "api(/:version)", :version => API_VERSION_REGEX, :defaults => {:format => "json"} do
+    root :to => "api#index"
+    match "/", :to => "api#options", :via => :options
 
-  get    '/api(/:version)/:collection(/:c_id(/:subcollection(/:s_id)))' => 'api#show',    :format => 'json', :version => apiver_regex
-  match  '/api(/:version)/:collection(/:c_id(/:subcollection(/:s_id)))' => 'api#update',  :format => 'json', :via => [:post, :put, :patch], :version => apiver_regex
-  delete '/api(/:version)/:collection(/:c_id(/:subcollection(/:s_id)))' => 'api#destroy', :format => 'json', :version => apiver_regex
+    unless defined?(API_ACTIONS)
+      API_ACTIONS = {
+        :get    => "show",
+        :post   => "update",
+        :put    => "update",
+        :patch  => "update",
+        :delete => "destroy",
+        :options => "options"
+      }.freeze
+    end
+
+    Api::ApiConfig.collections.each do |collection_name, collection|
+      # OPTIONS action for each collection
+      match collection_name.to_s, :controller => collection_name, :action => :options, :via => :options
+
+      scope collection_name, :controller => collection_name do
+        collection.verbs.each do |verb|
+          root :action => API_ACTIONS[verb], :via => verb if collection.options.include?(:primary)
+
+          next unless collection.options.include?(:collection)
+
+          if collection.options.include?(:arbitrary_resource_path)
+            match "(/*c_suffix)", :action => API_ACTIONS[verb], :via => verb
+          else
+            match "(/:c_id)", :action => API_ACTIONS[verb], :via => verb
+          end
+        end
+
+        Array(collection.subcollections).each do |subcollection_name|
+          Api::ApiConfig.collections[subcollection_name].verbs.each do |verb|
+            match("/:c_id/#{subcollection_name}(/:s_id)", :action => API_ACTIONS[verb], :via => verb)
+          end
+        end
+      end
+    end
+  end
 
   controller_routes.each do |controller_name, controller_actions|
     # Default route with no action to controller's index action
-    unless [:ems_cloud, :ems_infra, :ems_container].include?(controller_name)
-      match "#{controller_name}", :controller => controller_name, :action => :index, :via => :get
+    unless [:ems_cloud, :ems_infra, :ems_container, :ems_middleware, :ems_network].include?(controller_name)
+      match controller_name.to_s, :controller => controller_name, :action => :index, :via => :get
     end
 
     # One-by-one get/post routes for defined controllers
@@ -2670,6 +3115,9 @@ Vmdb::Application.routes.draw do
   resources :ems_cloud, :as => :ems_clouds
   resources :ems_infra, :as => :ems_infras
   resources :ems_container, :as => :ems_containers
+  resources :ems_middleware, :as => :ems_middlewares
+  resources :ems_network, :as => :ems_networks
+
   match "/auth/:provider/callback" => "sessions#create", :via => :get
 
   if Rails.env.development? && defined?(Rails::Server)

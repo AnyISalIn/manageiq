@@ -35,8 +35,6 @@ class MiqPolicy < ApplicationRecord
 
   @@built_in_policies = nil
 
-  UI_FOLDERS = [Host, Vm, ContainerImage].freeze
-
   def self.built_in_policies
     return @@built_in_policies.dup unless @@built_in_policies.nil?
 
@@ -185,6 +183,8 @@ class MiqPolicy < ApplicationRecord
     plist.each do|p|
       logger.info("MIQ(policy-enforce_policy): Resolving policy [#{p.description}]...")
       if p.conditions.empty?
+        always_condition = {"id" => nil, "description" => "always", "result" => "allow"}
+        result[:details].push(p.attributes.merge("result" => true, "conditions" => [always_condition]))
         succeeded.push(p)
         next
       end

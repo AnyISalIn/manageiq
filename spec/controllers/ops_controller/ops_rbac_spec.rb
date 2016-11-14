@@ -5,7 +5,7 @@ describe OpsController do
     before do
       Tenant.seed
       MiqRegion.seed
-      set_user_privileges
+      stub_user(:features => :all)
     end
 
     context "#tree_select" do
@@ -49,12 +49,14 @@ describe OpsController do
 
         expect(response).to render_template('ops/_rbac_details_tab')
         expect(response.status).to eq(200)
-        expect(response.body).to include('Tenant Quota')
-        expect(response.body).to include('<th>\nName\n<\/th>\n<th>\nTotal Quota\n<\/th>\n<th>\nIn Use\n' \
-                                         '<\/th>\n<th>\nAllocated\n<\/th>\n<th>\nAvailable\n<\/th>')
-        expect(response.body).to include('4096.0 GB')
-        expect(response.body).to include('1024 Count')
-        expect(response.body).to include('27 Count')
+
+        tab_content = JSON.parse(response.body)['replacePartials']['ops_tabs']
+        expect(tab_content).to include('Tenant Quota')
+        expect(tab_content).to include("<th>\nName\n<\/th>\n<th>\nTotal Quota\n<\/th>\n<th>\nIn Use\n" \
+                                         "<\/th>\n<th>\nAllocated\n<\/th>\n<th>\nAvailable\n<\/th>")
+        expect(tab_content).to include('4096.0 GB')
+        expect(tab_content).to include('1024 Count')
+        expect(tab_content).to include('27 Count')
       end
     end
 
@@ -68,7 +70,7 @@ describe OpsController do
 
     context "#rbac_tenant_delete" do
       before do
-        allow(ApplicationHelper).to receive(:role_allows).and_return(true)
+        allow(ApplicationHelper).to receive(:role_allows?).and_return(true)
         @t = FactoryGirl.create(:tenant, :parent => Tenant.root_tenant)
         sb_hash = {
           :trees       => {:rbac_tree => {:active_node => "tn-#{controller.to_cid(@t.id)}"}},
@@ -101,7 +103,7 @@ describe OpsController do
       end
 
       it "deletes checked tenant records successfully" do
-        allow(ApplicationHelper).to receive(:role_allows).and_return(true)
+        allow(ApplicationHelper).to receive(:role_allows?).and_return(true)
         t = FactoryGirl.create(:tenant, :parent => Tenant.root_tenant)
         sb_hash = {
           :trees       => {:rbac_tree => {:active_node => "tn-#{controller.to_cid(t.id)}"}},
@@ -143,7 +145,7 @@ describe OpsController do
           :active_tab  => "rbac_details"
         }
         controller.instance_variable_set(:@sb, sb_hash)
-        allow(ApplicationHelper).to receive(:role_allows).and_return(true)
+        allow(ApplicationHelper).to receive(:role_allows?).and_return(true)
       end
       it "resets tenant edit" do
         controller.instance_variable_set(:@_params, :id => @tenant.id, :button => "reset")
@@ -190,13 +192,13 @@ describe OpsController do
         allow(MiqServer).to receive(:my_server).and_return(server)
       end
 
-      it "saves name in record when use_config_attributes is false" do
+      it "saves name in record when use_config_attributes is true" do
         controller.instance_variable_set(:@_params,
                                          :divisible                 => true,
                                          :use_config_for_attributes => "on"
                                         )
         controller.send(:tenant_set_record_vars, @tenant)
-        stub_server_configuration(:server => { :company => "Settings Company Name"})
+        stub_settings(:server => {:company => "Settings Company Name"})
         expect(@tenant.name).to eq "Settings Company Name"
       end
 
@@ -261,7 +263,7 @@ describe OpsController do
           :active_tab  => "rbac_details"
         }
         controller.instance_variable_set(:@sb, sb_hash)
-        allow(ApplicationHelper).to receive(:role_allows).and_return(true)
+        allow(ApplicationHelper).to receive(:role_allows?).and_return(true)
       end
       it "resets tenant manage quotas" do
         controller.instance_variable_set(:@_params, :id => @tenant.id, :button => "reset")
@@ -304,9 +306,8 @@ describe OpsController do
     end
 
     describe "#tags_edit" do
+      let!(:user) { stub_user(:features => :all) }
       before(:each) do
-        user = FactoryGirl.create(:user)
-        set_user_privileges user
         @tenant = FactoryGirl.create(:tenant,
                                      :name      => "OneTenant",
                                      :parent    => Tenant.root_tenant,
@@ -317,7 +318,7 @@ describe OpsController do
                     :active_tab  => "rbac_details"
                   }
         controller.instance_variable_set(:@sb, sb_hash)
-        allow(ApplicationHelper).to receive(:role_allows).and_return(true)
+        allow(ApplicationHelper).to receive(:role_allows?).and_return(true)
         allow(@tenant).to receive(:tagged_with).with(:cat => user.userid).and_return("my tags")
         classification = FactoryGirl.create(:classification, :name => "department", :description => "Department")
         @tag1 = FactoryGirl.create(:classification_tag,
@@ -379,7 +380,7 @@ describe OpsController do
       MiqUserRole.seed
       MiqGroup.seed
       MiqRegion.seed
-      set_user_privileges
+      stub_user(:features => :all)
     end
 
     it "does not display tenant default groups in Edit Sequence" do
@@ -395,6 +396,76 @@ describe OpsController do
       edit = controller.instance_variable_get(:@edit)
       expect(edit[:current][:ldap_groups].find { |lg| lg.group_type == 'tenant' }).to be(nil)
       expect(edit[:current][:ldap_groups].find { |lg| lg.group_type == 'user' }).not_to be(nil)
+    end
+  end
+
+  context "rbac_role_edit" do
+    before do
+      MiqUserRole.seed
+      MiqGroup.seed
+      MiqRegion.seed
+      stub_user(:features => :all)
+    end
+
+    it "creates a new user role successfully" do
+      allow(controller).to receive(:replace_right_cell)
+      controller.instance_variable_set(:@_params, :button => "add")
+      new = {:features => ["everything"], :name => "foo"}
+      edit = {:key     => "rbac_role_edit__new",
+              :new     => new,
+              :current => new
+      }
+      session[:edit] = edit
+      controller.send(:rbac_role_edit)
+      flash_messages = assigns(:flash_array)
+      expect(flash_messages.first[:message]).to include("Role \"foo\" was saved")
+      expect(controller.send(:flash_errors?)).to be_falsey
+    end
+  end
+
+  render_views
+
+  context "::MiqRegion" do
+    before do
+      EvmSpecHelper.local_miq_server
+      root_tenant = Tenant.seed
+      MiqUserRole.seed
+      MiqGroup.seed
+      MiqRegion.seed
+      role = MiqUserRole.find_by_name("EvmRole-SuperAdministrator")
+      @t1 = FactoryGirl.create(:tenant, :name => "ten1", :parent => root_tenant)
+      @g1 = FactoryGirl.create(:miq_group, :description => 'group1', :tenant => @t1, :miq_user_role => role)
+      @u1 = FactoryGirl.create(:user, :miq_groups => [@g1])
+      @t2 = FactoryGirl.create(:tenant, :name => "ten2", :parent => root_tenant)
+      @g2a  = FactoryGirl.create(:miq_group, :description => 'gr2a', :tenant => @t2, :miq_user_role => role)
+      @g2b  = FactoryGirl.create(:miq_group, :description => 'gr2b1', :tenant => @t2, :miq_user_role => role)
+      @u2a = FactoryGirl.create(:user, :miq_groups => [@g2a])
+      @u2a2 = FactoryGirl.create(:user, :miq_groups => [@g2a])
+      @u2b = FactoryGirl.create(:user, :miq_groups => [@g2b])
+      @u2b2 = FactoryGirl.create(:user, :miq_groups => [@g2b])
+      @u2b3 = FactoryGirl.create(:user, :miq_groups => [@g2b])
+      session[:sandboxes] = {"ops" => {:active_tree => :rbac_tree}}
+      allow(controller).to receive(:replace_right_cell)
+    end
+
+    it "displays the access object count for the current tenant" do
+      login_as @u1
+      session[:sandboxes] = {"ops" => {:active_tree => :rbac_tree}}
+      allow(controller).to receive(:replace_right_cell)
+      post :tree_select, :params => { :id => 'root', :format => :js }
+      expect(controller.instance_variable_get(:@groups_count)).to eq(1)
+      expect(controller.instance_variable_get(:@tenants_count)).to eq(1)
+      expect(controller.instance_variable_get(:@users_count)).to eq(1)
+    end
+
+    it "displays the access object count for the current tenant" do
+      login_as @u2a
+      session[:sandboxes] = {"ops" => {:active_tree => :rbac_tree}}
+      allow(controller).to receive(:replace_right_cell)
+      post :tree_select, :params => { :id => 'root', :format => :js }
+      expect(controller.instance_variable_get(:@groups_count)).to eq(2)
+      expect(controller.instance_variable_get(:@tenants_count)).to eq(1)
+      expect(controller.instance_variable_get(:@users_count)).to eq(5)
     end
   end
 end

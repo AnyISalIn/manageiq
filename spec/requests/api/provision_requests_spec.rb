@@ -5,7 +5,7 @@
 # - Create single provision request    /api/provision_requests    action "create"
 # - Create multiple provision requests /api/provision_requests    action "create"
 #
-describe ApiController do
+describe "Provision Requests API" do
   let(:zone)       { FactoryGirl.create(:zone, :name => "api_zone") }
   let(:miq_server) { FactoryGirl.create(:miq_server, :zone => zone) }
   let(:ems)        { FactoryGirl.create(:ems_vmware, :zone => zone) }
@@ -61,7 +61,7 @@ describe ApiController do
       expect_result_resources_to_include_keys("results", expected_attributes)
       expect_results_to_match_hash("results", [expected_hash])
 
-      task_id = response_hash["results"].first["id"]
+      task_id = response.parsed_body["results"].first["id"]
       expect(MiqProvisionRequest.exists?(task_id)).to be_truthy
     end
 
@@ -75,7 +75,7 @@ describe ApiController do
       expect_result_resources_to_include_keys("results", expected_attributes)
       expect_results_to_match_hash("results", [expected_hash])
 
-      task_id = response_hash["results"].first["id"]
+      task_id = response.parsed_body["results"].first["id"]
       expect(MiqProvisionRequest.exists?(task_id)).to be_truthy
     end
 
@@ -89,7 +89,7 @@ describe ApiController do
       expect_result_resources_to_include_keys("results", expected_attributes)
       expect_results_to_match_hash("results", [expected_hash, expected_hash])
 
-      task_id1, task_id2 = response_hash["results"].collect { |r| r["id"] }
+      task_id1, task_id2 = response.parsed_body["results"].collect { |r| r["id"] }
       expect(MiqProvisionRequest.exists?(task_id1)).to be_truthy
       expect(MiqProvisionRequest.exists?(task_id2)).to be_truthy
     end
@@ -111,17 +111,28 @@ describe ApiController do
       FactoryGirl.create(:flavor_amazon, :ems_id => ems.id, :name => 't2.small', :cloud_subnet_required => true)
     end
     let(:az)             { FactoryGirl.create(:availability_zone_amazon, :ems_id => ems.id) }
-    let(:cloud_network1) { FactoryGirl.create(:cloud_network_amazon, :ems_id => ems.network_manager.id, :enabled => true) }
+    let(:cloud_network1) do
+      FactoryGirl.create(:cloud_network_amazon,
+                         :ext_management_system => ems.network_manager,
+                         :enabled               => true)
+    end
     let(:cloud_subnet1) do
-      FactoryGirl.create(:cloud_subnet, :ems_id => ems.id, :cloud_network => cloud_network1, :availability_zone => az)
+      FactoryGirl.create(:cloud_subnet,
+                         :ext_management_system => ems.network_manager,
+                         :cloud_network         => cloud_network1,
+                         :availability_zone     => az)
     end
     let(:security_group1) do
-      FactoryGirl.create(:security_group_amazon, :name => "sgn_1", :ext_management_system => ems,
-                         :cloud_network => cloud_network1)
+      FactoryGirl.create(:security_group_amazon,
+                         :name                  => "sgn_1",
+                         :ext_management_system => ems.network_manager,
+                         :cloud_network         => cloud_network1)
     end
     let(:floating_ip1) do
-      FactoryGirl.create(:floating_ip_amazon, :cloud_network_only => true, :ems_id => ems.network_manager.id,
-                         :cloud_network => cloud_network1)
+      FactoryGirl.create(:floating_ip_amazon,
+                         :cloud_network_only    => true,
+                         :ext_management_system => ems.network_manager,
+                         :cloud_network         => cloud_network1)
     end
 
     let(:provreq_body) do
@@ -171,7 +182,7 @@ describe ApiController do
       expect_result_resources_to_include_keys("results", expected_provreq_attributes)
       expect_results_to_match_hash("results", [expected_provreq_hash])
 
-      expect(response_hash["results"].first).to a_hash_including(
+      expect(response.parsed_body["results"].first).to a_hash_including(
         "options" => a_hash_including(
           "placement_auto"              => [false, 0],
           "placement_availability_zone" => [az.id, az.name],
@@ -182,7 +193,7 @@ describe ApiController do
         )
       )
 
-      task_id = response_hash["results"].first["id"]
+      task_id = response.parsed_body["results"].first["id"]
       expect(MiqProvisionRequest.exists?(task_id)).to be_truthy
     end
 
@@ -203,14 +214,14 @@ describe ApiController do
       expect_result_resources_to_include_keys("results", expected_provreq_attributes)
       expect_results_to_match_hash("results", [expected_provreq_hash])
 
-      expect(response_hash["results"].first).to a_hash_including(
+      expect(response.parsed_body["results"].first).to a_hash_including(
         "options" => a_hash_including(
           "placement_auto"              => [true, 1],
           "placement_availability_zone" => [nil, nil]
         )
       )
 
-      task_id = response_hash["results"].first["id"]
+      task_id = response.parsed_body["results"].first["id"]
       expect(MiqProvisionRequest.exists?(task_id)).to be_truthy
     end
 
@@ -232,14 +243,14 @@ describe ApiController do
       expect_result_resources_to_include_keys("results", expected_provreq_attributes)
       expect_results_to_match_hash("results", [expected_provreq_hash])
 
-      expect(response_hash["results"].first).to a_hash_including(
+      expect(response.parsed_body["results"].first).to a_hash_including(
         "options" => a_hash_including(
           "placement_auto"              => [true, 1],
           "placement_availability_zone" => [nil, nil]
         )
       )
 
-      task_id = response_hash["results"].first["id"]
+      task_id = response.parsed_body["results"].first["id"]
       expect(MiqProvisionRequest.exists?(task_id)).to be_truthy
     end
   end
@@ -260,7 +271,7 @@ describe ApiController do
       run_post(provreq1_url, gen_request(:approve))
 
       expected_msg = "Provision request #{provreq1.id} approved"
-      expect_single_action_result(:success => true, :message => expected_msg, :href => :provreq1_url)
+      expect_single_action_result(:success => true, :message => expected_msg, :href => provreq1_url)
     end
 
     it "supports denying a request" do
@@ -269,7 +280,7 @@ describe ApiController do
       run_post(provreq2_url, gen_request(:deny))
 
       expected_msg = "Provision request #{provreq2.id} denied"
-      expect_single_action_result(:success => true, :message => expected_msg, :href => :provreq2_url)
+      expect_single_action_result(:success => true, :message => expected_msg, :href => provreq2_url)
     end
 
     it "supports approving multiple requests" do
@@ -277,13 +288,22 @@ describe ApiController do
 
       run_post(provision_requests_url, gen_request(:approve, [{"href" => provreq1_url}, {"href" => provreq2_url}]))
 
-      expect_multiple_action_result(2)
-      expect_result_resources_to_include_hrefs("results", :provreqs_list)
-      expect_result_resources_to_match_key_data(
-        "results",
-        "message",
-        [/Provision request #{provreq1.id} approved/i, /Provision request #{provreq2.id} approved/i]
-      )
+      expected = {
+        "results" => a_collection_containing_exactly(
+          {
+            "message" => a_string_matching(/Provision request #{provreq1.id} approved/i),
+            "success" => true,
+            "href"    => a_string_matching(provreq1_url)
+          },
+          {
+            "message" => a_string_matching(/Provision request #{provreq2.id} approved/i),
+            "success" => true,
+            "href"    => a_string_matching(provreq2_url)
+          }
+        )
+      }
+      expect(response.parsed_body).to include(expected)
+      expect(response).to have_http_status(:ok)
     end
 
     it "supports denying multiple requests" do
@@ -291,13 +311,22 @@ describe ApiController do
 
       run_post(provision_requests_url, gen_request(:deny, [{"href" => provreq1_url}, {"href" => provreq2_url}]))
 
-      expect_multiple_action_result(2)
-      expect_result_resources_to_include_hrefs("results", :provreqs_list)
-      expect_result_resources_to_match_key_data(
-        "results",
-        "message",
-        [/Provision request #{provreq1.id} denied/i, /Provision request #{provreq2.id} denied/i]
-      )
+      expected = {
+        "results" => a_collection_containing_exactly(
+          {
+            "message" => a_string_matching(/Provision request #{provreq1.id} denied/i),
+            "success" => true,
+            "href"    => a_string_matching(provreq1_url)
+          },
+          {
+            "message" => a_string_matching(/Provision request #{provreq2.id} denied/i),
+            "success" => true,
+            "href"    => a_string_matching(provreq2_url)
+          }
+        )
+      }
+      expect(response.parsed_body).to include(expected)
+      expect(response).to have_http_status(:ok)
     end
   end
 end

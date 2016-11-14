@@ -40,7 +40,8 @@ module Openstack
       # Error in Availability zones list
       allow_any_instance_of(Fog::Compute::OpenStack::Real).to receive(:availability_zones).and_raise(forbidden)
       allow_any_instance_of(Fog::Volume::OpenStack::Real).to  receive(:availability_zones).and_raise(not_found)
-
+      allow_any_instance_of(Fog::Compute::OpenStack::AvailabilityZones).to receive(:summary).and_raise(forbidden)
+      allow_any_instance_of(Fog::Volume::OpenStack::AvailabilityZones).to  receive(:summary).and_raise(not_found)
       # Error in list of quotas
       allow_any_instance_of(Fog::Compute::OpenStack::Real).to receive(:get_quota).and_raise(forbidden)
       allow_any_instance_of(Fog::Network::OpenStack::Real).to receive(:get_quota).and_raise(not_found)
@@ -57,6 +58,7 @@ module Openstack
       expect(OrchestrationStackResource.count).to  eq 0
       expect(OrchestrationStackOutput.count).to    eq 0
       expect(OrchestrationTemplate.count).to       eq 0
+
       expect(CloudObjectStoreContainer.count).to   eq storage_data.directories.count
       expect(CloudObjectStoreObject.count).to      eq 0
       expect(CloudResourceQuota.count).to          eq 0
@@ -66,43 +68,36 @@ module Openstack
       # We have broken flavor list, but there is fallback for private flavors using get, which will collect used flavors
       expect(Flavor.count).to              eq 2
 
-      expect(ExtManagementSystem.count).to eq 2 # Can this be not hardcoded?
-      expect(SecurityGroup.count).to       eq security_groups_count
-      expect(FirewallRule.count).to        eq firewall_rules_count
-      expect(FloatingIp.count).to          eq network_data.floating_ips.sum
-      expect(CloudNetwork.count).to        eq network_data.networks.count
-      expect(CloudSubnet.count).to         eq network_data.subnets.count
-      expect(NetworkRouter.count).to       eq network_data.routers.count
-      expect(CloudVolume.count).to         eq volumes_count
-      expect(VmOrTemplate.count).to        eq vms_count + images_count
-      expect(MiqTemplate.count).to         eq images_count
-      expect(Disk.count).to                eq disks_count
-      expect(Hardware.count).to            eq vms_count + images_count
-      expect(Vm.count).to                  eq vms_count
-      expect(OperatingSystem.count).to     eq 0
-      expect(Snapshot.count).to            eq 0
-      expect(SystemService.count).to       eq 0
-      expect(GuestDevice.count).to         eq 0
-      expect(CustomAttribute.count).to     eq 0
-
+      expect(ExtManagementSystem.count).to               eq 4 # Can this be not hardcoded?
+      expect(security_groups_without_defaults.count).to  eq security_groups_count
+      expect(firewall_without_defaults.count).to         eq firewall_rules_count
+      expect(FloatingIp.count).to                        eq network_data.floating_ips.sum
+      expect(CloudNetwork.count).to                      eq network_data.networks.count
+      expect(CloudSubnet.count).to                       eq network_data.subnets.count
+      expect(NetworkRouter.count).to                     eq network_data.routers.count
+      expect(CloudVolume.count).to                       eq volumes_count
+      expect(VmOrTemplate.count).to                      eq vms_count + images_count
+      expect(MiqTemplate.count).to                       eq images_count
+      expect(Disk.count).to                              eq disks_count
+      expect(Hardware.count).to                          eq vms_count + images_count
+      expect(Vm.count).to                                eq vms_count
+      expect(OperatingSystem.count).to                   eq 0
+      expect(Snapshot.count).to                          eq 0
+      expect(SystemService.count).to                     eq 0
+      expect(GuestDevice.count).to                       eq 0
+      expect(CustomAttribute.count).to                   eq 0
       # Just check that Relationship are not empty
       expect(Relationship.count).to        be > 0
       # Just check that queue is not empty
       expect(MiqQueue.count).to            be > 0
 
-      if volume_snapshot_pagination_bug
-        expect(CloudVolumeSnapshot.count).to be > 0
-      else
-        expect(CloudVolumeSnapshot.count).to eq volume_snapshots_count
-      end
     end
 
     def assert_with_skips
       # skips configured modules
-      expect(CloudVolume.count).to eq 0
 
       # .. but other things are still present:
-      expect(Disk.count).to       eq disks_count(false)
+      expect(Disk.count).to       eq disks_count(true)
       expect(FloatingIp.count).to eq network_data.floating_ips.sum
     end
 
@@ -111,6 +106,8 @@ module Openstack
 
       assert_ems
       assert_flavors
+      assert_public_flavor_tenant_mapping
+      assert_private_flavor_tenant_mapping
       assert_specific_az
       assert_availability_zone_null
       assert_specific_tenant
@@ -122,8 +119,6 @@ module Openstack
       assert_routers
       assert_specific_routers
       assert_specific_volumes
-      assert_specific_volume_snapshots
-      assert_specific_directories
       assert_specific_templates
       assert_specific_stacks
       assert_specific_vms
@@ -155,7 +150,7 @@ module Openstack
       count = network_data.security_group_rules.count
       # Neutron puts there + 4 default rules for each default security group + 2 empty default rules for each security
       # group created
-      count += default_security_groups_count * 4 + network_data.security_groups.count * 2 if neutron_networking?
+      count += network_data.security_groups.count * 2 if neutron_networking?
       count
     end
 
@@ -169,7 +164,7 @@ module Openstack
 
     def security_groups_count
       # Number of defined security groups + default group per each project, that is created automatically
-      network_data.security_groups.count + default_security_groups_count
+      network_data.security_groups.count
     end
 
     def images_count
@@ -224,6 +219,7 @@ module Openstack
       # Count only disks that have size bigger that 0
       disks_count = (flavor[:disk] > 0 ? 1 : 0) + (flavor[:ephemeral] > 0 ? 1 : 0) + (flavor[:swap] > 0 ? 1 : 0)
 
+      # May need after linkage is done
       if with_volumes && vm_or_stack[:__block_devices]
         disks_count +=
           vm_or_stack[:__block_devices].count { |d| d[:destination_type] == 'volume' && d[:boot_index] != 0 }
@@ -233,35 +229,35 @@ module Openstack
     end
 
     def availability_zones_count
-      3 # This is affected by conf files only, so needs to be hardcoded value
+      2 # This is affected by conf files only, so needs to be hardcoded value
     end
 
     def assert_table_counts
-      expect(ExtManagementSystem.count).to eq 2 # Can this be not hardcoded?
-      expect(Flavor.count).to              eq compute_data.flavors.count
-      expect(AvailabilityZone.count).to    eq availability_zones_count
-      expect(FloatingIp.count).to          eq network_data.floating_ips.sum
-      expect(AuthPrivateKey.count).to      eq compute_data.key_pairs.count
-      expect(SecurityGroup.count).to       eq security_groups_count
-      expect(FirewallRule.count).to        eq firewall_rules_count
-      expect(CloudNetwork.count).to        eq network_data.networks.count
-      expect(CloudSubnet.count).to         eq network_data.subnets.count
-      expect(NetworkRouter.count).to       eq network_data.routers.count
-      expect(CloudVolume.count).to         eq volumes_count
-      expect(VmOrTemplate.count).to        eq vms_count + images_count
-      expect(Vm.count).to                  eq vms_count
-      expect(MiqTemplate.count).to         eq images_count
-      expect(Disk.count).to                eq disks_count
+      expect(ExtManagementSystem.count).to               eq 4 # Can this be not hardcoded? self/network/cinder/swift
+      expect(Flavor.count).to                            eq compute_data.flavors.count
+      expect(AvailabilityZone.count).to                  eq availability_zones_count
+      expect(FloatingIp.count).to                        eq network_data.floating_ips.sum
+      expect(AuthPrivateKey.count).to                    eq compute_data.key_pairs.count
+      expect(security_groups_without_defaults.count).to  eq security_groups_count
+      expect(firewall_without_defaults.count).to         eq firewall_rules_count
+      expect(CloudNetwork.count).to                      eq network_data.networks.count
+      expect(CloudSubnet.count).to                       eq network_data.subnets.count
+      expect(NetworkRouter.count).to                     eq network_data.routers.count
+      expect(CloudVolume.count).to                       eq volumes_count
+      expect(VmOrTemplate.count).to                      eq vms_count + images_count
+      expect(Vm.count).to                                eq vms_count
+      expect(MiqTemplate.count).to                       eq images_count
+      expect(Disk.count).to                              eq disks_count
       # One hardware per each VM
-      expect(Hardware.count).to            eq vms_count + images_count
+      expect(Hardware.count).to                          eq vms_count + images_count
       # TODO(lsmola) 2 networks per each floatingip assigned, it's kinda weird now, will replace with
       # neutron models, then the number of networks will fit the number of neutron networks
       # expect(Network.count).to           eq vms_count * 2
-      expect(OperatingSystem.count).to     eq 0
-      expect(Snapshot.count).to            eq 0
-      expect(SystemService.count).to       eq 0
-      expect(GuestDevice.count).to         eq 0
-      expect(CustomAttribute.count).to     eq 0
+      expect(OperatingSystem.count).to                   eq 0
+      expect(Snapshot.count).to                          eq 0
+      expect(SystemService.count).to                     eq 0
+      expect(GuestDevice.count).to                       eq 0
+      expect(CustomAttribute.count).to                   eq 0
 
       # Just check that Relationship are not empty
       expect(Relationship.count).to        be > 0
@@ -270,11 +266,6 @@ module Openstack
       expect(CloudService.count).to        be > 0
       expect(CloudResourceQuota.count).to  be > 0
 
-      if volume_snapshot_pagination_bug
-        expect(CloudVolumeSnapshot.count).to be > 0
-      else
-        expect(CloudVolumeSnapshot.count).to eq volume_snapshots_count
-      end
     end
 
     def assert_table_counts_orchestration
@@ -289,7 +280,8 @@ module Openstack
 
     def assert_table_counts_storage
       if storage_supported?
-        expect(CloudObjectStoreContainer.count).to eq storage_data.directories.count
+        volumes_backup = CloudObjectStoreContainer.where({ key: "volumes_backup" })
+        expect(CloudObjectStoreContainer.count).to eq storage_data.directories.count + volumes_backup.count
         expect(CloudObjectStoreObject.count).to    eq storage_data.files.count
       end
     end
@@ -304,7 +296,8 @@ module Openstack
       expect(@ems.availability_zones.size).to eq availability_zones_count
       expect(@ems.floating_ips.size).to       eq network_data.floating_ips.sum
       expect(@ems.key_pairs.size).to          eq compute_data.key_pairs.count
-      expect(@ems.security_groups.size).to    eq security_groups_count
+      security_groups_count = @ems.security_groups.count { |x| x.name != 'default' }
+      expect(security_groups_count).to        eq security_groups_count
       expect(@ems.vms_and_templates.size).to  eq vms_count + images_count
       expect(@ems.vms.size).to                eq vms_count
       expect(@ems.miq_templates.size).to      eq images_count
@@ -350,6 +343,18 @@ module Openstack
       end
     end
 
+    def assert_public_flavor_tenant_mapping
+      @other_flavors = ManageIQ::Providers::Openstack::CloudManager::Flavor.where(:publicly_available => true)
+      @other_flavors.each do |f|
+        expect(f.cloud_tenants.length).to eq CloudTenant.count
+      end
+    end
+
+    def assert_private_flavor_tenant_mapping
+      @private_flavor = ManageIQ::Providers::Openstack::CloudManager::Flavor.where(:publicly_available => false).first
+      expect(@private_flavor.cloud_tenants.length).to eq 1
+    end
+
     def assert_specific_az
       # This tests OpenStack functionality more than ManageIQ
       @nova_az = ManageIQ::Providers::Openstack::CloudManager::AvailabilityZone.where(
@@ -372,6 +377,14 @@ module Openstack
     def assert_specific_tenant
       assert_objects_with_hashes(CloudTenant.all, identity_data.projects)
 
+      identity_data.projects.each do |project|
+        next unless project[:__parent_name]
+
+        parent_id = CloudTenant.find_by(:name => project[:__parent_name]).try(:id)
+        cloud_tenant = CloudTenant.find_by(:name => project[:name])
+        expect(cloud_tenant.parent_id).to eq(parent_id)
+      end
+
       CloudTenant.all.each do |tenant|
         expect(tenant).to be_kind_of(CloudTenant)
         expect(tenant.ext_management_system).to eq(@ems)
@@ -382,11 +395,19 @@ module Openstack
       assert_objects_with_hashes(ManageIQ::Providers::Openstack::CloudManager::AuthKeyPair.all, compute_data.key_pairs)
     end
 
-    def assert_specific_security_groups
-      # We don't want to compare default groups
-      without_default = ManageIQ::Providers::Openstack::NetworkManager::SecurityGroup.all.select do |x|
+    def firewall_without_defaults
+      security_groups_without_defaults.collect(&:firewall_rules).flatten
+    end
+
+    def security_groups_without_defaults
+      SecurityGroup.all.select do |x|
         x[:name] != 'default'
       end
+    end
+
+    def assert_specific_security_groups
+      # We don't want to compare default groups
+      without_default = security_groups_without_defaults
 
       # Compare security groups to expected
       assert_objects_with_hashes(without_default, network_data.security_groups)
@@ -569,13 +590,6 @@ module Openstack
       # assert_objects_with_hashes(volumes, volume_data.volumes)
     end
 
-    def assert_specific_volume_snapshots
-      return if volume_snapshot_pagination_bug
-      volume_snapshots = CloudVolumeSnapshot.all
-      defined_volume_snapshots = volume_data.volume_snapshots
-
-      assert_objects_with_hashes(volume_snapshots, defined_volume_snapshots, {}, {}, [:description])
-    end
 
     def assert_specific_directories
       return unless storage_supported?
@@ -738,6 +752,9 @@ module Openstack
         expect(vm.public_networks.count).to be > 0
         expect(vm.public_networks.first).to be_kind_of(ManageIQ::Providers::Openstack::NetworkManager::CloudNetwork::Public)
 
+        expect(vm.fixed_ip_addresses.count).to    be > 0
+        expect(vm.floating_ip_addresses.count).to be > 0
+
         expect(vm.private_networks.map(&:name)).to match_array vm_expected[:__network_names]
         expect(vm.public_networks.first.floating_ips).to include vm.floating_ips.first
         vm.network_ports.each do |network_port|
@@ -833,6 +850,13 @@ module Openstack
       executable_names_count.map do |executable_name, count|
         expect(CloudService.where(:executable_name => executable_name).count).to eq count
       end
+    end
+
+    def expect_sync_cloud_tenants_with_tenants_is_queued
+      sync_cloud_tenant = MiqQueue.last
+
+      expect(sync_cloud_tenant.method_name).to eq("sync_cloud_tenants_with_tenants")
+      expect(sync_cloud_tenant.state).to eq(MiqQueue::STATE_READY)
     end
   end
 end

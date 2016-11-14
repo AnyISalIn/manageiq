@@ -26,6 +26,7 @@ module MiqPolicyController::Alerts
                                                 _("%{model} \"%{name}\" was added")
         add_flash(flash_key % {:model => ui_lookup(:model => "MiqAlert"), :name => @edit[:new][:description]})
         alert_get_info(MiqAlert.find(alert.id))
+        alert_sync_provider(@edit[:alert_id] ? :update : :new)
         @edit = nil
         @nodetype = "al"
         @new_alert_node = "al-#{to_cid(alert.id)}"
@@ -59,6 +60,8 @@ module MiqPolicyController::Alerts
     else
       alerts.push(params[:id])
     end
+    alert_get_info(MiqAlert.find(params[:id]))
+    alert_sync_provider(:delete)
 
     process_alerts(alerts, "destroy") unless alerts.empty?
     @new_alert_node = self.x_node = "root"
@@ -78,9 +81,6 @@ module MiqPolicyController::Alerts
     end
     @edit[:new][:repeat_time] = params[:repeat_time].to_i if params[:repeat_time]
     @edit[:new][:event_name] = params[:event_name] if params[:event_name]
-
-    # Removed following line, not allowing this option to be changed in the UI at this time (v3.3, sprint 66)
-    #   @edit[:new][:expression][:mode] = params[:use_automate_cb] == "1" ? "automate" : "internal" if params.has_key?(:use_automate_cb)
 
     if params[:miq_alert_db]
       @edit[:new][:db] = params[:miq_alert_db]
@@ -274,8 +274,7 @@ module MiqPolicyController::Alerts
 
     # Build hash of arrays of all events by event type
     @edit[:events] = {}
-    MiqEventDefinition.all_events.each do |e|
-      next if e.name.ends_with?("compliance_check")
+    MiqEventDefinition.all_control_events.each do |e|
       @edit[:events][e.id] = (e.etype.description + ": " + e.description)
     end
 
@@ -453,44 +452,41 @@ module MiqPolicyController::Alerts
 
     # :time_thresholds
     @sb[:alert][:time_thresholds] ||= {
-      5.minutes.to_i => _("5 Minutes"), 10.minutes.to_i => _("10 Minutes"), 15.minutes.to_i => "15 Minutes", 30.minutes.to_i => "30 Minutes",
-      1.hour.to_i => "1 Hour", 2.hours.to_i => "2 Hours", 3.hours.to_i => "3 Hours", 4.hours.to_i => "4 Hours", 6.hours.to_i => "6 Hours", 12.hours.to_i => "12 Hours",
-      1.day.to_i => "1 Day"
-      # Stopping this at 1 day for now - Sprint 53
-      #     , 2.days.to_i=>"2 Days", 3.days.to_i=>"3 Days", 4.days.to_i=>"4 Days", 5.days.to_i=>"5 Days", 6.days.to_i=>"6 Days",
-      #     1.week.to_i=>"1 Week", 2.weeks.to_i=>"2 Weeks", 3.weeks.to_i=>"3 Weeks",
-      #     1.month.to_i=>"1 Month", 2.months.to_i=>"2 Months", 3.months.to_i=>"3 Months", 6.months.to_i=>"6 Months",
-      #     1.year.to_i=>"1 Year"
+      5.minutes.to_i => _("5 Minutes"), 10.minutes.to_i => _("10 Minutes"), 15.minutes.to_i => _("15 Minutes"),
+      30.minutes.to_i => _("30 Minutes"), 1.hour.to_i => _("1 Hour"), 2.hours.to_i => _("2 Hours"),
+      3.hours.to_i => _("3 Hours"), 4.hours.to_i => _("4 Hours"), 6.hours.to_i => _("6 Hours"),
+      12.hours.to_i => _("12 Hours"), 1.day.to_i => _("1 Day")
     }
 
     # :hourly_time_thresholds
     @sb[:alert][:hourly_time_thresholds] ||= {
-      1.hour.to_i => "1 Hour", 2.hours.to_i => "2 Hours", 3.hours.to_i => "3 Hours", 4.hours.to_i => "4 Hours", 6.hours.to_i => "6 Hours", 12.hours.to_i => "12 Hours",
-      1.day.to_i => "1 Day"
+      1.hour.to_i => _("1 Hour"), 2.hours.to_i => _("2 Hours"), 3.hours.to_i => _("3 Hours"),
+      4.hours.to_i => _("4 Hours"), 6.hours.to_i => _("6 Hours"), 12.hours.to_i => _("12 Hours"),
+      1.day.to_i => _("1 Day")
     }
 
     # :rt_time_thresholds
     @sb[:alert][:rt_time_thresholds] ||= {
-      1.minutes.to_i => "1 Minute", 2.minutes.to_i => "2 Minutes", 3.minutes.to_i => "3 Minutes", 4.minutes.to_i => "4 Minutes",
-      5.minutes.to_i => "5 Minutes", 10.minutes.to_i => "10 Minutes", 15.minutes.to_i => "15 Minutes", 30.minutes.to_i => "30 Minutes",
-      1.hour.to_i => "1 Hour", 2.hours.to_i => "2 Hours"
-      # Stopping this at 2 hours now - Sprint 65
-      #     , 3.hours.to_i=>"3 Hours", 4.hours.to_i=>"4 Hours", 6.hours.to_i=>"6 Hours", 12.hours.to_i=>"12 Hours",
-      #     1.day.to_i=>"1 Day"
+      1.minutes.to_i => _("1 Minute"), 2.minutes.to_i => _("2 Minutes"), 3.minutes.to_i => _("3 Minutes"),
+      4.minutes.to_i => _("4 Minutes"), 5.minutes.to_i => _("5 Minutes"), 10.minutes.to_i => _("10 Minutes"),
+      15.minutes.to_i => _("15 Minutes"), 30.minutes.to_i => _("30 Minutes"), 1.hour.to_i => _("1 Hour"),
+      2.hours.to_i => _("2 Hours")
     }
 
     # hourly_performance repeat times for Notify Every pull down
     @sb[:alert][:hourly_repeat_times] ||= {
-      1.hour.to_i => "1 Hour", 2.hours.to_i => "2 Hours", 3.hours.to_i => "3 Hours", 4.hours.to_i => "4 Hours", 6.hours.to_i => "6 Hours", 12.hours.to_i => "12 Hours",
-      1.day.to_i => "1 Day"
+      1.hour.to_i => _("1 Hour"), 2.hours.to_i => _("2 Hours"), 3.hours.to_i => _("3 Hours"),
+      4.hours.to_i => _("4 Hours"), 6.hours.to_i => _("6 Hours"), 12.hours.to_i => _("12 Hours"),
+      1.day.to_i => _("1 Day")
     }
 
     # repeat times for Notify Every pull down
     @sb[:alert][:repeat_times] ||= {
-      1.minutes.to_i => "1 Minute", 2.minutes.to_i => "2 Minutes", 3.minutes.to_i => "3 Minutes", 4.minutes.to_i => "4 Minutes",
-      5.minutes.to_i => "5 Minutes", 10.minutes.to_i => "10 Minutes", 15.minutes.to_i => "15 Minutes", 30.minutes.to_i => "30 Minutes",
-      1.hour.to_i => "1 Hour", 2.hours.to_i => "2 Hours", 3.hours.to_i => "3 Hours", 4.hours.to_i => "4 Hours", 6.hours.to_i => "6 Hours", 12.hours.to_i => "12 Hours",
-      1.day.to_i => "1 Day"
+      1.minutes.to_i => _("1 Minute"), 2.minutes.to_i => _("2 Minutes"), 3.minutes.to_i => _("3 Minutes"),
+      4.minutes.to_i => _("4 Minutes"), 5.minutes.to_i => _("5 Minutes"), 10.minutes.to_i => _("10 Minutes"),
+      15.minutes.to_i => _("15 Minutes"), 30.minutes.to_i => _("30 Minutes"), 1.hour.to_i => _("1 Hour"),
+      2.hours.to_i => _("2 Hours"), 3.hours.to_i => _("3 Hours"), 4.hours.to_i => _("4 Hours"),
+      6.hours.to_i => _("6 Hours"), 12.hours.to_i => _("12 Hours"), 1.day.to_i => _("1 Day")
     }
   end
 
@@ -498,7 +494,7 @@ module MiqPolicyController::Alerts
     alarms = {}
     begin
       alarms = MiqAlert.ems_alarms(@edit[:new][:db], @edit[:new][:expression][:options][:ems_id])
-    rescue StandardError => bang
+    rescue => bang
       add_flash(_("Error during alarms: %{messages}") % {:messages => bang.message}, :error)
     end
     alarms
@@ -569,6 +565,9 @@ module MiqPolicyController::Alerts
           add_flash(_("Trend Steepness must be an integer"), :error)
         end
       end
+      unless @edit.fetch_path(:new, :expression, :options, :rt_time_threshold)
+        add_flash(_("Time threshold for the field criteria must be selected"), :error)
+      end
     end
     if %w(mw_heap_used mw_non_heap_used).include?(@edit.fetch_path(:new, :expression, :eval_method))
       value_greater_than = @edit.fetch_path(:new, :expression, :options, :value_mw_greater_than)
@@ -580,14 +579,16 @@ module MiqPolicyController::Alerts
       unless value_greater_than && is_integer?(value_greater_than)
         add_flash(_(template_error % [">", non, an_integer]), :error)
       end
-      unless value_greater_than.to_i.between?(0, 100)
+      value_greater_than = value_greater_than.to_i
+      unless value_greater_than.between?(0, 100)
         add_flash(_(template_error % [">", non, between]), :error)
       end
       value_less_than = @edit.fetch_path(:new, :expression, :options, :value_mw_less_than)
       unless value_less_than && is_integer?(value_less_than)
         add_flash(_(template_error % ["<", non, an_integer]), :error)
       end
-      unless value_less_than.to_i.between?(0, 100)
+      value_less_than = value_less_than.to_i
+      unless value_less_than.between?(0, 100)
         add_flash(_(template_error % ["<", non, between]), :error)
       end
       if value_less_than && value_greater_than && (value_less_than >= value_greater_than)
@@ -648,7 +649,7 @@ module MiqPolicyController::Alerts
       @alert_profiles = @alert.memberof.sort_by { |p| p.description.downcase }
     end
 
-    unless @alert.expression.kind_of?(MiqExpression) # Get the EMS if it's in the expression
+    if @alert.expression && !@alert.expression.kind_of?(MiqExpression) # Get the EMS if it's in the expression
       @ems = ExtManagementSystem.find_by_id(@alert.expression[:options][:ems_id].to_i)
     end
     if @alert.expression.kind_of?(Hash) && @alert.expression[:eval_method]
@@ -658,6 +659,16 @@ module MiqPolicyController::Alerts
           @perf_column_unit = alert_get_perf_column_unit(eo[:values][@alert.db][@alert.expression[:options][:perf_column]])
         end
       end
+    end
+  end
+
+  def alert_sync_provider(operation)
+    if @alert.db == "MiddlewareServer"
+      MiqQueue.put(
+        :class_name  => "ManageIQ::Providers::Hawkular::MiddlewareManager",
+        :method_name => "update_alert",
+        :args        => {:operation => operation, :alert => @alert}
+      )
     end
   end
 end

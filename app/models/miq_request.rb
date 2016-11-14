@@ -1,4 +1,6 @@
 class MiqRequest < ApplicationRecord
+  extend InterRegionApiMethodRelay
+
   ACTIVE_STATES = %w(active queued)
 
   belongs_to :source,            :polymorphic => true
@@ -42,44 +44,54 @@ class MiqRequest < ApplicationRecord
   MODEL_REQUEST_TYPES = {
     :Service        => {
       :MiqProvisionRequest                 => {
-        :template          => "VM Provision",
-        :clone_to_vm       => "VM Clone",
-        :clone_to_template => "VM Publish",
+        :template          => N_("VM Provision"),
+        :clone_to_vm       => N_("VM Clone"),
+        :clone_to_template => N_("VM Publish"),
       },
       :MiqProvisionConfiguredSystemRequest => {
-        :provision_via_foreman => "#{ui_lookup(:ui_title => 'foreman')} Provision"
+        :provision_via_foreman => N_("%{config_mgr_type} Provision") % {:config_mgr_type => ui_lookup(:ui_title => 'foreman')}
       },
       :VmReconfigureRequest                => {
-        :vm_reconfigure => "VM Reconfigure"
+        :vm_reconfigure => N_("VM Reconfigure")
       },
       :VmMigrateRequest                    => {
-        :vm_migrate => "VM Migrate"
+        :vm_migrate => N_("VM Migrate")
       },
       :ServiceTemplateProvisionRequest     => {
-        :clone_to_service => "Service Provision"
+        :clone_to_service => N_("Service Provision")
       },
       :ServiceReconfigureRequest           => {
-        :service_reconfigure => "Service Reconfigure"
+        :service_reconfigure => N_("Service Reconfigure")
       }
     },
     :Infrastructure => {
       :MiqHostProvisionRequest => {
-        :host_pxe_install => "Host Provision"
+        :host_pxe_install => N_("Host Provision")
       },
     },
     :Automate       => {
       :AutomationRequest => {
-        :automation => "Automation"
+        :automation => N_("Automation")
       }
     }
   }
 
   REQUEST_TYPES_BACKEND_ONLY = {:MiqProvisionRequestTemplate => {:template => "VM Provision Template"}}
   REQUEST_TYPES = MODEL_REQUEST_TYPES.values.each_with_object(REQUEST_TYPES_BACKEND_ONLY) { |i, h| i.each { |k, v| h[k] = v } }
+  REQUEST_TYPE_TO_MODEL = MODEL_REQUEST_TYPES.values.each_with_object({}) do |i, h|
+    i.each { |k, v| v.keys.each { |vk| h[vk] = k } }
+  end
+
 
   delegate :deny, :reason, :stamped_on, :to => :first_approval
   delegate :userid, :to => :requester, :prefix => true
   delegate :request_task_class, :request_types, :task_description, :to => :class
+
+  def self.class_from_request_data(data)
+    request_type = (data[:__request_type__] || data[:request_type]).try(:to_sym)
+    model_symbol = REQUEST_TYPE_TO_MODEL[request_type] || raise(ArgumentError, "Invalid request_type")
+    model_symbol.to_s.constantize
+  end
 
   # Supports old-style requests where specific request was a seperate table connected as a resource
   def resource
@@ -198,7 +210,7 @@ class MiqRequest < ApplicationRecord
       execute
     rescue => err
       _log.error("#{err.message}, attempting to execute request: [#{description}]")
-      _log.error("#{err.backtrace.join("\n")}")
+      _log.error(err.backtrace.join("\n"))
     end
 
     true
@@ -256,9 +268,11 @@ class MiqRequest < ApplicationRecord
   def approve(userid, reason)
     first_approval.approve(userid, reason) unless self.approved?
   end
+  api_relay_method(:approve) { |_userid, reason| {:reason => reason} }
+  api_relay_method(:deny)    { |_userid, reason| {:reason => reason} }
 
   def stamped_by
-    first_approval.stamper ? first_approval.stamper.userid : nil
+    first_approval.stamper.try(:userid)
   end
 
   def approver
@@ -441,31 +455,63 @@ class MiqRequest < ApplicationRecord
 
   def self.create_request(values, requester, auto_approve = false)
     values[:src_ids] = values[:src_ids].to_miq_a unless values[:src_ids].nil?
-    request = new(:options      => values,
-                  :requester    => requester,
-                  :request_type => request_types.first)
-    request.save!
+    request_type = values.delete(:__request_type__) || request_types.first
+    request = create!(:options => values, :requester => requester, :request_type => request_type)
 
-    request.set_description
+    request.post_create(auto_approve)
+  end
+  api_relay_class_method(:create_request, :create) do |values, requester, auto_approve|
+    [
+      find_source_id_from_values(values),
+      {
+        :options      => values,
+        :requester    => {"user_name" => requester.userid},
+        :auto_approve => auto_approve
+      }
+    ]
+  end
 
-    request.log_request_success(requester, :created)
+  def self.find_source_id_from_values(values)
+    MiqRequestMixin.get_option(:src_vm_id, nil, values) ||
+      MiqRequestMixin.get_option(:src_id, nil, values) ||
+      MiqRequestMixin.get_option(:src_ids, nil, values)
+  end
+  private_class_method :find_source_id_from_values
 
-    request.call_automate_event_queue("request_created")
-    request.approve(requester, "Auto-Approved") if auto_approve
-    request.reload if auto_approve
-    request
+  def post_create(auto_approve)
+    set_description
+
+    log_request_success(requester, :created)
+
+    if process_on_create?
+      call_automate_event_queue("request_created")
+      approve(requester, "Auto-Approved") if auto_approve
+      reload if auto_approve
+    end
+
+    self
   end
 
   # Helper method when not using workflow
   def self.update_request(request, values, requester)
     request = request.kind_of?(MiqRequest) ? request : MiqRequest.find(request)
-    request.update_attribute(:options, request.options.merge(values))
-    request.set_description(true)
+    request.update_request(values, requester)
+  end
 
-    request.log_request_success(requester, :updated)
+  def update_request(values, requester)
+    update_attribute(:options, options.merge(values))
+    set_description(true)
 
-    request.call_automate_event_queue("request_updated")
-    request
+    log_request_success(requester, :updated)
+
+    call_automate_event_queue("request_updated")
+    self
+  end
+  api_relay_method(:update_request, :edit) do |values, requester|
+    {
+      :options   => values,
+      :requester => {"user_name" => requester.userid}
+    }
   end
 
   def log_request_success(requester_id, mode)

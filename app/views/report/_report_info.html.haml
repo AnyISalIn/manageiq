@@ -1,4 +1,4 @@
-= render :partial => "layouts/flash_msg", :locals => {:div_num => "_report_list"}
+= render :partial => "layouts/flash_msg"
 - if @sb[:active_tab] == "report_info"
   - if @sb[:miq_report_id] && @miq_report
     .form-horizontal.static
@@ -74,13 +74,13 @@
       %tbody
         - @schedules.each do |s|
           - tz = s.run_at && s.run_at[:tz] ? s.run_at[:tz] : session[:user_tz]
-          - if role_allows(:feature => "miq_report_schedules")
+          - if role_allows?(:feature => "miq_report_schedules")
             - params = {:title => _("View this Schedule"), :onclick => remote_function(:url => "/report/x_show/msc-#{to_cid(s.id)}?accord=schedules")}
           - else
             - params = {}
           %tr{params}
             %td.narrow
-              %img{:src => image_path('100/miq_schedule.png')}
+              %i.fa.fa-clock-o
             %td
               = s.name
             %td
@@ -118,14 +118,14 @@
           = _('Enabled')
       %tbody
         - @widget_nodes.each do |w|
-          - if role_allows(:feature => "miq_report_widget_editor")
+          - if role_allows?(:feature => "miq_report_widget_editor")
             - params = {:title => _("Click to view selected widget"),
               :onclick => remote_function(:url => "/report/x_show/xx-#{WIDGET_CONTENT_TYPE.invert[w.content_type]}_-#{to_cid(w.id)}?accord=widgets")}
           - else
             - params = {}
           %tr{params}
             %td.narrow
-              %img{:src => image_path('100/report_widget.png')}
+              %i.product.product-report
             %td
               = h(w.title)
             %td

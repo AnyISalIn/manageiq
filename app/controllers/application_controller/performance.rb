@@ -49,6 +49,8 @@ module ApplicationController::Performance
                   "from the Most Recent Hour is being displayed"), :warning)
     end
 
+    add_flash(_('No Daily data is available'), :warning) if @perf_options[:no_daily] && @perf_options[:typ] == 'Daily'
+
     render :update do |page|
       page << javascript_prologue
       if @parent_chart_data
@@ -104,14 +106,11 @@ module ApplicationController::Performance
   # Generate a chart with the top CIs for a given timestamp
   def perf_top_chart
     return if perfmenu_click?
-
     @record = identify_tl_or_perf_record
     @perf_record = @record.kind_of?(MiqServer) ? @record.vm : @record # Use related server vm record
     if params[:menu_choice]
-      legend_idx = params[:menu_choice].split("_").last.split("-").first.to_i - 1
-      data_idx = params[:menu_choice].split("_").last.split("-")[-2].to_i - 1
-      chart_idx = params[:menu_choice].split("_").last.split("-").last.to_i
-      cmd, model, typ = params[:menu_choice].split("_").first.split("-")
+      legend_idx, data_idx, chart_idx, _cmd, model, typ = parse_chart_click(params[:menu_choice])
+
       report = @sb[:chart_reports].kind_of?(Array) ? report = @sb[:chart_reports][chart_idx] : @sb[:chart_reports]
       data_row = report.table.data[data_idx]
       if @perf_options[:cat]
@@ -144,7 +143,6 @@ module ApplicationController::Performance
                                        :action => "perf_top_chart",
                                        :bc     => params[:bc],
                                        :escape => false))
-      #     @spin_msg = "Generating chart data..."
       @ajax_action = "perf_top_chart"
       render :action => "show"
     end
@@ -202,16 +200,19 @@ module ApplicationController::Performance
     edate_daily = edate.hour < 23 ? edate - 1.day : edate
     options[:edate_daily] = edate_daily
     # check if Daily report was manualy chosen in UI
-    if allow_interval_override
-      options[:typ] = "Hourly" if options[:typ] == "Daily" && edate_daily < sdate_daily
+    if options[:typ] == "Daily" && edate_daily < sdate_daily
+      options[:no_daily] = true
+      options[:typ] = "Hourly" if allow_interval_override
+    else
+      options[:no_daily] = false
     end
 
-    if options[:hourly_date] && # Need to clear hourly date if not nil so it will be reset below if
+    if options[:hourly_date].present? && # Need to clear hourly date if not nil so it will be reset below if
        (options[:hourly_date].to_date < sdate.to_date || options[:hourly_date].to_date > edate.to_date || # it is out of range
          (options[:typ] == "Hourly" && options[:time_profile] && !options[:time_profile_days].include?(options[:hourly_date].to_date.wday))) # or not in profile
       options[:hourly_date] = nil
     end
-    if options[:daily_date] &&
+    if options[:daily_date].present? &&
        (options[:daily_date].to_date < sdate_daily.to_date || options[:daily_date].to_date > edate_daily.to_date)
       options[:daily_date] = nil
     end
@@ -235,21 +236,10 @@ module ApplicationController::Performance
   # Handle actions for performance chart context menu clicks
   def perf_menu_click
     # Parse the clicked item to get indexes and selection variables
-    click_parts = params[:menu_click].split("_").last.split("-")
-
-    legend_idx = click_parts.first.to_i
-    data_idx   = click_parts[-2].to_i
-    chart_idx  = click_parts.last.to_i
-
-    if Charting.backend == :ziya
-      legend_idx -= 1
-      data_idx   -= 1
-    end
-
-    cmd, model, typ = params[:menu_click].split("_").first.split("-")
+    legend_idx, data_idx, chart_idx, cmd, model, typ = parse_chart_click(params[:menu_click])
 
     # Swap in 'Instances' for 'VMs' in AZ breadcrumbs (poor man's cloud/infra split hack)
-    bc_model = request.parameters['controller'] == 'availability_zone' && model == 'VMs' ? 'Instances' : model
+    bc_model = ['availability_zone', 'host_aggregate'].include?(request.parameters['controller']) && model == 'VMs' ? 'Instances' : model
 
     report = @sb[:chart_reports].kind_of?(Array) ? @sb[:chart_reports][chart_idx] : @sb[:chart_reports]
     data_row = report.table.data[data_idx]
@@ -259,13 +249,10 @@ module ApplicationController::Performance
 
     if cmd == "Display" && model == "Current" && typ == "Top"                   # Display the CI selected from a Top chart
       return unless perf_menu_record_valid(data_row["resource_type"], data_row["resource_id"], data_row["resource_name"])
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to(:controller => data_row["resource_type"].underscore,
-                         :action     => "show",
-                         :id         => data_row["resource_id"],
-                         :escape     => false)
-      end
+      javascript_redirect :controller => data_row["resource_type"].underscore,
+                          :action     => "show",
+                          :id         => data_row["resource_id"],
+                          :escape     => false
       return
 
     elsif cmd == "Display" && typ == "bytag"  # Display selected resources from a tag chart
@@ -281,15 +268,12 @@ module ApplicationController::Performance
              else
                _("%{model} (%{tag} running %{time})") % {:tag => bc_tag, :model => bc_model, :time => dt}
              end
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to(:controller    => model.downcase.singularize,
-                           :action        => "show_list",
-                           :menu_click    => params[:menu_click],
-                           :sb_controller => request.parameters["controller"],
-                           :bc            => bc,
-                           :escape        => false)
-        end
+        javascript_redirect :controller    => model.downcase.singularize,
+                            :action        => "show_list",
+                            :menu_click    => params[:menu_click],
+                            :sb_controller => request.parameters["controller"],
+                            :bc            => bc,
+                            :escape        => false
         return
       end
 
@@ -300,15 +284,12 @@ module ApplicationController::Performance
         msg = _("No %{model} were %{state} %{time}") % {:model => model, :state => state, :time => dt}
       else
         bc = request.parameters["controller"] == "storage" ? "#{bc_model} #{dt}" : "#{bc_model} #{state} #{dt}"
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to(:controller    => model.downcase.singularize,
-                           :action        => "show_list",
-                           :menu_click    => params[:menu_click],
-                           :sb_controller => request.parameters["controller"],
-                           :bc            => bc,
-                           :escape        => false)
-        end
+        javascript_redirect :controller    => model.downcase.singularize,
+                            :action        => "show_list",
+                            :menu_click    => params[:menu_click],
+                            :sb_controller => request.parameters["controller"],
+                            :bc            => bc,
+                            :escape        => false
         return
       end
 
@@ -340,15 +321,12 @@ module ApplicationController::Performance
           @_params[:refresh] = "n"
           show_timeline
         else
-          render :update do |page|
-            page << javascript_prologue
-            page.redirect_to(:id         => @perf_record.id,
-                             :action     => "show",
-                             :display    => "timeline",
-                             :controller => model_to_controller(@perf_record),
-                             :refresh    => "n",
-                             :escape     => false)
-          end
+          javascript_redirect :id         => @perf_record.id,
+                              :action     => "show",
+                              :display    => "timeline",
+                              :controller => model_to_controller(@perf_record),
+                              :refresh    => "n",
+                              :escape     => false
         end
         return
       end
@@ -380,21 +358,18 @@ module ApplicationController::Performance
           @_params[:refresh] = "n"
           show_timeline
         else
-          render :update do |page|
-            page << javascript_prologue
-            if data_row["resource_type"] == "VmOrTemplate"
-              tree_node_id = TreeBuilder.build_node_id(@record.class.base_model, @record.id)
-              session[:exp_parms] = {:display => "timeline", :refresh => "n", :id => tree_node_id}
-              page.redirect_to(:controller => data_row["resource_type"].underscore.downcase.singularize,
-                               :action     => "explorer")
-            else
-              page.redirect_to(:controller => data_row["resource_type"].underscore.downcase.singularize,
-                               :action     => "show",
-                               :display    => "timeline",
-                               :id         => data_row["resource_id"],
-                               :refresh    => "n",
-                               :escape     => false)
-            end
+          if data_row["resource_type"] == "VmOrTemplate"
+            tree_node_id = TreeBuilder.build_node_id(@record.class.base_model, @record.id)
+            session[:exp_parms] = {:display => "timeline", :refresh => "n", :id => tree_node_id}
+            javascript_redirect :controller => data_row["resource_type"].underscore.downcase.singularize,
+                                :action     => "explorer"
+          else
+            javascript_redirect :controller => data_row["resource_type"].underscore.downcase.singularize,
+                                :action     => "show",
+                                :display    => "timeline",
+                                :id         => data_row["resource_id"],
+                                :refresh    => "n",
+                                :escape     => false
           end
         end
         return
@@ -440,8 +415,7 @@ module ApplicationController::Performance
       @record = identify_tl_or_perf_record
       @perf_record = @record.kind_of?(MiqServer) ? @record.vm : @record # Use related server vm record
       @perf_options[:typ] = "Daily"
-
-      perf_set_or_fix_dates(@perf_options)  unless params[:task_id] # Set dates if first time thru
+      perf_set_or_fix_dates(@perf_options, false)  unless params[:task_id] # Set dates if first time thru
       perf_gen_data
       return unless @charts        # Return if no charts got created (first time thru async rpt gen)
 
@@ -489,22 +463,19 @@ module ApplicationController::Performance
       session[:sandboxes][cont][:perf_options] ||= {}
       session[:sandboxes][cont][:perf_options].merge!(new_opts)
 
-      render :update do |page|
-        page << javascript_prologue
-        if data_row["resource_type"] == "VmOrTemplate"
-          prefix = TreeBuilder.get_prefix_for_model(@record.class.base_model)
-          tree_node_id = "#{prefix}-#{@record.id}"  # Build the tree node id
-          session[:exp_parms] = {:display => "performance", :refresh => "n", :id => tree_node_id}
-          page.redirect_to(:controller => data_row["resource_type"].underscore.downcase.singularize,
-                           :action     => "explorer")
-        else
-          page.redirect_to(:controller => data_row["resource_type"].underscore.downcase.singularize,
-                           :action     => "show",
-                           :id         => data_row["resource_id"],
-                           :display    => "performance",
-                           :refresh    => "n",
-                           :escape     => false)
-        end
+      if data_row["resource_type"] == "VmOrTemplate"
+        prefix = TreeBuilder.get_prefix_for_model(@record.class.base_model)
+        tree_node_id = "#{prefix}-#{@record.id}"  # Build the tree node id
+        session[:exp_parms] = {:display => "performance", :refresh => "n", :id => tree_node_id}
+        javascript_redirect :controller => data_row["resource_type"].underscore.downcase.singularize,
+                            :action     => "explorer"
+      else
+        javascript_redirect :controller => data_row["resource_type"].underscore.downcase.singularize,
+                            :action     => "show",
+                            :id         => data_row["resource_id"],
+                            :display    => "performance",
+                            :refresh    => "n",
+                            :escape     => false
       end
       return
 
@@ -517,14 +488,11 @@ module ApplicationController::Performance
       if top_ids.blank?
         msg = "No #{bc_tag} #{bc_model} were running #{dt}"
       else
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to(:id          => @perf_record.id,
-                           :action      => "perf_top_chart",
-                           :menu_choice => params[:menu_click],
-                           :bc          => "#{@perf_record.name} top #{bc_model} (#{bc_tag} #{dt})",
-                           :escape      => false)
-        end
+        javascript_redirect :id          => @perf_record.id,
+                            :action      => "perf_top_chart",
+                            :menu_choice => params[:menu_click],
+                            :bc          => "#{@perf_record.name} top #{bc_model} (#{bc_tag} #{dt})",
+                            :escape      => false
         return
       end
 
@@ -536,14 +504,11 @@ module ApplicationController::Performance
       if top_ids.blank?
         msg = _("No %{model} were running %{time}") % {:model => model, :time => dt}
       else
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to(:id          => @perf_record.id,
-                           :action      => "perf_top_chart",
-                           :menu_choice => params[:menu_click],
-                           :bc          => "#{@perf_record.name} top #{bc_model} (#{dt})",
-                           :escape      => false)
-        end
+        javascript_redirect :id          => @perf_record.id,
+                            :action      => "perf_top_chart",
+                            :menu_choice => params[:menu_click],
+                            :bc          => "#{@perf_record.name} top #{bc_model} (#{dt})",
+                            :escape      => false
         return
       end
 
@@ -552,22 +517,14 @@ module ApplicationController::Performance
     end
 
     msg ? add_flash(msg, :warning) : add_flash(_("Unknown error has occurred"), :error)
-    render :update do |page|
-      page << javascript_prologue
-      page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-      page << "miqSparkle(false);"
-    end
+    javascript_flash(:spinner_off => true)
   end
 
   # Send error message if record is found and authorized, else return the record
   def perf_menu_record_valid(model, id, resource_name)
     rec = find_by_model_and_id_check_rbac(model, id, resource_name)
     unless @flash_array.blank?
-      render :update do |page|
-        page << javascript_prologue
-        page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        page << "miqSparkle(false);"
-      end
+      javascript_flash(:spinner_off => true)
       return false
     end
     rec  # Record is found and authorized
@@ -600,7 +557,7 @@ module ApplicationController::Performance
       @perf_options[:model] = @perf_record.kind_of?(MiqCimInstance) ? @perf_record.class.to_s : @perf_record.class.base_class.to_s
     end
     @perf_options[:rt_minutes] ||= 15.minutes
-    @perf_options[:cats] ||= perf_build_cats(@perf_options[:model]) if ["EmsCluster", "Host", "Storage", "AvailabilityZone"].include?(@perf_options[:model])
+    @perf_options[:cats] ||= perf_build_cats(@perf_options[:model]) if ["EmsCluster", "Host", "Storage", "AvailabilityZone", "HostAggregate"].include?(@perf_options[:model])
     if ["Storage"].include?(@perf_options[:model]) && @perf_options[:typ] == "Daily"
       @perf_options[:vmtypes] ||= [["<All>", "<All>"],
                                    ["Managed/Registered", "registered"],
@@ -720,8 +677,8 @@ module ApplicationController::Performance
                              from_dt,
                              to_dt,
                              interval_type]
-      elsif %w(MiddlewareServer MiddlewareDatasource).include?(@perf_record.class.name.demodulize)
-        rpt = perf_get_chart_rpt("vim_perf_#{interval_type}_#{@perf_record.class.name.demodulize.underscore}")
+      elsif %w(MiddlewareServer MiddlewareDatasource MiddlewareMessaging).include?(@perf_record.class.name.demodulize)
+        rpt = perf_get_chart_rpt("vim_perf_#{interval_type}_#{@perf_record.chart_report_name}")
         rpt.where_clause = ["resource_type = ? and resource_id = ? and timestamp >= ? and timestamp <= ? " \
                             "and capture_interval_name = ?",
                             @perf_options[:model],
@@ -730,7 +687,7 @@ module ApplicationController::Performance
                             to_dt,
                             interval_type]
       else  # Doing VIM performance on a normal CI
-        suffix = @perf_record.kind_of?(AvailabilityZone) ? "_cloud" : "" # Get special cloud version with 'Instances' headers
+        suffix = (@perf_record.kind_of?(AvailabilityZone) || @perf_record.kind_of?(HostAggregate)) ? "_cloud" : "" # Get special cloud version with 'Instances' headers
         rpt = perf_get_chart_rpt("vim_perf_#{interval_type}#{suffix}")
         rpt.where_clause =  ["resource_type = ? and resource_id = ? and timestamp >= ? and timestamp <= ? and capture_interval_name = ?",
                              @perf_options[:model],
@@ -745,8 +702,9 @@ module ApplicationController::Performance
     when "realtime"
       f, to_dt = @perf_record.first_and_last_capture("realtime")
       from_dt = to_dt.nil? ? nil : to_dt - @perf_options[:rt_minutes]
-      suffix = if %w(MiddlewareServer MiddlewareDatasource).include?(@perf_record.class.name.demodulize)
-                 "_#{@perf_record.class.name.demodulize.underscore}"
+      suffix = if %w(MiddlewareServer MiddlewareDatasource MiddlewareMessaging)
+                  .include?(@perf_record.class.name.demodulize)
+                 "_#{@perf_record.chart_report_name}"
                else
                  ""
                end
@@ -754,20 +712,19 @@ module ApplicationController::Performance
       rpt.tz = @perf_options[:tz]
       rpt.extras = Hash.new
       rpt.extras[:realtime] = true
-      @perf_options[:range] = to_dt.nil? ? nil :
-                              "#{format_timezone(from_dt, @perf_options[:tz], "datetime")} to #{format_timezone(to_dt, @perf_options[:tz], "gtl")}"
+      @perf_options[:range] = if to_dt.nil?
+                                nil
+                              else
+                                _("%{date_from} to %{date_to}") %
+                                  {:date_from => format_timezone(from_dt, @perf_options[:tz], "gtl"),
+                                   :date_to   => format_timezone(to_dt, @perf_options[:tz], "gtl")}
+                              end
       rpt.where_clause =  ["resource_type = ? and resource_id = ? and timestamp >= ? and timestamp <= ? and capture_interval_name = ?",
                            @perf_options[:model],
                            @perf_record.id,
                            from_dt,
                            to_dt,
                            "realtime"]
-
-      #### To do - Uncomment to ask for long term averages
-      #       rpt.db_options ||= Hash.new
-      #       rpt.db_options[:long_term_averages] = Hash.new  # Request that averages get computed
-      ####
-
     end
     rpts = [rpt]
     if perf_parent?                               # Build the parent report, if asked for
@@ -786,18 +743,6 @@ module ApplicationController::Performance
                              to_dt]
       rpts.push(c_rpt)
     end
-
-    ### TODO: Uncomment following block for performance.  Need to fix, was causing second parent chart to have no cols.
-    # If only looking at 1 chart, trim report columns for less daily rollups
-    #     if @perf_options[:index] && @perf_options[:typ] = "Daily"
-    #       chart_layouts = perf_get_chart_layout("daily_perf_charts")
-    #       chart = chart_layouts[@perf_options[:model].to_sym][@perf_options[:index].to_i]
-    #       perf_trim_report_cols(rpt, chart)
-    #       if perf_parent?                               # Trim the parent report, if asked for
-    #         chart = chart_layouts[("Parent-" + @perf_options[:parent]).to_sym][@perf_options[:index].to_i]
-    #         perf_trim_report_cols(p_rpt, chart)
-    #       end
-    #     end
 
     initiate_wait_for_task(:task_id => MiqReport.async_generate_tables(:reports => rpts, :userid => session[:userid]))
   end
@@ -1147,7 +1092,7 @@ module ApplicationController::Performance
       miq_task = MiqTask.find(params[:task_id])     # Not first time, read the task record
       begin
         unless miq_task.results_ready?
-          add_flash(_("Error while generating report: #{miq_task.message}"), :error)
+          add_flash(_("Error while generating report: %{error_message}") % {:error_message => miq_task.message}, :error)
           return
         end
         rpt = miq_task.miq_report_result.report_results # Grab the report object from the blob
@@ -1159,8 +1104,7 @@ module ApplicationController::Performance
       chart_layouts[@sb[:util][:options][:model].to_sym].each_with_index do |chart, _idx|
         tag_class = @sb[:util][:options][:tag].split("/").first if @sb[:util][:options][:tag]
         if chart[:type] == "None" || # No chart is available for this slot
-           (@sb[:util][:options][:tag] && chart[:allowed_child_tag] && !chart[:allowed_child_tag].include?(tag_class)) # Tag not allowed - Replace following line in sprint 69
-          #           (@sb[:util][:options][:tag] && chart[:allowed_child_tag] && !@sb[:util][:options][:tag].starts_with?(chart[:allowed_child_tag]))  # Tag not allowed
+           (@sb[:util][:options][:tag] && chart[:allowed_child_tag] && !chart[:allowed_child_tag].include?(tag_class)) # Tag not allowed
           chart_data.push(nil)              # Push a placeholder onto the chart data array
         else
           perf_remove_chart_cols(chart)
@@ -1500,7 +1444,7 @@ module ApplicationController::Performance
     cats.delete_if { |c| c.read_only? || c.entries.length == 0 }                    # Remove categories that are read only or have no entries
     ret_cats = {"<None>" => "<None>"}                                               # Classifications hash for chooser
     case model
-    when "Host", "Storage", "AvailabilityZone"
+    when "Host", "Storage", "AvailabilityZone", "HostAggregate"
       cats.each { |c| ret_cats["Vm:" + c.name] = "VM " + c.description }            # Add VM categories to the hash
     when "EmsCluster"
       cats.each { |c| ret_cats["Host:" + c.name] = "Host " + c.description }        # Add VM categories to the hash
@@ -1517,10 +1461,6 @@ module ApplicationController::Performance
                   :id        => @perf_record.id,
                   :chart_idx => idx) +
           "')"
-    if Charting.backend == :ziya
-      url = "javascript:#{url}"
-      url.gsub!(/'/, '\\\\\&') # escape single quotes for ziya xml rendering
-    end
     url
   end
 
@@ -1676,5 +1616,11 @@ module ApplicationController::Performance
         rpt.extras[:trend][trendcol + "|" + t.split(":").first]
       end.join("\r") unless trendcol.nil?
     end
+  end
+
+  # get JSON encoded in Base64
+  def parse_chart_click(click_params)
+    click_parts = JSON.parse(Base64.decode64(click_params))
+    [click_parts['row'].to_i, click_parts['column'].to_i, click_parts['chart_index'].to_i, click_parts['chart_name'].split("-")].flatten
   end
 end

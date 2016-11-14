@@ -33,12 +33,14 @@ describe ManageIQ::Providers::Google::CloudManager::Refresher do
       assert_specific_cloud_network
       assert_specific_cloud_subnet
       assert_specific_floating_ips
+      assert_specific_load_balancer
       assert_specific_security_group
       assert_specific_flavor
       assert_specific_custom_flavor
       assert_specific_vm_powered_on
       assert_specific_vm_with_proper_subnets
       assert_specific_vm_powered_off
+      assert_specific_vm_preemptible
       assert_specific_image_template
       assert_specific_snapshot_template
       assert_specific_cloud_volume
@@ -48,61 +50,73 @@ describe ManageIQ::Providers::Google::CloudManager::Refresher do
 
   def expected_table_counts
     {
-      :ext_management_system         => 2,
-      :flavor                        => 19,
-      :availability_zone             => 13,
-      :vm_or_template                => 547,
-      :vm                            => 4,
-      :miq_template                  => 543,
-      :disk                          => 4,
-      :guest_device                  => 0,
-      :hardware                      => 4,
-      :network                       => 0,
-      :operating_system              => 547,
-      :relationship                  => 8,
-      :miq_queue                     => 548,
-      :orchestration_template        => 0,
-      :orchestration_stack           => 0,
-      :orchestration_stack_parameter => 0,
-      :orchestration_stack_output    => 0,
-      :orchestration_stack_resource  => 0,
-      :security_group                => 3,
-      :network_port                  => 4,
-      :cloud_network                 => 3,
-      :floating_ip                   => 4,
-      :network_router                => 0,
-      :cloud_subnet                  => 5,
-      :key_pair                      => 4,
+      :ext_management_system              => 2,
+      :flavor                             => 19,
+      :availability_zone                  => 15,
+      :vm_or_template                     => 616,
+      :vm                                 => 6,
+      :miq_template                       => 610,
+      :disk                               => 6,
+      :guest_device                       => 0,
+      :hardware                           => 6,
+      :load_balancer                      => 1,
+      :load_balancer_listener             => 1,
+      :load_balancer_pool                 => 1,
+      :load_balancer_pool_member          => 1,
+      :load_balancer_health_checks        => 1,
+      :load_balancer_health_check_members => 1,
+      :network                            => 0,
+      :operating_system                   => 616,
+      :relationship                       => 11,
+      :miq_queue                          => 617,
+      :orchestration_template             => 0,
+      :orchestration_stack                => 0,
+      :orchestration_stack_parameter      => 0,
+      :orchestration_stack_output         => 0,
+      :orchestration_stack_resource       => 0,
+      :security_group                     => 3,
+      :network_port                       => 6,
+      :cloud_network                      => 3,
+      :floating_ip                        => 3,
+      :network_router                     => 0,
+      :cloud_subnet                       => 6,
+      :key_pair                           => 4,
     }
   end
 
   def assert_table_counts
-    actual = {
-      :ext_management_system         => ExtManagementSystem.count,
-      :flavor                        => Flavor.count,
-      :availability_zone             => AvailabilityZone.count,
-      :vm_or_template                => VmOrTemplate.count,
-      :vm                            => Vm.count,
-      :miq_template                  => MiqTemplate.count,
-      :disk                          => Disk.count,
-      :guest_device                  => GuestDevice.count,
-      :hardware                      => Hardware.count,
-      :network                       => Network.count,
-      :operating_system              => OperatingSystem.count,
-      :relationship                  => Relationship.count,
-      :miq_queue                     => MiqQueue.count,
-      :orchestration_template        => OrchestrationTemplate.count,
-      :orchestration_stack           => OrchestrationStack.count,
-      :orchestration_stack_parameter => OrchestrationStackParameter.count,
-      :orchestration_stack_output    => OrchestrationStackOutput.count,
-      :orchestration_stack_resource  => OrchestrationStackResource.count,
-      :security_group                => SecurityGroup.count,
-      :network_port                  => NetworkPort.count,
-      :cloud_network                 => CloudNetwork.count,
-      :floating_ip                   => FloatingIp.count,
-      :network_router                => NetworkRouter.count,
-      :cloud_subnet                  => CloudSubnet.count,
-      :key_pair                      => AuthPrivateKey.count,
+    actual                                = {
+      :ext_management_system              => ExtManagementSystem.count,
+      :flavor                             => Flavor.count,
+      :availability_zone                  => AvailabilityZone.count,
+      :vm_or_template                     => VmOrTemplate.count,
+      :vm                                 => Vm.count,
+      :miq_template                       => MiqTemplate.count,
+      :disk                               => Disk.count,
+      :guest_device                       => GuestDevice.count,
+      :hardware                           => Hardware.count,
+      :load_balancer                      => LoadBalancer.count,
+      :load_balancer_listener             => LoadBalancerListener.count,
+      :load_balancer_pool                 => LoadBalancerPool.count,
+      :load_balancer_pool_member          => LoadBalancerPoolMember.count,
+      :load_balancer_health_checks        => LoadBalancerHealthCheck.count,
+      :load_balancer_health_check_members => LoadBalancerHealthCheckMember.count,
+      :network                            => Network.count,
+      :operating_system                   => OperatingSystem.count,
+      :relationship                       => Relationship.count,
+      :miq_queue                          => MiqQueue.count,
+      :orchestration_template             => OrchestrationTemplate.count,
+      :orchestration_stack                => OrchestrationStack.count,
+      :orchestration_stack_parameter      => OrchestrationStackParameter.count,
+      :orchestration_stack_output         => OrchestrationStackOutput.count,
+      :orchestration_stack_resource       => OrchestrationStackResource.count,
+      :security_group                     => SecurityGroup.count,
+      :network_port                       => NetworkPort.count,
+      :cloud_network                      => CloudNetwork.count,
+      :floating_ip                        => FloatingIp.count,
+      :network_router                     => NetworkRouter.count,
+      :cloud_subnet                       => CloudSubnet.count,
+      :key_pair                           => AuthPrivateKey.count,
     }
 
     expect(actual).to eq expected_table_counts
@@ -182,6 +196,48 @@ describe ManageIQ::Providers::Google::CloudManager::Refresher do
     expect(unassigned_floating_ip.network_port).to eql(nil)
   end
 
+  def assert_specific_load_balancer
+    lb = LoadBalancer.where(:name => "foo-lb-forwarding-rule").first
+
+    expect(lb).to have_attributes(
+      :name    => "foo-lb-forwarding-rule",
+      :ems_ref => "1778652908557222005",
+      :type    => "ManageIQ::Providers::Google::NetworkManager::LoadBalancer"
+    )
+    expect(lb.load_balancer_listeners.first).to have_attributes(
+      :name                     => "foo-lb-forwarding-rule",
+      :ems_ref                  => "1778652908557222005",
+      :type                     => "ManageIQ::Providers::Google::NetworkManager::LoadBalancerListener",
+      :load_balancer_protocol   => "TCP",
+      :instance_protocol        => "TCP",
+      :load_balancer_port_range => 61000...61002,
+      :instance_port_range      => 61000...61002
+    )
+    expect(lb.load_balancer_pools.first).to have_attributes(
+      :name    => "foo-lb",
+      :ems_ref => "7341375068641214585",
+      :type    => "ManageIQ::Providers::Google::NetworkManager::LoadBalancerPool",
+    )
+    expect(lb.load_balancer_pool_members.map { |m| m.vm.name })
+      .to include("subnet-test")
+    expect(lb.load_balancer_health_checks.first).to have_attributes(
+      :name                => "foo-healthcheck",
+      :type                => "ManageIQ::Providers::Google::NetworkManager::LoadBalancerHealthCheck",
+      :ems_ref             => "1778652908557222005_7341375068641214585_5620697980296979925",
+      :protocol            => "HTTP",
+      :port                => 80,
+      :url_path            => "/foopath",
+      :interval            => 60,
+      :timeout             => 30,
+      :healthy_threshold   => 2,
+      :unhealthy_threshold => 3)
+    expect(lb.load_balancer_health_checks.first.load_balancer_health_check_members.first).to have_attributes(
+      :status => "OutOfService"
+    )
+    expect(lb.load_balancer_health_checks.first.load_balancer_health_check_members.first.load_balancer_pool_member.vm.name)\
+      .to eql("subnet-test")
+  end
+
   def assert_specific_security_group
     @sg = SecurityGroup.where(:name => "default").first
     expect(@sg).to have_attributes(
@@ -258,7 +314,6 @@ describe ManageIQ::Providers::Google::CloudManager::Refresher do
       :description => "1 vCPU (shared physical core) and 0.6 GB RAM",
       :enabled     => true,
       :cpus        => 1,
-      :cpu_cores   => 1,
       :memory      => 643825664,
     )
 
@@ -273,7 +328,6 @@ describe ManageIQ::Providers::Google::CloudManager::Refresher do
       :description => "Custom created machine type.",
       :enabled     => true,
       :cpus        => 1,
-      :cpu_cores   => 1,
       :memory      => 2147483648,
     )
 
@@ -315,6 +369,7 @@ describe ManageIQ::Providers::Google::CloudManager::Refresher do
     expect(v.operating_system.product_name).to eql("linux_redhat")
     expect(v.custom_attributes.size).to        eql(0)
     expect(v.snapshots.size).to                eql(0)
+    expect(v.preemptible?).to                  eql(false)
 
     assert_specific_vm_powered_on_hardware(v)
   end
@@ -325,7 +380,7 @@ describe ManageIQ::Providers::Google::CloudManager::Refresher do
       :guest_os_full_name  => nil,
       :bios                => nil,
       :annotation          => nil,
-      :cpu_sockets         => 1,
+      :cpu_total_cores     => 1,
       :memory_mb           => 614,
       :bitness             => nil,
       :virtualization_type => nil
@@ -496,8 +551,8 @@ describe ManageIQ::Providers::Google::CloudManager::Refresher do
       :guest_os_full_name => nil,
       :bios               => nil,
       :annotation         => nil,
-      :cpu_sockets        => 1,
       :memory_mb          => 614,
+      :cpu_total_cores    => 1,
       :bitness            => nil
     )
 
@@ -506,6 +561,20 @@ describe ManageIQ::Providers::Google::CloudManager::Refresher do
     expect(v.network_ports.size).to          eql(1)
     expect(v.cloud_networks.size).to         eql(1)
     expect(v.floating_ips.size).to           eql(0)
+  end
+
+  def assert_specific_vm_preemptible
+    v = ManageIQ::Providers::Google::CloudManager::Vm.where(:name => "preemptible-1").first
+    expect(v).to have_attributes(
+      :raw_power_state => "TERMINATED",
+      :template        => false,
+      :ems_ref         => "9023820458355785494",
+      :uid_ems         => "9023820458355785494",
+      :vendor          => "google",
+      :power_state     => "off"
+    )
+
+    expect(v.preemptible?).to eql(true)
   end
 
   def assert_specific_image_template

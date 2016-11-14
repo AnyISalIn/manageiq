@@ -26,34 +26,22 @@ class MiqRequestController < ApplicationController
     end
     return if params[:pressed] == "miq_request_edit" && @refresh_partial == "reconfigure"
     if !@flash_array.nil? && params[:pressed] == "miq_request_delete"
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to :action => 'show_list', :flash_msg => @flash_array[0][:message]  # redirect to build the retire screen
-      end
+      javascript_redirect :action => 'show_list', :flash_msg => @flash_array[0][:message] # redirect to build the retire screen
     elsif ["miq_request_copy", "miq_request_edit"].include?(params[:pressed])
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to :controller     => @redirect_controller,
-                         :action         => @refresh_partial,
-                         :id             => @redirect_id,
-                         :prov_type      => @prov_type,
-                         :req_id         => @req_id,
-                         :org_controller => @org_controller,
-                         :prov_id        => @prov_id
-      end
+      javascript_redirect :controller     => @redirect_controller,
+                          :action         => @refresh_partial,
+                          :id             => @redirect_id,
+                          :prov_type      => @prov_type,
+                          :req_id         => @req_id,
+                          :org_controller => @org_controller,
+                          :prov_id        => @prov_id
     elsif params[:pressed].ends_with?("_edit")
       if @refresh_partial == "show_list"
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to :action      => @refresh_partial,
-                           :flash_msg   => _("Default Requests can not be edited"),
-                           :flash_error => true
-        end
+        javascript_redirect :action      => @refresh_partial,
+                            :flash_msg   => _("Default Requests can not be edited"),
+                            :flash_error => true
       else
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to :action => @refresh_partial, :id => @redirect_id
-        end
+        javascript_redirect :action => @refresh_partial, :id => @redirect_id
       end
     elsif params[:pressed] == "miq_request_reload"
       if @display == "main" && params[:id].present?
@@ -202,10 +190,7 @@ class MiqRequestController < ApplicationController
       end
       session[:flash_msgs] = @flash_array.dup
       @edit = nil
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to :action => @lastaction, :id => session[:edit][:request].id
-      end
+      javascript_redirect :action => @lastaction, :id => session[:edit][:request].id
     elsif params[:button] == "submit"
       return unless load_edit("stamp_edit__#{params[:id]}", "show")
       stamp_request = MiqRequest.find(@edit[:request].id)         # Get the current request record
@@ -214,14 +199,10 @@ class MiqRequestController < ApplicationController
       else
         stamp_request.deny(current_user, @edit[:reason])
       end
-      #     AuditEvent.success(build_saved_audit(request, @edit))
       add_flash(_("Request \"%{name}\" was %{task}") % {:name => stamp_request.description, :task => (session[:edit] && session[:edit][:stamp_typ]) == "approve" ? "approved" : "denied"})
       session[:flash_msgs] = @flash_array.dup                     # Put msg in session for next transaction to display
       @edit = nil
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to :action => "show_list"
-      end
+      javascript_redirect :action => "show_list"
     else  # First time in, set up @edit hash
       identify_request
       @edit = {}
@@ -244,19 +225,10 @@ class MiqRequestController < ApplicationController
   # AJAX driven routine to check for changes in ANY field on the form
   def stamp_field_changed
     return unless load_edit("stamp_edit__#{params[:id]}", "show")
+    @edit[:reason] = params[:reason] if params[:reason]
     render :update do |page|
       page << javascript_prologue
-      if @edit[:reason].blank?
-        @edit[:reason] = params[:reason] if params[:reason]
-        unless @edit[:reason].blank?
-          page << "miqButtons('show');"
-        end
-      else
-        @edit[:reason] = params[:reason] if params[:reason]
-        if @edit[:reason].blank?
-          page << "miqButtons('hide');"
-        end
-      end
+      page << javascript_for_miq_button_visibility(!@edit[:reason].blank?)
     end
   end
 
@@ -321,7 +293,7 @@ class MiqRequestController < ApplicationController
   def prov_load_tab
     if @options && @options[:current_tab_key] == :purpose # Need to build again for purpose tab
       fld = @options[:wf].kind_of?(MiqHostProvisionWorkflow) ? "tag_ids" : "vm_tags"
-      build_tags_tree(@options[:wf], @options["#{fld}".to_sym], false)
+      build_tags_tree(@options[:wf], @options[fld.to_s.to_sym], false)
     end
     # need to build host list view, to display on show screen
     @options[:host_sortdir] = "ASC"
@@ -346,12 +318,9 @@ class MiqRequestController < ApplicationController
     begin
       method = WORKFLOW_METHOD_WHITELIST[params[:field]]
       @edit[:wf].send(method, @edit[:new]) unless method.nil?
-    rescue StandardError => bang
+    rescue => bang
       add_flash(_("Error retrieving LDAP info: %{error_message}") % {:error_message => bang.message}, :error)
-      render :update do |page|
-        page << javascript_prologue
-        page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-      end
+      javascript_flash
     else
       render :update do |page|
         page << javascript_prologue
@@ -480,7 +449,7 @@ class MiqRequestController < ApplicationController
   end
 
   def request_types_for_model
-    MiqRequest::MODEL_REQUEST_TYPES[model_request_type_from_layout]
+    MiqRequest::MODEL_REQUEST_TYPES[model_request_type_from_layout].map { |k, v| [k, v.map { |x, y| [x, _(y)] }.to_h] }.to_h
   end
 
   def model_request_type_from_layout
@@ -588,7 +557,7 @@ class MiqRequestController < ApplicationController
       end
       begin
         miq_request.public_send(task.to_sym) if miq_request.respond_to?(task)    # Run the task
-      rescue StandardError => bang
+      rescue => bang
         add_flash(_("%{model} \"%{name}\": Error during '%{task}': %{message}") %
                       {:model   => ui_lookup(:model => "MiqRequest"),
                        :name    => request_name,
@@ -628,7 +597,6 @@ class MiqRequestController < ApplicationController
     @display      = session[:request_display]
     @current_page = session[:request_current_page]
     @options      = session[:prov_options]
-    # @edit = session[:edit] if session[:edit]
   end
 
   def set_session_data
@@ -640,5 +608,13 @@ class MiqRequestController < ApplicationController
     session[:request_tab]          = @request_tab unless @request_tab.nil?
     session[:request_current_page] = @current_page
     session[:prov_options]         = @options if @options
+  end
+
+  def menu_section(parms)
+    case parms[:typ]
+    when 'at'   then :aut
+    when 'vm'   then :svc
+    when 'host' then :inf
+    end
   end
 end

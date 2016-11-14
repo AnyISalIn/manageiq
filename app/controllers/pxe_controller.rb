@@ -10,10 +10,6 @@ class PxeController < ApplicationController
   after_action :cleanup_action
   after_action :set_session_data
 
-  def index
-    redirect_to :action => 'explorer'
-  end
-
   PXE_X_BUTTON_ALLOWED_ACTIONS = {
     'pxe_image_edit'                => :pxe_image_edit,
     'pxe_image_type_new'            => :pxe_image_type_new,
@@ -35,26 +31,15 @@ class PxeController < ApplicationController
   }.freeze
 
   def x_button
-    @sb[:action] = action = params[:pressed]
-
-    raise ActionController::RoutingError.new('invalid button action') unless
-      PXE_X_BUTTON_ALLOWED_ACTIONS.key?(action)
-
-    send(PXE_X_BUTTON_ALLOWED_ACTIONS[action])
+    generic_x_button(PXE_X_BUTTON_ALLOWED_ACTIONS)
   end
 
   def accordion_select
-    self.x_active_accord = params[:id].sub(/_accord$/, '')
-    self.x_active_tree   = "#{x_active_accord}_tree"
-    get_node_info(x_node)
-    replace_right_cell(x_node)
+    super(true)
   end
 
   def tree_select
-    self.x_active_tree = params[:tree] if params[:tree]
-    self.x_node        = params[:id]
-    get_node_info(x_node)
-    replace_right_cell(x_node)
+    super(true)
   end
 
   def explorer
@@ -149,13 +134,13 @@ class PxeController < ApplicationController
                             if @ps.id.blank?
                               _("Adding a new %{model}") % {:model => ui_lookup(:model => "PxeServer")}
                             else
-                              temp = _("%{model} \"%{name}\"") % {:name  => @ps.name.gsub(/'/, "\\'"), :model => ui_lookup(:model => "PxeServer")}
+                              temp = _("%{model} \"%{name}\"") % {:name  => @ps.name, :model => ui_lookup(:model => "PxeServer")}
                               @edit ? "Editing #{temp}" : temp
                             end
                           when 'pi'
-                            _("%{model} \"%{name}\"") % {:name  => @img.name.gsub(/'/, "\\'"), :model => ui_lookup(:model => "PxeImage")}
+                            _("%{model} \"%{name}\"") % {:name  => @img.name, :model => ui_lookup(:model => "PxeImage")}
                           when 'wi'
-                            _("%{model} \"%{name}\"") % {:name  => @wimg.name.gsub(/'/, "\\'"), :model => ui_lookup(:model => "WindowsImage")}
+                            _("%{model} \"%{name}\"") % {:name  => @wimg.name, :model => ui_lookup(:model => "WindowsImage")}
                           end
       end
     when :pxe_image_types_tree
@@ -167,11 +152,11 @@ class PxeController < ApplicationController
                           if @pxe_image_type.id.blank?
                             _("Adding a new %{models}") % {:models => ui_lookup(:model => "PxeImageType")}
                           else
-                            temp = _("%{model} \"%{name}\"") % {:name  => @pxe_image_type.name.gsub(/'/, "\\'"), :model => ui_lookup(:model => "PxeImageType")}
+                            temp = _("%{model} \"%{name}\"") % {:name  => @pxe_image_type.name, :model => ui_lookup(:model => "PxeImageType")}
                             @edit ? "Editing #{temp}" : temp
                           end
                         else
-                          _("%{model} \"%{name}\"") % {:name  => @pxe_image_type.name.gsub(/'/, "\\'"), :model => ui_lookup(:model => "PxeImageType")}
+                          _("%{model} \"%{name}\"") % {:name  => @pxe_image_type.name, :model => ui_lookup(:model => "PxeImageType")}
                         end
     when :customization_templates_tree
       presenter.update(:main_div, r[:partial => "template_list"])
@@ -181,8 +166,8 @@ class PxeController < ApplicationController
           if @ct.id.blank?
             _("Adding a new %{model}") % {:model => ui_lookup(:model => "PxeCustomizationTemplate")}
           else
-            @edit ? _("Editing %{model} \"%{name}\"") % {:name  => @ct.name.gsub(/'/, "\\'"), :model => ui_lookup(:model => "PxeCustomizationTemplate")} :
-                    _("%{model} \"%{name}\"") % {:name  => @ct.name.gsub(/'/, "\\'"), :model => ui_lookup(:model => "PxeCustomizationTemplate")}
+            @edit ? _("Editing %{model} \"%{name}\"") % {:name  => @ct.name, :model => ui_lookup(:model => "PxeCustomizationTemplate")} :
+                    _("%{model} \"%{name}\"") % {:name  => @ct.name, :model => ui_lookup(:model => "PxeCustomizationTemplate")}
           end
         # resetting ManageIQ.oneTransition.oneTrans when tab loads
         presenter.reset_one_trans
@@ -194,7 +179,7 @@ class PxeController < ApplicationController
         case nodetype
         when 'root' then _("All %{models}") % {:models => ui_lookup(:models => "IsoDatastore")}
         when 'isd'  then _("Adding a new %{models}") % {:models => ui_lookup(:model => "IsoDatastore")}
-        when 'isi'  then _("%{model} \"%{name}\"") % {:name => @img.name.gsub(/'/, "\\'"), :model => ui_lookup(:model => "IsoImage")}
+        when 'isi'  then _("%{model} \"%{name}\"") % {:name => @img.name, :model => ui_lookup(:model => "IsoImage")}
         end
     end
 
@@ -258,9 +243,9 @@ class PxeController < ApplicationController
 
     # Save open nodes, if any were added
     presenter[:osf_node] = x_node
-    presenter[:lock_unlock_trees][x_active_tree] = @in_a_form && @edit
-    # Render the JS responses to update the explorer screen
-    render :js => presenter.to_html
+    presenter.lock_tree(x_active_tree, @in_a_form && @edit)
+
+    render :json => presenter.for_render
   end
 
   def get_session_data
@@ -276,4 +261,6 @@ class PxeController < ApplicationController
     session[:pxe_current_page] = @current_page
     session[:pxe_display]      = @display unless @display.nil?
   end
+
+  menu_section :inf
 end

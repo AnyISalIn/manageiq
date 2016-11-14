@@ -18,7 +18,7 @@ class ApplicationHelper::Toolbar::ContainerGroupCenter < ApplicationHelper::Tool
           t = N_('Remove this Pod from the VMDB'),
           t,
           :url_parms => "&refresh=y",
-          :confirm   => N_("Warning: This Pod and ALL of its components will be permanently removed from the Virtual Management Database.  Are you sure you want to remove this Pod?")),
+          :confirm   => N_("Warning: This Pod and ALL of its components will be permanently removed!")),
       ]
     ),
   ])
@@ -58,6 +58,17 @@ class ApplicationHelper::Toolbar::ContainerGroupCenter < ApplicationHelper::Tool
           'pficon pficon-edit fa-lg',
           N_('Edit Tags for this Pod'),
           N_('Edit Tags')),
+        button(
+          :container_group_protect,
+          'pficon pficon-edit fa-lg',
+          N_('Manage Policies for this Pod'),
+          N_('Manage Policies')),
+        button(
+          :container_group_check_compliance,
+          'fa fa-search fa-lg',
+          N_('Check Compliance of the last known configuration for this Pod'),
+          N_('Check Compliance of Last Known Configuration'),
+          :confirm => N_("Initiate Check Compliance of the last known configuration for this item?")),
       ]
     ),
   ])

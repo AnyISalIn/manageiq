@@ -1,4 +1,4 @@
-= render :partial => "layouts/flash_msg", :locals => {:div_num => "_schedule_list"}
+= render :partial => "layouts/flash_msg"
 %h3= _("Schedule Info")
 .form-horizontal.static
   .form-group
@@ -21,7 +21,7 @@
       .col-md-10
         %p.form-control-static
           - if @schedule.sched_action[:options][:email][:from].blank?
-            = _("(Default: %s)") % h(get_vmdb_config[:smtp][:from])
+            = _("(Default: %{email_from})") % {:email_from => h(::Settings.smtp.from)}
           - else
             = h(@schedule.sched_action[:options][:email][:from])
   .form-group

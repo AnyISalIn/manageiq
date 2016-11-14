@@ -1,4 +1,4 @@
-require 'MiqVim'
+require 'VMwareWebService/MiqVim'
 require 'http-access2' # Required in case it is not already loaded
 
 module ManageIQ::Providers
@@ -74,22 +74,23 @@ module ManageIQ::Providers
       # VC data collection methods
       #
 
-      VC_ACCESSORS = [
-        [:dataStoresByMor,              :storage],
-        [:storagePodsByMor,             :storage_pod],
-        [:dvPortgroupsByMor,            :dvportgroup],
-        [:dvSwitchesByMor,              :dvswitch],
-        [:hostSystemsByMor,             :host],
-        [:virtualMachinesByMor,         :vm],
-        [:datacentersByMor,             :dc],
-        [:foldersByMor,                 :folder],
-        [:clusterComputeResourcesByMor, :cluster],
-        [:computeResourcesByMor,        :host_res],
-        [:resourcePoolsByMor,           :rp],
-        [:virtualAppsByMor,             :vapp]
-      ]
+      VC_ACCESSORS_HASH = {
+        :storage         => :dataStoresByMor,
+        :storage_pod     => :storagePodsByMor,
+        :storage_profile => :pbmProfilesByUid,
+        :dvportgroup     => :dvPortgroupsByMor,
+        :dvswitch        => :dvSwitchesByMor,
+        :host            => :hostSystemsByMor,
+        :vm              => :virtualMachinesByMor,
+        :dc              => :datacentersByMor,
+        :folder          => :foldersByMor,
+        :cluster         => :clusterComputeResourcesByMor,
+        :host_res        => :computeResourcesByMor,
+        :rp              => :resourcePoolsByMor,
+        :vapp            => :virtualAppsByMor
+      }.freeze
 
-      def get_vc_data(ems)
+      def get_vc_data(ems, accessors = VC_ACCESSORS_HASH, mor_filters = {})
         log_header = format_ems_for_logging(ems)
 
         cleanup_callback = proc { @vc_data = nil }
@@ -97,14 +98,25 @@ module ManageIQ::Providers
         retrieve_from_vc(ems, cleanup_callback) do
           @vc_data = Hash.new { |h, k| h[k] = {} }
 
-          VC_ACCESSORS.each do |acc, type|
+          accessors.each do |type, accessor|
             _log.info("#{log_header} Retrieving #{type.to_s.titleize} inventory...")
-            inv_hash = @vi.send(acc, :"ems_refresh_#{type}")
+            if mor_filters.any?
+              inv_hash = mor_filters[type].each_with_object({}) do |mor, memo|
+                data = @vi.send(accessor, mor)
+                memo[mor] = data unless data.nil?
+              end
+            else
+              inv_hash = @vi.send(accessor, :"ems_refresh_#{type}")
+            end
             EmsRefresh.log_inv_debug_trace(inv_hash, "#{_log.prefix} #{log_header} inv_hash:")
 
             @vc_data[type] = inv_hash unless inv_hash.blank?
             _log.info("#{log_header} Retrieving #{type.to_s.titleize} inventory...Complete - Count: [#{inv_hash.blank? ? 0 : inv_hash.length}]")
           end
+
+          storage_profile_ids = @vc_data[:storage_profile].collect { |uid, _profile| uid }
+          @vc_data[:storage_profile_datastore] = @vi.pbmQueryMatchingHub(storage_profile_ids)
+          @vc_data[:storage_profile_entity]    = @vi.pbmQueryAssociatedEntity(storage_profile_ids)
         end
 
         # Merge Virtual Apps into Resource Pools
@@ -146,19 +158,14 @@ module ManageIQ::Providers
 
         retrieve_from_vc(ems, cleanup_callback) do
           _log.info("#{log_header} Retrieving Storage Device inventory for [#{host_mors.length}] hosts...")
-          host_mors.each do |mor|
-            data = @vc_data.fetch_path(:host, mor)
+
+          @vi.hostSystemsStorageDevice(host_mors, :ems_refresh_host_scsi).to_miq_a.each do |sd|
+            next if sd.nil? || sd['MOR'].nil?
+
+            data = @vc_data.fetch_path(:host, sd['MOR'])
             next if data.nil?
 
-            _log.info("#{log_header} Retrieving Storage Device inventory for Host [#{mor}]...")
-            begin
-              vim_host = @vi.getVimHostByMor(mor)
-              sd = vim_host.storageDevice(:ems_refresh_host_scsi)
-              data.store_path('config', 'storageDevice', sd.fetch_path('config', 'storageDevice')) unless sd.nil?
-            ensure
-              vim_host.release if vim_host rescue nil
-            end
-            _log.info("#{log_header} Retrieving Storage Device inventory for Host [#{mor}]...Complete")
+            data.store_path('config', 'storageDevice', sd.fetch_path('config', 'storageDevice'))
           end
           _log.info("#{log_header} Retrieving Storage Device inventory for [#{host_mors.length}] hosts...Complete")
 
@@ -225,89 +232,6 @@ module ManageIQ::Providers
         @vi.disconnect
         @vi = nil
         _log.info("Disconnecting from EMS: [#{ems.name}], id: [#{ems.id}]...Complete")
-      end
-
-      VC_ACCESSORS_BY_MOR = {
-        :storage     => :dataStoreByMor,
-        :network     => :networkByMor,
-        :dvportgroup => :dvPortgroupByMor,
-        :dvswitch    => :dvSwitchByMor,
-        :host        => :hostSystemByMor,
-        :vm          => :virtualMachineByMor,
-        :dc          => :datacenterByMor,
-        :folder      => :folderByMor,
-        :cluster     => :clusterComputeResourceByMor,
-        :host_res    => :computeResourceByMor,
-        :rp          => :resourcePoolByMor,
-        :vapp        => :virtualAppByMor
-      }
-
-      def get_vc_data_by_mor(ems, type, mor)
-        log_header = format_ems_for_logging(ems)
-
-        accessor = VC_ACCESSORS_BY_MOR[type]
-        raise ArgumentError, "Invalid type" if accessor.nil?
-
-        mor = [mor] unless mor.kind_of?(Array)
-
-        cleanup_callback = proc { @vc_data = nil }
-
-        retrieve_from_vc(ems, cleanup_callback) do
-          @vc_data = Hash.new { |h, k| h[k] = {} } if @vc_data.nil?
-
-          _log.info("#{log_header} Retrieving #{type.to_s.titleize} inventory...")
-          inv_hash = mor.each_with_object({}) do |m, h|
-            data = @vi.send(accessor, m)
-            h[m] = data unless data.nil?
-          end
-          EmsRefresh.log_inv_debug_trace(inv_hash, "#{_log.prefix} #{log_header} inv_hash:")
-
-          @vc_data[type] = inv_hash unless inv_hash.blank?
-          _log.info("#{log_header} Retrieving #{type.to_s.titleize} inventory...Complete - Count: [#{inv_hash.blank? ? 0 : inv_hash.length}]")
-        end
-      end
-
-      #
-      # Inventory refresh for Reconfigure VM Task event
-      #
-
-      public
-
-      def self.reconfig_refresh(vm)
-        new([vm]).reconfig_refresh
-      end
-
-      def reconfig_refresh
-        ems_id = @targets_by_ems_id.keys.first
-        vm = @targets_by_ems_id[ems_id].first
-        ems = vm.ext_management_system
-
-        _log.info "Refreshing target VM for reconfig..."
-        _log.info "#{vm.class}: [#{vm.name}], id: [#{vm.id}]"
-
-        dummy, timings = Benchmark.realtime_block(:total_time) do
-          Benchmark.realtime_block(:get_vc_data_total) do
-            begin
-              get_vc_data_by_mor(ems, :vm, vm.ems_ref_obj)
-              get_vc_data_by_mor(ems, :host, vm.host.ems_ref_obj)
-              get_vc_data_by_mor(ems, :storage, vm.host.storages.collect(&:ems_ref_obj))
-            ensure
-              disconnect_from_ems(ems)
-            end
-          end
-
-          _log.debug "Parsing VC inventory..."
-          hashes, = Benchmark.realtime_block(:parse_vc_data) do
-            InfraManager::RefreshParser.reconfig_inv_to_hashes(@vc_data)
-          end
-          _log.debug "Parsing VC inventory...Complete"
-
-          Benchmark.realtime_block(:db_save_inventory) do
-            EmsRefresh.reconfig_save_vm_inventory(vm, hashes)
-          end
-        end
-
-        _log.info "Refreshing target VM for reconfig...Complete - Timings: #{timings.inspect}"
       end
     end
   end

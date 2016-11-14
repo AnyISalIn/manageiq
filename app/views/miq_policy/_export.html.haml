@@ -11,7 +11,7 @@
           #buttons
             - if @sb[:conflict]
               = button_tag(_("Commit"),
-                :class => "btn btn-primary btn-disabled",
+                :class => "btn btn-primary disabled",
                 :title => (t = _("Resolve conflicts to import the file")),
                 :alt   => t)
             - else
@@ -43,13 +43,14 @@
                  :method    => :post) do
         .form-group
           .col-md-4
-            = file_field("upload", "file",
-                         :class             => "lifestyle",
-                         "data-buttonName"  => "btn-default")
+            = render :partial => "shared/file_chooser", :locals => {:object_name => "upload", :method => "file"}
             :javascript
-              $(":file").filestyle({icon: false, placeholder: "No file chosen"});
+              $("#upload_file").on("change", function() {
+                ImportSetup.setUpUploadImportButton('#upload_tags')
+              });
+
           .col-md-6
-            = submit_tag(_("Upload"), :id => "upload_tags", :class => "btn btn-default")
+            = submit_tag(_("Upload"), :id => "upload_tags", :class => "btn btn-default", :disabled => true)
 
   - if @sb[:hide] == false
     %hr
@@ -90,7 +91,7 @@
       %tr
         %td{:align => "right"}
           #buttons
-            - t = _("Export Selected %s") % title
+            - t = _("Export Selected %{title}") % {:title => title}
             = link_to(_('Export'),
               {:action => "export", :button => "export"},
               :class                 => "btn btn-primary",

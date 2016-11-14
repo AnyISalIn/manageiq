@@ -1,17 +1,22 @@
 class ContainerProject < ApplicationRecord
+  include SupportsFeatureMixin
   include CustomAttributeMixin
+  include VirtualTotalMixin
   belongs_to :ext_management_system, :foreign_key => "ems_id"
   has_many :container_groups
   has_many :container_routes
   has_many :container_replicators
   has_many :container_services
+  has_many :containers, :through => :container_groups
   has_many :container_definitions, :through => :container_groups
+  has_many :container_images, -> { distinct }, :through => :container_groups
   has_many :container_nodes, -> { distinct }, :through => :container_groups
   has_many :container_quotas
   has_many :container_quota_items, :through => :container_quotas
   has_many :container_limits
   has_many :container_limit_items, :through => :container_limits
   has_many :container_builds
+  has_many :container_templates
 
   # Needed for metrics
   has_many :metrics,                :as => :resource
@@ -21,36 +26,21 @@ class ContainerProject < ApplicationRecord
 
   has_many :labels, -> { where(:section => "labels") }, :class_name => "CustomAttribute", :as => :resource, :dependent => :destroy
 
-  virtual_column :groups_count,      :type => :integer
-  virtual_column :services_count,    :type => :integer
-  virtual_column :routes_count,      :type => :integer
-  virtual_column :replicators_count, :type => :integer
-  virtual_column :containers_count,  :type => :integer
-
-  def groups_count
-    container_groups.size
-  end
-
-  def routes_count
-    container_routes.size
-  end
-
-  def replicators_count
-    container_replicators.size
-  end
-
-  def services_count
-    container_services.size
-  end
-
-  def containers_count
-    container_definitions.size
-  end
+  virtual_total :groups_count,      :container_groups
+  virtual_total :services_count,    :container_services
+  virtual_total :routes_count,      :container_routes
+  virtual_total :replicators_count, :container_replicators
+  virtual_total :containers_count,  :container_definitions
+  virtual_total :images_count,      :container_images
 
   include EventMixin
   include Metric::CiMixin
 
-  PERF_ROLLUP_CHILDREN = :container_groups
+  PERF_ROLLUP_CHILDREN = :all_container_groups
+
+  def all_container_groups
+    ContainerGroup.where(:container_project_id => id).or(ContainerGroup.where(:old_container_project_id => id))
+  end
 
   acts_as_miq_taggable
 

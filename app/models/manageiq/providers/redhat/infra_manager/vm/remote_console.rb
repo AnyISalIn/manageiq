@@ -20,27 +20,26 @@ class ManageIQ::Providers::Redhat::InfraManager::Vm
             "#{protocol} remote console requires the vm to be running.") if options[:check_if_running] && state != "on"
     end
 
-    def remote_console_acquire_ticket(userid, console_type)
-      # FIXME: a temporary work-around for #8151 (provider_object being an Array)
-      provider = provider_object.kind_of?(Array) ? provider_object.first : provider_object
-
+    def remote_console_acquire_ticket(userid, originating_server, console_type)
       validate_remote_console_acquire_ticket(console_type)
 
-      parsed_ticket = Nokogiri::XML(provider.ticket)
-      display = provider.attributes[:display]
+      parsed_ticket = Nokogiri::XML(provider_object.ticket)
+      display = provider_object.attributes[:display]
 
-      SystemConsole.where(:vm_id => id).each(&:destroy)
-      # TODO: non-blocking SSL support in the proxy
-      SystemConsole.create!(
+      SystemConsole.force_vm_invalid_token(id)
+
+      console_args = {
         :user       => User.find_by(:userid => userid),
         :vm_id      => id,
-        :host_name  => display[:address],
-        :port       => display[:secure_port] || display[:port],
-        :ssl        => display[:secure_port].present?,
         :protocol   => display[:type],
         :secret     => parsed_ticket.xpath('action/ticket/value')[0].text,
-        :url_secret => SecureRandom.hex
-      ).connection_params
+        :url_secret => SecureRandom.hex,
+        :ssl        => display[:secure_port].present?
+      }
+      host_address = display[:address]
+      host_port    = display[:secure_port] || display[:port]
+
+      SystemConsole.launch_proxy_if_not_local(console_args, originating_server, host_address, host_port)
     end
 
     def remote_console_acquire_ticket_queue(protocol, userid)
@@ -56,7 +55,7 @@ class ManageIQ::Providers::Redhat::InfraManager::Vm
         :priority    => MiqQueue::HIGH_PRIORITY,
         :role        => 'ems_operations',
         :zone        => my_zone,
-        :args        => [userid, protocol]
+        :args        => [userid, MiqServer.my_server.id, protocol]
       }
 
       MiqTask.generic_action_with_callback(task_opts, queue_opts)

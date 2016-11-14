@@ -1,5 +1,5 @@
 - tooltipOptions = {"tooltip-placement" => "bottom", "tooltip" => "{{legendTooltip}}"}
-.container_topology{'data-ng-app' => "netTopologyApp", 'ng-controller' => "networkTopologyController"}
+.container_topology{'ng-controller' => "networkTopologyController"}
   .row.toolbar-pf
     .col-md-12
       = render :partial => "shared/topology_header"
@@ -70,6 +70,14 @@
             %text{:y => "9"} &#xF02b;
         %label
           = _("Tags")
+      %kubernetes-topology-icon{tooltipOptions, :kind => "LoadBalancer"}
+        %svg.kube-topology
+          %g.EntityLegend.Network.LoadBalancer
+            %circle{:r => "17"}
+            -# pficon-network
+            %text{:y => "8"} &#xE909;
+        %label
+          = _("Load Balancer")
 
   .alert.alert-info.alert-dismissable
     %button.close{"aria-hidden" => "true", "data-dismiss" => "alert", :type => "button"}
@@ -78,3 +86,6 @@
     %strong
       = _("Click on the legend to show/hide entities, and double click/right click the entities in the graph to navigate to their summary pages.")
   %kubernetes-topology-graph{:items => "items", :relations => "relations", :kinds => "kinds"}
+
+:javascript
+  miq_bootstrap('.container_topology', 'netTopologyApp');

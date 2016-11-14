@@ -6,12 +6,12 @@ class ContainerDefinition < ApplicationRecord
   has_many :container_env_vars,     :dependent => :destroy
   has_one :container,               :dependent => :destroy
   has_one :security_context,        :as => :resource, :dependent => :destroy
+  has_one :container_image,         :through => :container
 
   def disconnect_inv
     _log.info "Disconnecting Container definition [#{name}] id [#{id}]"
     self.container.try(:disconnect_inv)
     self.deleted_on = Time.now.utc
-    self.container_group = nil
     self.old_ems_id = self.ems_id
     self.ems_id = nil
     save

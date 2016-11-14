@@ -10,6 +10,11 @@ module MiqAeMethodService
 
   class MiqAeServiceFront
     include DRbUndumped
+    attr_accessor :workspace
+    def initialize(workspace)
+      @workspace = workspace
+    end
+
     def find(id)
       MiqAeService.find(id)
     end
@@ -20,6 +25,8 @@ module MiqAeMethodService
     include DRbUndumped
     include MiqAeMethodService::MiqAeServiceModelLegacy
     include MiqAeMethodService::MiqAeServiceVmdb
+
+    attr_accessor :logger
 
     @@id_hash = {}
     @@current = []
@@ -42,14 +49,24 @@ module MiqAeMethodService
       @@current.delete(obj)
     end
 
-    def initialize(ws)
+    def initialize(ws, inputs = {}, body = nil, logger = $miq_ae_logger)
       @drb_server_references = []
-      @inputs                = {}
+      @inputs                = inputs
       @workspace             = ws
       @preamble_lines        = 0
       @body                  = []
+      self.body              = body if body
       @persist_state_hash    = ws.persist_state_hash
+      @logger                = logger
       self.class.add(self)
+    end
+
+    def stdout
+      @stdout ||= Vmdb::Loggers::IoLogger.new(logger, :info, "Method STDOUT:")
+    end
+
+    def stderr
+      @stderr ||= Vmdb::Loggers::IoLogger.new(logger, :error, "Method STDERR:")
     end
 
     def destroy
@@ -136,6 +153,10 @@ module MiqAeMethodService
       @persist_state_hash[name]
     end
 
+    def prepend_namespace=(ns)
+      @workspace.prepend_namespace = ns
+    end
+
     def instantiate(uri)
       obj = @workspace.instantiate(uri, @workspace.ae_user, @workspace.current_object)
       return nil if obj.nil?
@@ -208,14 +229,59 @@ module MiqAeMethodService
     end
 
     def execute(m, *args)
+      # Since each request from DRb client could run in a separate thread
+      # We have to set the current_user in every thread.
+      User.current_user = @workspace.ae_user
       MiqAeServiceMethods.send(m, *args)
     rescue NoMethodError => err
       raise MiqAeException::MethodNotFound, err.message
     end
 
+    def notification_subject(values_hash)
+      subject = values_hash[:subject] || @workspace.ae_user
+      (ar_object(subject) || subject).tap do |object|
+        raise ArgumentError, "Subject must be a valid Active Record object" unless object.kind_of?(ActiveRecord::Base)
+      end
+    end
+
+    def ar_object(svc_obj)
+      if svc_obj.kind_of?(MiqAeMethodService::MiqAeServiceModelBase)
+        svc_obj.instance_variable_get('@object')
+      end
+    end
+
+    def notification_type(values_hash)
+      type = values_hash[:type].present? ? values_hash[:type].to_sym : default_notification_type(values_hash)
+      type.tap do |t|
+        $miq_ae_logger.info("Validating Notification type: #{t}")
+        valid_type = NotificationType.find_by_name(t)
+        raise ArgumentError, "Invalid notification type specified" unless valid_type
+      end
+    end
+
+    def create_notification(values_hash = {})
+      create_notification!(values_hash)
+    rescue
+      return nil
+    end
+
+    def create_notification!(values_hash = {})
+      options = {}
+      type = notification_type(values_hash)
+      subject = notification_subject(values_hash)
+      options[:message] = values_hash[:message] if values_hash[:message].present?
+      User.current_user = @workspace.ae_user
+
+      $miq_ae_logger.info("Calling Create Notification type: #{type} subject type: #{subject.class.base_class.name} id: #{subject.id} options: #{options.inspect}")
+      MiqAeServiceModelBase.wrap_results(Notification.create!(:type      => type,
+                                                              :subject   => subject,
+                                                              :options   => options,
+                                                              :initiator => @workspace.ae_user))
+    end
+
     def instance_exists?(path)
       _log.info "<< path=#{path.inspect}"
-      __find_instance_from_path(path) ? true : false
+      !!(__find_instance_from_path(path))
     end
 
     def instance_create(path, values_hash = {})
@@ -241,7 +307,7 @@ module MiqAeMethodService
     def instance_get_display_name(path)
       _log.info "<< path=#{path.inspect}"
       aei = __find_instance_from_path(path)
-      aei ? aei.display_name : nil
+      aei.try(:display_name)
     end
 
     def instance_set_display_name(path, display_name)
@@ -325,8 +391,8 @@ module MiqAeMethodService
       return false unless owned_domain?(dom)
       domain = MiqAeDomain.find_by_fqname(dom, false)
       return false unless domain
-      $log.warn "path=#{path.inspect} : is not editable" unless domain.editable?
-      domain.editable?
+      $log.warn "path=#{path.inspect} : is not editable" unless domain.editable?(@workspace.ae_user)
+      domain.editable?(@workspace.ae_user)
     end
 
     def owned_domain?(dom)
@@ -342,8 +408,13 @@ module MiqAeMethodService
       $log.warn "domain=#{dom} : is not viewable"
       false
     end
-  end
 
+    def default_notification_type(values_hash)
+      level = values_hash[:level] || "info"
+      audience = values_hash[:audience] || "user"
+      "automate_#{audience}_#{level}".downcase.to_sym
+    end
+  end
 
   class MiqAeServiceObject
     include MiqAeMethodService::MiqAeServiceObjectCommon

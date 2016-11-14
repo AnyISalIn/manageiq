@@ -1,6 +1,6 @@
 /* global miqAjaxButton miqBuildCalendar miqButtons miqJqueryRequest miqRESTAjaxButton miqSparkleOff miqSparkleOn */
 
-ManageIQ.angular.app.service('miqService', function() {
+ManageIQ.angular.app.service('miqService', ['$timeout', '$document', function($timeout, $document) {
   this.storedPasswordPlaceholder = "●●●●●●●●";
 
   this.showButtons = function() {
@@ -16,12 +16,16 @@ ManageIQ.angular.app.service('miqService', function() {
     miqBuildCalendar(true);
   };
 
-  this.miqAjaxButton = function(url, serializeFields) {
-    miqAjaxButton(url, serializeFields);
+  this.miqAjaxButton = function(url, serializeFields, options) {
+    miqAjaxButton(url, serializeFields, options);
   };
 
-  this.restAjaxButton = function(url, button, data) {
-    miqRESTAjaxButton(url, button, data);
+  this.miqAsyncAjaxButton = function(url, serializeFields) {
+    miqJqueryRequest(url, {beforeSend: true, data: serializeFields});
+  };
+
+  this.restAjaxButton = function(url, button, dataType, data) {
+    miqRESTAjaxButton(url, button, dataType, data);
   };
 
   this.jqueryRequest = function(url, options) {
@@ -43,7 +47,7 @@ ManageIQ.angular.app.service('miqService', function() {
     var outerMost = $("<div id='flash_text_div' onclick=$('#flash_msg_div').text(''); title='" + __("Click to remove messages") + "'>");
     var txt = $('<strong>' + msg + '</strong>');
 
-    if (type == "error") {
+    if(type == "error") {
       var outerBox = $('<div class="alert alert-danger">');
       var innerSpan = $('<span class="pficon pficon-error-circle-o">');
     } else if (type == "warn") {
@@ -53,12 +57,11 @@ ManageIQ.angular.app.service('miqService', function() {
       var outerBox = $('<div class="alert alert-success">');
       var innerSpan = $('<span class="pficon pficon-ok">');
     }
-
     $(outerBox).append(innerSpan);
     $(outerBox).append(txt);
     $(outerMost).append(outerBox);
     $(outerMost).appendTo($("#flash_msg_div"));
-  }
+  };
 
   this.miqFlashClear = function() {
     $('#flash_msg_div').text("");
@@ -66,6 +69,15 @@ ManageIQ.angular.app.service('miqService', function() {
 
   this.saveable = function(form) {
     return form.$valid && form.$dirty;
+  };
+
+  this.dynamicAutoFocus = function(element) {
+    $timeout(function() {
+      var queryResult = $document[0].getElementById(element);
+      if (queryResult) {
+        queryResult.focus();
+      }
+    }, 200);
   };
 
   this.validateWithAjax = function (url) {
@@ -76,10 +88,11 @@ ManageIQ.angular.app.service('miqService', function() {
   this.validateWithREST = function($event, credType, url, formSubmit) {
     angular.element('#button_name').val('validate');
     angular.element('#cred_type').val(credType);
-    if (formSubmit) {
+    if(formSubmit) {
       miqSparkleOn();
-      miqRESTAjaxButton(url, $event.target);
-    } else {
+      return miqRESTAjaxButton(url, $event.target, 'json');
+    }
+    else {
       $event.preventDefault();
     }
   };
@@ -99,4 +112,16 @@ ManageIQ.angular.app.service('miqService', function() {
 
     return serializedObj;
   };
-});
+
+  this.serializeModelWithIgnoredFields = function(model, ignoredFields) {
+    var serializedObj = angular.copy(model);
+
+    for (var k in serializedObj) {
+      if ((ignoredFields.indexOf(k) >= 0) || (serializedObj.hasOwnProperty(k) && !serializedObj[k])) {
+        delete serializedObj[k];
+      }
+    }
+
+    return serializedObj;
+  };
+}]);

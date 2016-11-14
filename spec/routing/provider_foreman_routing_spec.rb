@@ -34,7 +34,6 @@ describe 'routes for ProviderForeman' do
     exp_token_pressed
     form_field_changed
     new
-    panel_control
     provision
     quick_search
     refresh
@@ -44,7 +43,7 @@ describe 'routes for ProviderForeman' do
     tagging
     tagging_edit
     tag_edit_form_field_changed
-    tree_autoload_dynatree
+    tree_autoload
     tree_select
     users
     wait_for_task

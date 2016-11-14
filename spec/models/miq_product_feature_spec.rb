@@ -2,8 +2,6 @@ require 'tmpdir'
 require 'pathname'
 
 describe MiqProductFeature do
-  let(:expected_feature_count) { 1060 }
-
   # - container_dashboard
   # - miq_report_widget_editor
   #   - miq_report_widget_admin
@@ -16,16 +14,32 @@ describe MiqProductFeature do
     )
   end
 
+  it "is properly configured" do
+    everything = YAML.load_file(described_class.feature_yaml)
+    traverse_product_features(everything) do |pf|
+      expect(pf).to include(*described_class::REQUIRED_ATTRIBUTES)
+      expect(pf.keys - described_class::ALLOWED_ATTRIBUTES).to be_empty
+      expect(pf[:children]).not_to be_empty if pf.key?(:children)
+    end
+  end
+
+  def traverse_product_features(product_feature, &block)
+    block.call(product_feature)
+    if product_feature.key?(:children)
+      product_feature[:children].each { |child| traverse_product_features(child, &block) }
+    end
+  end
+
   context ".seed" do
     it "creates feature identifiers once on first seed, changes nothing on second seed" do
-      status_seed1 = MiqProductFeature.seed
-      expect(MiqProductFeature.count).to eq(expected_feature_count)
+      status_seed1 = nil
+      expect { status_seed1 = MiqProductFeature.seed }.to change(MiqProductFeature, :count)
       expect(status_seed1[:created]).to match_array status_seed1[:created].uniq
       expect(status_seed1[:updated]).to match_array []
       expect(status_seed1[:unchanged]).to match_array []
 
-      status_seed2 = MiqProductFeature.seed
-      expect(MiqProductFeature.count).to eq(expected_feature_count)
+      status_seed2 = nil
+      expect { status_seed2 = MiqProductFeature.seed }.not_to change(MiqProductFeature, :count)
       expect(status_seed2[:created]).to match_array []
       expect(status_seed2[:updated]).to match_array []
       expect(status_seed2[:unchanged]).to match_array status_seed1[:created]
@@ -152,6 +166,34 @@ describe MiqProductFeature do
     it "detects hidden features" do
       EvmSpecHelper.seed_specific_product_features("widget_refresh")
       expect(MiqProductFeature.feature_hidden("widget_refresh")).to be_truthy
+    end
+  end
+
+  describe ".features" do
+    before { MiqProductFeature.instance_variable_set(:@feature_cache, nil) }
+    after  { MiqProductFeature.instance_variable_set(:@feature_cache, nil) }
+
+    #      1
+    #    2    3
+    #        4 5
+    it "populates parent and children" do
+      f1 = FactoryGirl.create(:miq_product_feature, :identifier => "f1", :name => "F1n")
+      FactoryGirl.create(:miq_product_feature, :identifier => "f2", :name => "F2n", :parent_id => f1.id)
+      f3 = FactoryGirl.create(:miq_product_feature, :identifier => "f3", :name => "F3n", :parent_id => f1.id)
+      FactoryGirl.create(:miq_product_feature, :identifier => "f4", :name => "F4n", :parent_id => f3.id)
+      FactoryGirl.create(:miq_product_feature, :identifier => "f5", :name => "F5n", :parent_id => f3.id)
+
+      expect { MiqProductFeature.features }.to match_query_limit_of(1)
+      expect { MiqProductFeature.features }.to match_query_limit_of(0)
+
+      expect(MiqProductFeature.feature_root).to eq("f1")
+      expect(MiqProductFeature.feature_children("f1")).to eq(%w(f2 f3))
+      expect(MiqProductFeature.feature_children("f2")).to eq([])
+      expect(MiqProductFeature.feature_children("f3")).to eq(%w(f4 f5))
+
+      expect(MiqProductFeature.feature_parent("f1")).to be_nil
+      expect(MiqProductFeature.feature_parent("f2")).to eq("f1")
+      expect(MiqProductFeature.feature_parent("f4")).to eq("f3")
     end
   end
 end

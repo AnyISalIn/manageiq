@@ -1,6 +1,8 @@
 require 'openstack/openstack_configuration_parser'
 
 class ManageIQ::Providers::Openstack::InfraManager::Host < ::Host
+  include HostOperationsMixin
+
   belongs_to :availability_zone
 
   has_many :host_service_group_openstacks, :foreign_key => :host_id, :dependent => :destroy,
@@ -10,13 +12,14 @@ class ManageIQ::Providers::Openstack::InfraManager::Host < ::Host
   has_many :network_routers, :through => :cloud_subnets
   has_many :cloud_networks, :through => :cloud_subnets
   alias_method :private_networks, :cloud_networks
-  has_many :cloud_subnets, :through    => :network_ports,
-                           :class_name => "ManageIQ::Providers::Openstack::NetworkManager::CloudSubnet"
+  has_many :cloud_subnets, :through    => :network_ports
   has_many :public_networks, :through => :cloud_subnets
 
-  has_many :floating_ips
+  has_many :floating_ips, :through => :network_ports
 
   include_concern 'Operations'
+
+  supports :refresh_network_interfaces
 
   # TODO(lsmola) for some reason UI can't handle joined table cause there is hardcoded somewhere that it selects
   # DISTINCT id, with joined tables, id needs to be prefixed with table name. When this is figured out, replace
@@ -27,6 +30,18 @@ class ManageIQ::Providers::Openstack::InfraManager::Host < ::Host
 
   def cloud_tenants
     ::CloudTenant.where(:id => vms.collect(&:cloud_tenant_id).uniq)
+  end
+
+  # TODO(aveselov) Added 3 empty methods here because 'entity' inside 'build_recursive_topology' calls for these methods.
+  # Work still in progress, but at least it makes a topology visible for rhos undercloud.
+
+  def load_balancers
+  end
+
+  def cloud_tenant
+  end
+
+  def security_groups
   end
 
   def ssh_users_and_passwords
@@ -190,5 +205,363 @@ class ManageIQ::Providers::Openstack::InfraManager::Host < ::Host
   def disconnect_ems(e = nil)
     self.availability_zone = nil if e.nil? || ext_management_system == e
     super
+  end
+
+  def manageable_queue(userid = "system", _options = {})
+    log_target = "#{self.class.name} name: [#{name}], id: [#{id}]"
+
+    task = MiqTask.create(:name => "Setting node '#{name}' to manageable", :userid => userid)
+
+    _log.info("Requesting manageable of #{log_target}")
+    begin
+      MiqEvent.raise_evm_job_event(self, :type => "manageable", :prefix => "request")
+    rescue => err
+      _log.warn("Error raising request manageable for #{log_target}: #{err.message}")
+      return
+    end
+
+    _log.info("Queuing provide of #{log_target}")
+    timeout = (VMDB::Config.new("vmdb").config.fetch_path(:host_manageable, :queue_timeout) || 20.minutes).to_i_with_method
+    cb = {:class_name => task.class.name, :instance_id => task.id, :method_name => :queue_callback_on_exceptions, :args => ['Finished']}
+    MiqQueue.put(
+      :class_name   => self.class.name,
+      :instance_id  => id,
+      :args         => [task.id],
+      :method_name  => "manageable",
+      :miq_callback => cb,
+      :msg_timeout  => timeout,
+      :zone         => my_zone
+    )
+  end
+
+  def manageable(taskid = nil)
+    unless taskid.nil?
+      task = MiqTask.find_by_id(taskid)
+      task.state_active if task
+    end
+
+    log_target = "#{self.class.name} name: [#{name}], id: [#{id}]"
+
+    _log.info("Setting to manageable #{log_target}...")
+
+    task.update_status("Active", "Ok", "Setting to manageable") if task
+
+    status = "Fail"
+    task_status = "Ok"
+    _dummy, t = Benchmark.realtime_block(:total_time) do
+      begin
+        connection = ext_management_system.openstack_handle.detect_baremetal_service
+        response = connection.set_node_provision_state(name, "manage")
+
+        if response.status == 202
+          status = "Success"
+          EmsRefresh.queue_refresh(ext_management_system)
+        end
+      rescue => err
+        task_status = "Error"
+        status = err
+      end
+
+      begin
+        MiqEvent.raise_evm_job_event(self, :type => "manageable", :suffix => "complete")
+      rescue => err
+        _log.warn("Error raising complete manageable event for #{log_target}: #{err.message}")
+      end
+    end
+
+    task.update_status("Finished", task_status, "Setting to Manageable Complete with #{status}") if task
+    _log.info("Setting to Manageable #{log_target}...Complete - Timings: #{t.inspect}")
+  end
+
+  def introspect_queue(userid = "system", _options = {})
+    log_target = "#{self.class.name} name: [#{name}], id: [#{id}]"
+
+    task = MiqTask.create(:name => "Hardware Introspection for '#{name}' ", :userid => userid)
+
+    _log.info("Requesting Hardware Introspection of #{log_target}")
+    begin
+      MiqEvent.raise_evm_job_event(self, :type => "introspect", :prefix => "request")
+    rescue => err
+      _log.warn("Error raising request introspection for #{log_target}: #{err.message}")
+      return
+    end
+
+    _log.info("Queuing introspection of #{log_target}")
+    timeout = (VMDB::Config.new("vmdb").config.fetch_path(:host_introspect, :queue_timeout) || 20.minutes).to_i_with_method
+    cb = {:class_name => task.class.name, :instance_id => task.id, :method_name => :queue_callback_on_exceptions, :args => ['Finished']}
+    MiqQueue.put(
+      :class_name   => self.class.name,
+      :instance_id  => id,
+      :args         => [task.id],
+      :method_name  => "introspect",
+      :miq_callback => cb,
+      :msg_timeout  => timeout,
+      :zone         => my_zone
+    )
+  end
+
+  def introspect(taskid = nil)
+    unless taskid.nil?
+      task = MiqTask.find_by_id(taskid)
+      task.state_active if task
+    end
+
+    log_target = "#{self.class.name} name: [#{name}], id: [#{id}]"
+
+    _log.info("Introspecting #{log_target}...")
+
+    task.update_status("Active", "Ok", "Introspecting") if task
+
+    workflow_state = ""
+    task_status = "Ok"
+    _dummy, t = Benchmark.realtime_block(:total_time) do
+      begin
+        connection = ext_management_system.openstack_handle.detect_workflow_service
+        workflow = "tripleo.baremetal.v1.introspect"
+        input = { :node_uuids => [name] }
+        response = connection.create_execution(workflow, input)
+        workflow_state = response.body["state"]
+        workflow_execution_id = response.body["id"]
+
+        while workflow_state == "RUNNING"
+          sleep 5
+          response = connection.get_execution(workflow_execution_id)
+          workflow_state = response.body["state"]
+        end
+      rescue => err
+        task_status = "Error"
+        workflow_state = err
+      end
+
+      if workflow_state == "SUCCESS"
+        EmsRefresh.queue_refresh(ext_management_system)
+      end
+
+      begin
+        MiqEvent.raise_evm_job_event(self, :type => "introspect", :suffix => "complete")
+      rescue => err
+        _log.warn("Error raising complete introspect event for #{log_target}: #{err.message}")
+      end
+    end
+
+    task.update_status("Finished", task_status, "Introspecting Complete with #{workflow_state}") if task
+    _log.info("Introspecting #{log_target}...Complete - Timings: #{t.inspect}")
+  end
+
+  def provide_queue(userid = "system", _options = {})
+    log_target = "#{self.class.name} name: [#{name}], id: [#{id}]"
+
+    task = MiqTask.create(:name => "Providing node '#{name}' ", :userid => userid)
+
+    _log.info("Requesting Provide of #{log_target}")
+    begin
+      MiqEvent.raise_evm_job_event(self, :type => "provide", :prefix => "request")
+    rescue => err
+      _log.warn("Error raising request provide for #{log_target}: #{err.message}")
+      return
+    end
+
+    _log.info("Queuing provide of #{log_target}")
+    timeout = (VMDB::Config.new("vmdb").config.fetch_path(:host_provide, :queue_timeout) || 20.minutes).to_i_with_method
+    cb = {:class_name => task.class.name, :instance_id => task.id, :method_name => :queue_callback_on_exceptions, :args => ['Finished']}
+    MiqQueue.put(
+      :class_name   => self.class.name,
+      :instance_id  => id,
+      :args         => [task.id],
+      :method_name  => "provide",
+      :miq_callback => cb,
+      :msg_timeout  => timeout,
+      :zone         => my_zone
+    )
+  end
+
+  def provide(taskid = nil)
+    unless taskid.nil?
+      task = MiqTask.find_by_id(taskid)
+      task.state_active if task
+    end
+
+    log_target = "#{self.class.name} name: [#{name}], id: [#{id}]"
+
+    _log.info("Provide #{log_target}...")
+
+    task.update_status("Active", "Ok", "Provide") if task
+
+    workflow_state = ""
+    task_status = "Ok"
+    _dummy, t = Benchmark.realtime_block(:total_time) do
+      begin
+        connection = ext_management_system.openstack_handle.detect_workflow_service
+        workflow = "tripleo.baremetal.v1.provide"
+        input = { :node_uuids => [name] }
+        response = connection.create_execution(workflow, input)
+        workflow_state = response.body["state"]
+        workflow_execution_id = response.body["id"]
+
+        while workflow_state == "RUNNING"
+          sleep 5
+          response = connection.get_execution(workflow_execution_id)
+          workflow_state = response.body["state"]
+        end
+      rescue => err
+        task_status = "Error"
+        workflow_state = err
+      end
+
+      if workflow_state == "SUCCESS"
+        EmsRefresh.queue_refresh(ext_management_system)
+      end
+
+      begin
+        MiqEvent.raise_evm_job_event(self, :type => "provide", :suffix => "complete")
+      rescue => err
+        _log.warn("Error raising complete provide event for #{log_target}: #{err.message}")
+      end
+    end
+
+    task.update_status("Finished", task_status, "Provide Complete with #{workflow_state}") if task
+    _log.info("Provide #{log_target}...Complete - Timings: #{t.inspect}")
+  end
+
+  def validate_start
+    if state.casecmp("off") == 0
+      {:available => true,   :message => nil}
+    else
+      {:available => false,  :message => _("Cannot start. Already on.")}
+    end
+  end
+
+  def start(userid = "system")
+    ironic_set_power_state_queue(userid, "power on", "Starting", "start", :host_start)
+  end
+
+  def validate_stop
+    if state.casecmp("on") == 0
+      {:available => true,   :message => nil}
+    else
+      {:available => false,  :message => _("Cannot stop. Already off.")}
+    end
+  end
+
+  def stop(userid = "system")
+    ironic_set_power_state_queue(userid, "power off", "Stopping", "stop", :host_stop)
+  end
+
+  def validate_destroy
+    if hardware.provision_state == "active"
+      {:available => false, :message => "Cannot remove #{name} because it is in #{hardware.provision_state} state."}
+    else
+      {:available => true, :message => nil}
+    end
+  end
+
+  def destroy_queue
+    destroy_ironic_queue
+  end
+
+  def destroy_ironic_queue(userid = "system")
+    log_target = "#{self.class.name} name: [#{name}], id: [#{id}]"
+
+    task = MiqTask.create(:name => "Deleting Ironic node '#{name}'", :userid => userid)
+
+    _log.info("Requesting Ironic delete of #{log_target}")
+    begin
+      MiqEvent.raise_evm_job_event(self, :type => "destroy_ironic", :prefix => "request")
+    rescue => err
+      $log.warn("Error raising request delete for #{log_target}: #{err.message}")
+      return
+    end
+
+    _log.info("Queuing destroy_ironic of #{log_target}")
+    timeout = (VMDB::Config.new("vmdb").config.fetch_path(:host_delete, :queue_timeout) || 20.minutes).to_i_with_method
+    cb = {:class_name  => task.class.name,
+          :instance_id => task.id,
+          :method_name => :queue_callback_on_exceptions,
+          :args        => ['Finished']}
+    MiqQueue.put(
+      :class_name   => self.class.name,
+      :instance_id  => id,
+      :args         => [task.id],
+      :method_name  => "destroy_ironic",
+      :miq_callback => cb,
+      :msg_timeout  => timeout,
+      :zone         => my_zone
+    )
+  end
+
+  def destroy_ironic(taskid = nil)
+    unless taskid.nil?
+      task = MiqTask.find_by_id(taskid)
+      task.state_active if task
+    end
+
+    log_target = "#{self.class.name} name: [#{name}], id: [#{id}]"
+
+    _log.info("Deleting Ironic node #{log_target}...")
+
+    task.update_status("Active", "Ok", "Deleting Ironic Node") if task
+
+    status = "Fail"
+    task_status = "Ok"
+    _dummy, t = Benchmark.realtime_block(:total_time) do
+      begin
+        connection = ext_management_system.openstack_handle.detect_baremetal_service
+        response = connection.delete_node(name)
+
+        if response.status == 204
+          Host.destroy_queue(id)
+          status = "Success"
+        end
+      rescue => err
+        task_status = "Error"
+        status = err
+      end
+    end
+
+    task.update_status("Finished", task_status, "Delete Ironic node #{log_target} finished with #{status}") if task
+    _log.info("Delete Ironic node #{log_target}...Complete - Timings: #{t.inspect}")
+  end
+
+  def refresh_network_interfaces(ssu)
+    smartstate_network_ports = MiqLinux::Utils.parse_network_interface_list(ssu.shell_exec("ip a"))
+
+    neutron_network_ports = network_ports.where(:source => :refresh).each_with_object({}) do |network_port, obj|
+      obj[network_port.mac_address] = network_port
+    end
+    neutron_cloud_subnets = ext_management_system.network_manager.cloud_subnets
+    hashes = []
+
+    smartstate_network_ports.each do |network_port|
+      existing_network_port = neutron_network_ports[network_port[:mac_address]]
+      if existing_network_port.blank?
+        cloud_subnets = neutron_cloud_subnets.select do |neutron_cloud_subnet|
+          if neutron_cloud_subnet.ip_version == 4
+            IPAddr.new(neutron_cloud_subnet.cidr).include?(network_port[:fixed_ip])
+          else
+            IPAddr.new(neutron_cloud_subnet.cidr).include?(network_port[:fixed_ipv6])
+          end
+        end
+
+        hashes << {:name          => network_port[:name] || network_port[:mac_address],
+                   :type          => "ManageIQ::Providers::Openstack::NetworkManager::NetworkPort",
+                   :mac_address   => network_port[:mac_address],
+                   :cloud_subnets => cloud_subnets,
+                   :device        => self,
+                   :fixed_ips     => {:subnet_id     => nil,
+                                      :ip_address    => network_port[:fixed_ip],
+                                      :ip_address_v6 => network_port[:fixed_ipv6]}}
+
+      elsif existing_network_port.name.blank?
+        # Just updating a names of network_ports refreshed from Neutron, rest of attributes
+        # is handled in refresh section.
+        existing_network_port.update_attributes(:name => network_port[:name])
+      end
+    end
+    unless hashes.blank?
+      EmsRefresh.save_network_ports_inventory(ext_management_system, hashes, nil, :scan)
+    end
+  rescue => e
+    _log.warn("Error in refreshing network interfaces of host #{id}. Error: #{e.message}")
+    _log.warn(e.backtrace.join("\n"))
   end
 end

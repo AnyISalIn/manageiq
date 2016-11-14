@@ -1,11 +1,11 @@
-include QuadiconHelper
-
 describe "layouts/listnav/_security_group.html.haml" do
+  helper(QuadiconHelper)
+
   before :each do
     set_controller_for_view("security_group")
     assign(:panels, "ems_prop" => true, "ems_rel" => true)
     allow(view).to receive(:truncate_length).and_return(15)
-    allow(view).to receive(:role_allows).and_return(true)
+    allow(view).to receive(:role_allows?).and_return(true)
   end
 
   %w(openstack amazon azure google).each do |t|
@@ -29,7 +29,7 @@ describe "layouts/listnav/_security_group.html.haml" do
         @record = @security_group
         render
         expect(response).to include("href=\"/security_group/show/#{@record.id}?display=main\">Summary")
-        expect(response).to include("Show this Security Group&#39;s parent Network Provider\" href=\"/ems_network/show/#{@record.ext_management_system.id}\">")
+        expect(response).to include("Show this Security Group&#39;s parent Network Provider\" href=\"/ems_network/#{@record.ext_management_system.id}\">")
         expect(response).to include("Show all Instances\" onclick=\"return miqCheckForChanges()\" href=\"/security_group/show/#{@record.id}?display=instances\">")
       end
     end

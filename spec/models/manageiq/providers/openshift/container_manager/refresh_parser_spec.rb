@@ -1,4 +1,3 @@
-require "spec_helper"
 require 'recursive-open-struct'
 
 describe ManageIQ::Providers::Openshift::ContainerManager::RefreshParser do
@@ -49,7 +48,8 @@ describe ManageIQ::Providers::Openshift::ContainerManager::RefreshParser do
                                  :output_name                 => 'spec_output_to_name',
 
                                  :completion_deadline_seconds => '11',
-                                 :labels_and_tags             => []
+                                 :labels                      => [],
+                                 :tags                        => []
                                 )
     end
   end
@@ -88,6 +88,48 @@ describe ManageIQ::Providers::Openshift::ContainerManager::RefreshParser do
                                    :labels                        => [],
                                    :build_config                  => nil,
                                    :output_docker_image_reference => 'host:port/path/to/image'
+                                  )
+    end
+  end
+
+  describe "parse_template" do
+    it "handles simple data" do
+      expect(parser.send(:parse_template,
+                         RecursiveOpenStruct.new(
+                           :metadata   => {
+                             :name              => 'example-template',
+                             :namespace         => 'test-namespace',
+                             :uid               => '22309c35-8f70-11e5-a806-001a4a231290',
+                             :resourceVersion   => '172339',
+                             :creationTimestamp => '2015-11-17T09:18:42Z',
+                           },
+                           :parameters => [
+                             {'name'        => 'IMAGE_VERSION',
+                              'displayName' => 'Image Version',
+                              'description' => 'Specify version for metrics components',
+                              'value'       => 'latest',
+                              'required'    => true
+                             }
+                           ],
+                           :objects    => []
+                         ))).to eq(:name                          => 'example-template',
+                                   :ems_ref                       => '22309c35-8f70-11e5-a806-001a4a231290',
+                                   :namespace                     => 'test-namespace',
+                                   :ems_created_on                => '2015-11-17T09:18:42Z',
+                                   :resource_version              => '172339',
+                                   :labels                        => [],
+                                   :objects                       => [],
+                                   :container_project             => nil,
+                                   :container_template_parameters => [
+                                     {:name         => 'IMAGE_VERSION',
+                                      :display_name => 'Image Version',
+                                      :description  => 'Specify version for metrics components',
+                                      :value        => 'latest',
+                                      :generate     => nil,
+                                      :from         => nil,
+                                      :required     => true
+                                     }
+                                   ]
                                   )
     end
   end

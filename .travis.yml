@@ -1,8 +1,13 @@
 language: ruby
 rvm:
-- '2.2.5'
+- '2.3.1'
 sudo: false
-cache: bundler
+cache:
+  bundler: true
+  directories:
+    - vendor/assets/bower_components
+before_cache:
+- cat bower.json > vendor/assets/bower_components/bower.json
 env:
   global:
   - RUBY_GC_HEAP_GROWTH_MAX_SLOTS=300000
@@ -15,7 +20,6 @@ env:
   - TEST_SUITE=migrations
   - TEST_SUITE=brakeman
   - TEST_SUITE=replication
-  - GEM=pending
   - TEST_SUITE=javascript
 matrix:
   fast_finish: true
@@ -29,6 +33,8 @@ script:
 - bundle exec rake ${TEST_SUITE+test:$TEST_SUITE}
 after_script:
 - source ${TRAVIS_BUILD_DIR}/tools/ci/after_script.sh
+after_failure:
+- source ${TRAVIS_BUILD_DIR}/tools/ci/after_failure.sh
 notifications:
   webhooks:
     urls:

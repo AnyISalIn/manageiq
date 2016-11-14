@@ -80,6 +80,136 @@ describe('import.js', function() {
         });
       });
     });
+
+    describe('#listenForGitPostMessages', function() {
+      var gitPostMessageCallback;
+
+      beforeEach(function() {
+        spyOn(window, 'addEventListener').and.callFake(
+          function(_, callback) {
+            gitPostMessageCallback = callback;
+          }
+        );
+      });
+
+      it('sets up an event listener', function() {
+        ImportSetup.listenForGitPostMessages();
+        expect(window.addEventListener).toHaveBeenCalledWith('message', gitPostMessageCallback);
+      });
+
+      describe('post message callback', function() {
+        var event = {};
+
+        beforeEach(function() {
+          spyOn(window, 'miqSparkleOff');
+        });
+
+        context('when the message data level is an error', function() {
+          beforeEach(function() {
+            spyOn(window, 'showErrorMessage');
+            spyOn($.fn, 'prop');
+            event.data = {
+              message: '{&quot;level&quot;: &quot;error&quot;, &quot;message&quot;: &quot;test&quot;}'
+            };
+            gitPostMessageCallback(event);
+          });
+
+          it('shows the error message', function() {
+            expect(window.showErrorMessage).toHaveBeenCalledWith('test');
+          });
+
+          it('disables the git-url-import', function() {
+            expect($.fn.prop).toHaveBeenCalledWith('disabled', null);
+            expect($.fn.prop.calls.mostRecent().object.selector).toEqual('#git-url-import');
+          });
+
+          it('turns the spinner off', function() {
+            expect(window.miqSparkleOff).toHaveBeenCalled();
+          });
+        });
+
+        context('when the message data level is not error', function() {
+          beforeEach(function() {
+            spyOn(Automate, 'renderGitImport');
+            event.data = {
+              message: '{&quot;level&quot;: &quot;success&quot;, &quot;message&quot;: &quot;test&quot;}',
+              git_repo_id: 123
+            };
+          });
+
+          context('when the data has branches', function() {
+            beforeEach(function() {
+              event.data.git_branches = 'branches';
+              gitPostMessageCallback(event);
+            });
+
+            it('calls renderGitImport with the branches, tags, repo_id, and message', function() {
+              expect(Automate.renderGitImport).toHaveBeenCalledWith('branches', undefined, 123, event.data.message);
+            });
+
+            it('turns the spinner off', function() {
+              expect(window.miqSparkleOff).toHaveBeenCalled();
+            });
+          });
+
+          context('when the data has tags with no branches', function() {
+            beforeEach(function() {
+              event.data.git_tags = 'tags';
+              gitPostMessageCallback(event);
+            });
+
+            it('calls renderGitImport with the branches, tags, repo_id, and message', function() {
+              expect(Automate.renderGitImport).toHaveBeenCalledWith(undefined, 'tags', 123, event.data.message);
+            });
+
+            it('turns the spinner off', function() {
+              expect(window.miqSparkleOff).toHaveBeenCalled();
+            });
+          });
+
+          context('when the data has neither tags nor branches', function() {
+            beforeEach(function() {
+              gitPostMessageCallback(event);
+            });
+
+            it('does not call renderGitImport', function() {
+              expect(Automate.renderGitImport).not.toHaveBeenCalled();
+            });
+
+            it('turns the spinner off', function() {
+              expect(window.miqSparkleOff).toHaveBeenCalled();
+            });
+          });
+        });
+      });
+    });
+
+    describe('SettingUpImportButton', function() {
+      beforeEach(function() {
+        var html = '';
+        html += '<div class="col-md-6">'
+        html += ' <input id="upload_button" />';
+        html += '</div>';
+        html += '<div>';
+        html += ' <input id="upload_file" />';
+        html += '</div>';
+
+        setFixtures(html);
+      });
+
+      it('make upload button to not be disabled', function(){
+        $('#upload_button').prop('disabled', true);
+        $('#upload_file').prop('value', 'test_value');
+        ImportSetup.setUpUploadImportButton('#upload_button');
+        expect($('#upload_button').prop('disabled')).toEqual(false);
+      });
+
+      it('make upload button to be disabled', function(){
+        $('#upload_button').prop('disabled', false);
+        ImportSetup.setUpUploadImportButton('#upload_button');
+        expect($('#upload_button').prop('disabled')).toEqual(true);
+      });
+    });
   });
 
   describe('#clearMessages', function() {
@@ -91,7 +221,7 @@ describe('import.js', function() {
       html += '<div class="icon-placeholder pficon pficon-ok pficon-layered"></div>';
       html += '<div id="error-octagon" class="pficon-error-octagon"></div>';
       html += '<div id="error-exclamation" class="pficon-error-exclamation"></div>';
-      html += '<div id="warning-triangle" class="pficon-warning-triangle"></div>';
+      html += '<div id="warning-triangle" class="pficon-warning-triangle-o"></div>';
       html += '<div id="warning-exclamation" class="pficon-warning-exclamation"></div>';
       setFixtures(html);
 
@@ -119,7 +249,7 @@ describe('import.js', function() {
     });
 
     it('removes pficon-warning-triangle class', function() {
-      expect($('#warning-triangle')).not.toHaveClass('pficon-warning-triangle');
+      expect($('#warning-triangle')).not.toHaveClass('pficon-warning-triangle-o');
     });
 
     it('removes pficon-warning-exclamation class', function() {

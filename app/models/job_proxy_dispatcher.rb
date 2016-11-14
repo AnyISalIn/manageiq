@@ -293,7 +293,7 @@ class JobProxyDispatcher
       .where(:agent_class      => "MiqServer")
       .where(:target_class     => "VmOrTemplate")
       .where("state != ?", "finished")
-      .select("target_id").collect(&:target_id).compact.uniq
+      .pluck(:target_id).compact.uniq
     return @busy_resources_for_embedded_scanning_hash if vms_in_embedded_scanning.blank?
 
     embedded_scans_by_resource = Hash.new { |h, k| h[k] = 0 }
@@ -363,7 +363,7 @@ class JobProxyDispatcher
         queue_signal(job, {:args => [:abort, msg, "error"]})
         return []
       else
-        unless %w(VSAN VMFS NAS NFS ISCSI DIR FCP CSVFS NTFS GLUSTERFS).include?(@vm.storage.store_type)
+        unless %w(VSAN VMFS NAS NFS NFS41 ISCSI DIR FCP CSVFS NTFS GLUSTERFS).include?(@vm.storage.store_type)
           msg = "Vm storage type [#{@vm.storage.store_type}] unsupported [#{job.target_id}], aborting job [#{job.guid}]."
           queue_signal(job, {:args => [:abort, msg, "error"]})
           return []

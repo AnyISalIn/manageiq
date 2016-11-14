@@ -26,6 +26,7 @@ class ExtManagementSystem < ApplicationRecord
   end
 
   belongs_to :provider
+  include CustomAttributeMixin
   belongs_to :tenant
   has_many :container_deployments, :foreign_key => :deployed_on_ems_id, :inverse_of => :deployed_on_ems
   has_many :endpoints, :as => :resource, :dependent => :destroy, :autosave => true
@@ -35,7 +36,11 @@ class ExtManagementSystem < ApplicationRecord
            :class_name => "VmOrTemplate", :inverse_of => :ext_management_system
   has_many :miq_templates,     :foreign_key => :ems_id, :inverse_of => :ext_management_system
   has_many :vms,               :foreign_key => :ems_id, :inverse_of => :ext_management_system
+  has_many :hardwares,         :through => :vms_and_templates
+  has_many :networks,          :through => :hardwares
+  has_many :disks,             :through => :hardwares
 
+  has_many :storages,       -> { distinct },          :through => :hosts
   has_many :ems_events,     -> { order "timestamp" }, :class_name => "EmsEvent",    :foreign_key => "ems_id",
                                                       :inverse_of => :ext_management_system
   has_many :policy_events,  -> { order "timestamp" }, :class_name => "PolicyEvent", :foreign_key => "ems_id"
@@ -44,8 +49,8 @@ class ExtManagementSystem < ApplicationRecord
   has_many :ems_folders,    :foreign_key => "ems_id", :dependent => :destroy, :inverse_of => :ext_management_system
   has_many :ems_clusters,   :foreign_key => "ems_id", :dependent => :destroy, :inverse_of => :ext_management_system
   has_many :resource_pools, :foreign_key => "ems_id", :dependent => :destroy, :inverse_of => :ext_management_system
-
   has_many :customization_specs, :foreign_key => "ems_id", :dependent => :destroy, :inverse_of => :ext_management_system
+  has_many :storage_profiles,    :foreign_key => "ems_id", :dependent => :destroy, :inverse_of => :ext_management_system
 
   has_one  :iso_datastore, :foreign_key => "ems_id", :dependent => :destroy, :inverse_of => :ext_management_system
 
@@ -119,7 +124,7 @@ class ExtManagementSystem < ApplicationRecord
   virtual_total  :total_vms,               :vms
   virtual_total  :total_miq_templates,     :miq_templates
   virtual_total  :total_hosts,             :hosts
-  virtual_column :total_storages,          :type => :integer
+  virtual_total  :total_storages,          :storages
   virtual_total  :total_clusters,          :clusters
   virtual_column :zone_name,               :type => :string, :uses => :zone
   virtual_column :total_vms_on,            :type => :integer
@@ -274,7 +279,7 @@ class ExtManagementSystem < ApplicationRecord
   end
 
   def delete_unused_connection_configurations(options)
-    chosen_endpoints   = options.map { |x| x.fetch_path(:endpoint, :role).try(:to_sym) }.compact.uniq
+    chosen_endpoints = options.map { |x| x.deep_symbolize_keys.fetch_path(:endpoint, :role).try(:to_sym) }.compact.uniq
     existing_endpoints = endpoints.pluck(:role).map(&:to_sym)
     # Delete endpoint that were not picked
     roles_for_deletion = existing_endpoints - chosen_endpoints
@@ -299,26 +304,30 @@ class ExtManagementSystem < ApplicationRecord
   # Takes a hash of connection data
   # hostname, port, and authentication
   # if no role is passed in assume is default role
-  def add_connection_configuration_by_role(options)
-    unless options[:endpoint].key?(:role)
-      options[:endpoint][:role] ||= "default"
+  def add_connection_configuration_by_role(connection)
+    connection.deep_symbolize_keys!
+    unless connection[:endpoint].key?(:role)
+      connection[:endpoint][:role] ||= "default"
     end
-    if options[:authentication].blank?
-      options.delete(:authentication)
+    if connection[:authentication].blank?
+      connection.delete(:authentication)
     else
-      unless options[:authentication].key?(:role)
-        options[:authentication][:role] ||= "default"
+      unless connection[:authentication].key?(:role)
+        endpoint_role = connection[:endpoint][:role]
+        authentication_role = endpoint_role == "default" ? default_authentication_type.to_s : endpoint_role
+        connection[:authentication][:role] ||= authentication_role
       end
     end
 
-    build_connection(options)
+    build_connection(connection)
   end
 
   def connection_configuration_by_role(role = "default")
     endpoint = endpoints.detect { |e| e.role == role }
 
     if endpoint
-      auth = authentications.detect { |a| a.authtype == endpoint.role }
+      authtype = endpoint.role == "default" ? default_authentication_type.to_s : endpoint.role
+      auth = authentications.detect { |a| a.authtype == authtype }
 
       options = {:endpoint => endpoint, :authentication => auth}
       OpenStruct.new(options)
@@ -414,8 +423,8 @@ class ExtManagementSystem < ApplicationRecord
     hosts.where.not(:ems_cluster_id => nil)
   end
 
-  alias_method :storages,               :all_storages
-  alias_method :datastores,             :all_storages # Used by web-services to return datastores as the property name
+  alias_method :all_storages,           :storages
+  alias_method :datastores,             :storages # Used by web-services to return datastores as the property name
 
   alias_method :all_hosts,              :hosts
   alias_method :all_host_ids,           :host_ids
@@ -467,10 +476,6 @@ class ExtManagementSystem < ApplicationRecord
 
   def event_where_clause(assoc = :ems_events)
     ["#{events_table_name(assoc)}.ems_id = ?", id]
-  end
-
-  def total_storages
-    HostStorage.where(:host_id => host_ids).count("DISTINCT storage_id")
   end
 
   def vm_count_by_state(state)

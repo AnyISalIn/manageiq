@@ -24,7 +24,8 @@ module ManageIQ::Providers::Redhat::InfraManager::Provision::StateMachine
 
     if clone_complete?
       phase_context.delete(:clone_task_ref)
-      EmsRefresh.queue_refresh(dest_cluster.ext_management_system)
+      # Full refresh was removed from here because it is expensive on larger envs
+      # With this change we rely on eventing and tagreted refresh it triggers
       signal :poll_destination_in_vmdb
     else
       requeue_phase
@@ -40,8 +41,12 @@ module ManageIQ::Providers::Redhat::InfraManager::Provision::StateMachine
       _log.info("#{message} #{for_destination}")
       update_and_notify_parent(:message => message)
       configure_container
-      signal :poll_destination_powered_off_in_provider
+      signal :customize_guest
     end
+  end
+
+  def customize_guest
+    signal :poll_destination_powered_off_in_provider
   end
 
   def autostart_destination

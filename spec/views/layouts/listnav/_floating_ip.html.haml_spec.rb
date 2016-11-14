@@ -1,11 +1,11 @@
-include QuadiconHelper
-
 describe "layouts/listnav/_floating_ip.html.haml" do
+  helper(QuadiconHelper)
+
   before :each do
     set_controller_for_view("floating_ip")
     assign(:panels, "ems_prop" => true, "ems_rel" => true)
     allow(view).to receive(:truncate_length).and_return(15)
-    allow(view).to receive(:role_allows).and_return(true)
+    allow(view).to receive(:role_allows?).and_return(true)
   end
 
   %w(openstack amazon azure google).each do |t|
@@ -31,7 +31,7 @@ describe "layouts/listnav/_floating_ip.html.haml" do
         @record = @floating_ip
         render
         expect(response).to include("href=\"/floating_ip/show/#{@record.id}?display=main\">Summary")
-        expect(response).to include("Show this Floating Ip&#39;s parent Network Provider\" href=\"/ems_network/show/#{@record.ext_management_system.id}\">")
+        expect(response).to include("Show this Floating Ip&#39;s parent Network Provider\" href=\"/ems_network/#{@record.ext_management_system.id}\">")
       end
     end
   end

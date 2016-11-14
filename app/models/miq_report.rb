@@ -58,7 +58,7 @@ class MiqReport < ApplicationRecord
       miq_group_relation = where(miq_group_condition)
     end
 
-    miq_group_relation.includes(:miq_report_results).references(:miq_report_results)
+    miq_group_relation.joins(:miq_report_results).distinct
   end
 
   # Scope on reports that have report results.
@@ -81,6 +81,11 @@ class MiqReport < ApplicationRecord
     end
 
     q
+  end
+
+  # NOTE: this can by dynamically manipulated
+  def cols
+    self[:cols] ||= (self[:col_order] || []).reject { |x| x.include?(".") }
   end
 
   def view_filter_columns
@@ -145,7 +150,7 @@ class MiqReport < ApplicationRecord
   end
 
   def list_schedules
-    exp = MiqExpression.new("=" => {"field" => "MiqReport.id",
+    exp = MiqExpression.new("=" => {"field" => "MiqReport-id",
                                     "value" => id})
     MiqSchedule.filter_matches_with exp
   end
@@ -155,7 +160,7 @@ class MiqReport < ApplicationRecord
     params['name'] ||= name
     params['description'] ||= title
 
-    params['filter'] = MiqExpression.new("=" => {"field" => "MiqReport.id",
+    params['filter'] = MiqExpression.new("=" => {"field" => "MiqReport-id",
                                                  "value" => id})
     params['towhat'] = "MiqReport"
     params['prod_default'] = "system"
@@ -195,5 +200,27 @@ class MiqReport < ApplicationRecord
 
   def page_size
     rpt_options.try(:fetch_path, :pdf, :page_size) || "a4"
+  end
+
+  def load_custom_attributes
+    klass = db.safe_constantize
+    return unless klass < CustomAttributeMixin || Chargeback.db_is_chargeback?(db)
+
+    klass.load_custom_attributes_for(cols.uniq)
+  end
+
+  # this method adds :custom_attributes => {} to MiqReport#include
+  # when report with virtual custom attributes is stored
+  # we need preload custom_attributes table to main query for building report for elimination of superfluous queries
+  def add_includes_for_virtual_custom_attributes
+    include[:custom_attributes] ||= {} if CustomAttributeMixin.select_virtual_custom_attributes(cols).present?
+  end
+
+  # this method removes loading (:custom_attributes => {}) relations for custom_attributes before report is built
+  # :custom_attributes => {} was added in method add_includes_for_virtual_custom_attributes in MiqReport#include
+  # vc_attributes == Virtual Custom Attributes
+  def remove_loading_relations_for_virtual_custom_attributes
+    vc_attributes = CustomAttributeMixin.select_virtual_custom_attributes(cols).present?
+    include.delete(:custom_attributes) if vc_attributes.present? && include && include[:custom_attributes].blank?
   end
 end

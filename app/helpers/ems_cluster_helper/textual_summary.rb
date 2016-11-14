@@ -86,7 +86,7 @@ module EmsClusterHelper::TextualSummary
   end
 
   def textual_aggregate_cpu_speed
-    {:label => _("Total CPU Resources"), :value => "#{mhz_to_human_size(@record.aggregate_cpu_speed)}"}
+    {:label => _("Total CPU Resources"), :value => mhz_to_human_size(@record.aggregate_cpu_speed).to_s}
   end
 
   def textual_aggregate_memory
@@ -106,13 +106,14 @@ module EmsClusterHelper::TextualSummary
     {:label => _("Total Configured Memory"),
      :value => _("%{number} (Virtual to Real Ratio: %{ratio})") %
        {:number => number_to_human_size(@record.aggregate_vm_memory.megabytes, :precision => 2),
-        :ratio  => @record.v_ram_vr_ratio}}
+        :ratio  => @record.v_ram_vr_ratio.round(2)}}
   end
 
   def textual_aggregate_vm_cpus
     {:label => _("Total Configured CPUs"),
      :value => _("%{number} (Virtual to Real Ratio: %{ratio})") %
-       {:number => number_with_delimiter(@record.aggregate_vm_cpus), :ratio => @record.v_cpu_vr_ratio}}
+       {:number => number_with_delimiter(@record.aggregate_vm_cpus),
+        :ratio  => @record.v_cpu_vr_ratio.round(2)}}
   end
 
   def textual_ems
@@ -126,7 +127,7 @@ module EmsClusterHelper::TextualSummary
   def textual_total_hosts
     num = @record.total_hosts
     h = {:label => title_for_hosts, :image => "host", :value => num}
-    if num > 0 && role_allows(:feature => "host_show_list")
+    if num > 0 && role_allows?(:feature => "host_show_list")
       h[:title] = _("Show all %{title}") % {:title => title_for_hosts}
       h[:link]  = url_for(:controller => 'ems_cluster', :action => 'show', :id => @record, :display => 'hosts')
     end
@@ -136,7 +137,7 @@ module EmsClusterHelper::TextualSummary
   def textual_total_direct_vms
     num = @record.total_direct_vms
     h = {:label => _("Direct VMs"), :image => "vm", :value => num}
-    if num > 0 && role_allows(:feature => "vm_show_list")
+    if num > 0 && role_allows?(:feature => "vm_show_list")
       h[:title] = _("Show VMs in this %{title}, but not in Resource Pools below") % {:title => cluster_title}
       h[:link]  = url_for(:controller => 'ems_cluster', :action => 'show', :id => @record, :display => 'vms')
     end
@@ -146,7 +147,7 @@ module EmsClusterHelper::TextualSummary
   def textual_allvms_size
     num = @record.total_vms
     h = {:label => _("All VMs"), :image => "vm", :value => num}
-    if num > 0 && role_allows(:feature => "vm_show_list")
+    if num > 0 && role_allows?(:feature => "vm_show_list")
       h[:title] = _("Show all VMs in this %{title}") % {:title => cluster_title}
       h[:link]  = url_for(:controller => 'ems_cluster', :action => 'show', :id => @record, :display => 'all_vms')
     end
@@ -158,7 +159,7 @@ module EmsClusterHelper::TextualSummary
 
     num = @record.total_miq_templates
     h = {:label => _("All Templates"), :image => "vm", :value => num}
-    if num > 0 && role_allows(:feature => "miq_template_show_list")
+    if num > 0 && role_allows?(:feature => "miq_template_show_list")
       h[:title] = _("Show all Templates in this %{title}") % {:title => cluster_title}
       h[:link]  = url_for(:controller => 'ems_cluster', :action => 'show', :id => @record, :display => 'miq_templates')
     end
@@ -168,7 +169,7 @@ module EmsClusterHelper::TextualSummary
   def textual_total_vms
     num = @record.total_vms
     h = {:label => _("All VMs (Tree View)"), :image => "vm", :value => num}
-    if num > 0 && role_allows(:feature => "vm_show_list")
+    if num > 0 && role_allows?(:feature => "vm_show_list")
       h[:title] = _("Show tree of all VMs by Resource Pool in this %{title}") % {:title => cluster_title}
       h[:link]  = url_for(:controller => 'ems_cluster', :action => 'show', :id => @record, :display => 'descendant_vms')
     end
@@ -184,7 +185,7 @@ module EmsClusterHelper::TextualSummary
   end
 
   def textual_states_size
-    return nil unless role_allows(:feature => "ems_cluster_drift")
+    return nil unless role_allows?(:feature => "ems_cluster_drift")
     num = @record.number_of(:drift_states)
     h = {:label => _("Drift History"), :image => "drift", :value => (num == 0 ? _("None") : num)}
     if num > 0
@@ -198,7 +199,7 @@ module EmsClusterHelper::TextualSummary
     num = @record.storage_systems.count
     label = ui_lookup(:tables => "ontap_storage_system")
     h = {:label => label, :image => "ontap_storage_system", :value => num}
-    if num > 0 && role_allows(:feature => "ontap_storage_system_show_list")
+    if num > 0 && role_allows?(:feature => "ontap_storage_system_show_list")
       h[:title] = _("Show all %{label}") % {:label => label}
       h[:link]  = url_for(:controller => 'ems_cluster', :action => 'show', :id => @record, :display => 'storage_systems')
     end
@@ -209,7 +210,7 @@ module EmsClusterHelper::TextualSummary
     num = @record.storage_systems.count
     label = ui_lookup(:tables => "ontap_storage_volume")
     h = {:label => label, :image => "ontap_storage_volume", :value => num}
-    if num > 0 && role_allows(:feature => "ontap_storage_system_show_list")
+    if num > 0 && role_allows?(:feature => "ontap_storage_system_show_list")
       h[:title] = _("Show all %{label}") % {:label => label}
       h[:link]  = url_for(:controller => 'ems_cluster', :action => 'show', :id => @record, :display => 'ontap_storage_volumes')
     end
@@ -220,7 +221,7 @@ module EmsClusterHelper::TextualSummary
     num = @record.file_shares.count
     label = ui_lookup(:tables => "ontap_file_share")
     h = {:label => label, :image => "ontap_file_share", :value => num}
-    if num > 0 && role_allows(:feature => "ontap_file_share_show_list")
+    if num > 0 && role_allows?(:feature => "ontap_file_share_show_list")
       h[:title] = label
       h[:link]  = url_for(:controller => 'ems_cluster', :action => 'show', :id => @record, :display => 'ontap_file_shares')
     end
@@ -231,7 +232,7 @@ module EmsClusterHelper::TextualSummary
     num = @record.base_storage_extents.count
     label = ui_lookup(:tables => "cim_base_storage_extent")
     h = {:label => label, :image => "cim_base_storage_extent", :value => num}
-    if num > 0 && role_allows(:feature => "cim_base_storage_extent_show_list")
+    if num > 0 && role_allows?(:feature => "cim_base_storage_extent_show_list")
       h[:title] = label
       h[:link]  = url_for(:controller => 'ems_cluster', :action => 'show', :id => @record, :display => 'storage_extents')
     end

@@ -15,7 +15,7 @@
 # - Delete a role by action               /api/roles/:id                        action "delete"
 # - Delete multiple roles                 /api/roles                            action "delete"
 #
-describe ApiController do
+describe "Roles API" do
   let(:feature_identifiers) do
     %w(vm_explorer ems_infra_tag my_settings_time_profiles
        miq_request_view miq_report_run storage_manager_show_list rbac_role_show)
@@ -65,10 +65,10 @@ describe ApiController do
     run_get role_url, :expand => "features"
     expect(response).to have_http_status(:ok)
 
-    expect(response_hash).to have_key("name")
-    expect(response_hash["name"]).to eq(role.name)
-    expect(response_hash).to have_key("features")
-    expect(response_hash["features"].size).to eq(fetch_value(role.miq_product_features.count))
+    expect(response.parsed_body).to have_key("name")
+    expect(response.parsed_body["name"]).to eq(role.name)
+    expect(response.parsed_body).to have_key("features")
+    expect(response.parsed_body["features"].size).to eq(role.miq_product_features.count)
 
     expect_result_resources_to_include_data("features", attr.to_s => klass.pluck(attr))
   end
@@ -107,7 +107,7 @@ describe ApiController do
       expect(response).to have_http_status(:ok)
       expect_result_resources_to_include_keys("results", expected_attributes)
 
-      role_id = response_hash["results"].first["id"]
+      role_id = response.parsed_body["results"].first["id"]
 
       run_get "#{roles_url}/#{role_id}/", :expand => "features"
 
@@ -127,7 +127,7 @@ describe ApiController do
       expect(response).to have_http_status(:ok)
       expect_result_resources_to_include_keys("results", expected_attributes)
 
-      role_id = response_hash["results"].first["id"]
+      role_id = response.parsed_body["results"].first["id"]
       expect(MiqUserRole.exists?(role_id)).to be_truthy
       role = MiqUserRole.find(role_id)
       sample_role1['features'].each do |feature|
@@ -143,7 +143,7 @@ describe ApiController do
       expect(response).to have_http_status(:ok)
       expect_result_resources_to_include_keys("results", expected_attributes)
 
-      results = response_hash["results"]
+      results = response.parsed_body["results"]
       r1_id = results.first["id"]
       r2_id = results.second["id"]
       expect(MiqUserRole.exists?(r1_id)).to be_truthy
@@ -272,8 +272,12 @@ describe ApiController do
       role = MiqUserRole.find(role.id)
 
       @product_features.each do |feature|
-        expect(role.allows?(feature)).to be_truthy unless feature[:identifier].eql?('ems_infra_tag')
-        expect(role.allows?(feature)).to be_falsey if feature[:identifier].eql?('ems_infra_tag')
+        unless feature[:identifier].eql?('ems_infra_tag')
+          expect(role.allows?(:identifier => feature.identifier)).to be_truthy
+        end
+        if feature[:identifier].eql?('ems_infra_tag')
+          expect(role.allows?(:identifier => feature.identifier)).to be_falsey
+        end
       end
     end
 
@@ -292,11 +296,14 @@ describe ApiController do
 
       # Confirm requested features removed first, and others remain
       @product_features.each do |feature|
-        expect(role.allows?(feature)).to be_truthy unless features_list['features'].find do |removed_feature|
+        removed = features_list['features'].find do |removed_feature|
           removed_feature[:identifier] == feature[:identifier]
         end
-        expect(role.allows?(feature)).to be_falsey if features_list['features'].find do |removed_feature|
-          removed_feature[:identifier] == feature[:identifier]
+
+        if removed
+          expect(role.allows?(:identifier => feature.identifier)).to be_falsey
+        else
+          expect(role.allows?(:identifier => feature.identifier)).to be_truthy
         end
       end
     end

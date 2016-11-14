@@ -314,18 +314,21 @@ module ManageIQ::Providers::Microsoft
     end
 
     def process_vm_hardware(vm)
-      p = vm[:Properties][:Props]
+      p    = vm[:Properties][:Props]
+      cpus = p[:CPUCount]
 
       {
-        :cpu_total_cores    => p[:CPUCount],
-        :guest_os           => p[:OperatingSystem][:Props][:Name],
-        :guest_os_full_name => p[:OperatingSystem][:Props][:Name],
-        :memory_mb          => normalize_blank_property_num(p[:Memory]),
-        :cpu_type           => normalize_blank_property_str(p[:CPUType]),
-        :disks              => process_disks(p),
-        :networks           => process_hostname_and_ip(vm),
-        :guest_devices      => process_vm_guest_devices(vm),
-        :bios               => p[:BiosGuid]
+        :cpu_sockets          => cpus,
+        :cpu_cores_per_socket => 1,
+        :cpu_total_cores      => cpus,
+        :guest_os             => p[:OperatingSystem][:Props][:Name],
+        :guest_os_full_name   => p[:OperatingSystem][:Props][:Name],
+        :memory_mb            => normalize_blank_property_num(p[:Memory]),
+        :cpu_type             => normalize_blank_property_str(p[:CPUType]),
+        :disks                => process_disks(p),
+        :networks             => process_hostname_and_ip(vm),
+        :guest_devices        => process_vm_guest_devices(vm),
+        :bios                 => p[:BiosGuid]
       }
     end
 
@@ -398,7 +401,7 @@ module ManageIQ::Providers::Microsoft
 
     def process_vm_guest_devices(vm)
       dvds = vm[:Properties][:Props][:VirtualDVDDrives]
-      return [] if dvds.empty?
+      return [] if dvds.blank?
 
       dvdprops   = dvds[0][:Props]
       connection = dvdprops[:Connection]
@@ -409,7 +412,7 @@ module ManageIQ::Providers::Microsoft
                  when "ISOImage"  then process_iso_image(vm)
                  end
 
-      devices.compact
+      devices.flatten.compact
     end
 
     def process_vm_physical_dvd_drive(dvd)
@@ -430,22 +433,18 @@ module ManageIQ::Providers::Microsoft
     end
 
     def process_iso_image(vm)
-      path = vm[:DVDs][:Props][:SharePath]
-      size = vm[:DVDs][:Props][:Size]
-      uid  = vm[:DVDs][:Props][:ID]
-      name = vm[:DVDs][:Props][:Name]
-
-      new_result = {
-        :size            => size / 1.megabyte,
-        :device_type     => 'cdrom',  # TODO: add DVD to model
-        :present         => true,
-        :controller_type => 'IDE',
-        :mode            => 'persistent',
-        :filename        => path,
-        :uid_ems         => uid,
-        :device_name     => name,
-      }
-      new_result
+      vm[:DVDs].collect do |dvd|
+        {
+          :size            => dvd[:MS][:Size] / 1.megabyte,
+          :device_type     => 'cdrom', # TODO: add DVD to model
+          :present         => true,
+          :controller_type => 'IDE',
+          :mode            => 'persistent',
+          :filename        => dvd[:MS][:SharePath],
+          :uid_ems         => dvd[:MS][:ID],
+          :device_name     => dvd[:MS][:Name],
+        }
+      end
     end
 
     def process_vm_storages(properties)

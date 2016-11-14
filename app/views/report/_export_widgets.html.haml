@@ -38,25 +38,13 @@
   = form_tag('upload_widget_import_file', :id => 'upload-widgets-form', :class => "form-horizontal") do
     .form-group
       .col-md-4
-        = file_field("upload", "file", :class => "lifestyle", "data-buttonName" => "btn-default")
-        :javascript
-          $(":file").filestyle({
-            icon: false,
-            placeholder: "No file chosen"
-          });
+        = render :partial => "shared/file_chooser", :locals => {:object_name => "upload", :method => "file"}
       .col-md-6
         = submit_tag(_("Upload"), :class => "btn btn-default", :id => "upload_widget", :disabled => true)
         :javascript
-          $("#upload_file").on("change",
-             function(){
-               if ($(this).val()){
-                 $('#upload_widget').prop('disabled', false);
-               }
-               else {
-                 $('#upload_widget').prop('disabled', true);
-               }
-             }
-           );
+          $("#upload_file").on("change", function() {
+            ImportSetup.setUpUploadImportButton('#upload_widget')
+          });
   %hr
 
   %h3
@@ -74,7 +62,7 @@
             :multiple => true)
 
     .pull-right
-      = submit_tag(_("Export"), :class => "btn btn-primary export-widgets btn-disabled")
+      = submit_tag(_("Export"), :class => "btn btn-primary export-widgets disabled")
 
 :javascript
   $(function() {
@@ -92,19 +80,20 @@
       e.preventDefault();
     });
 
-    $('#check-all').click(function (e) {
-      $("#import-widgets-form table tbody input[type='checkbox']").prop('checked', $(this).prop('checked'));
+    $('#check-all').on('change', function (e) {
+      $("#import-widgets-form table tbody input[type='checkbox']")
+        .prop('checked', $(this).prop('checked'))
+        .trigger('change');
     });
-
 
     $('.widget-export').change(function() {
       if ($('.widget-export').val() !== null) {
-        if ($('.export-widgets').hasClass('btn-disabled')) {
-          $('.export-widgets').removeClass('btn-disabled');
+        if ($('.export-widgets').hasClass('disabled')) {
+          $('.export-widgets').removeClass('disabled');
         }
       } else {
-        if (!$('.export-widgets').hasClass('btn-disabled')) {
-          $('.export-widgets').addClass('btn-disabled');
+        if (!$('.export-widgets').hasClass('disabled')) {
+          $('.export-widgets').addClass('disabled');
         }
       }
     });

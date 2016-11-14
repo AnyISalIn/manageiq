@@ -1,6 +1,6 @@
 describe EmsContainerController do
   before(:each) do
-    set_user_privileges
+    stub_user(:features => :all)
   end
 
   it "#new" do
@@ -23,7 +23,7 @@ describe EmsContainerController do
 
     context "render" do
       render_views
-      it { is_expected.to render_template('ems_container/show') }
+      it { is_expected.to render_template('shared/views/ems_common/show') }
 
       it do
         is_expected.to have_http_status 200

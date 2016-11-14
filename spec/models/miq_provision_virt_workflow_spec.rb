@@ -160,39 +160,6 @@ describe MiqProvisionVirtWorkflow do
     end
   end
 
-  context "#update_field_visibility_pxe_iso" do
-    let(:show_hide_iso_pxe) { {:hide => [], :edit => []} }
-    describe "supports iso" do
-      before do
-        allow(workflow).to receive(:supports_iso?).and_return(true)
-        allow(workflow).to receive(:supports_pxe?).and_return(false)
-      end
-
-      it "sets iso_image_id as a validated key" do
-        workflow.update_field_visibility_pxe_iso(show_hide_iso_pxe)
-        expect(show_hide_iso_pxe[:edit]).to eq [:iso_image_id]
-        expect(show_hide_iso_pxe[:edit]).to_not eq [:pxe_image_id, :pxe_server_id]
-        expect(show_hide_iso_pxe[:hide]).to_not eq [:iso_image_id]
-        expect(show_hide_iso_pxe[:hide]).to eq [:pxe_image_id, :pxe_server_id]
-      end
-    end
-
-    describe "supports pxe" do
-      before do
-        allow(workflow).to receive(:supports_iso?).and_return(false)
-        allow(workflow).to receive(:supports_pxe?).and_return(true)
-      end
-
-      it "sets pxe_server_id and pxe_image_id as validated keys" do
-        workflow.update_field_visibility_pxe_iso(show_hide_iso_pxe)
-        expect(show_hide_iso_pxe[:edit]).to_not eq [:iso_image_id]
-        expect(show_hide_iso_pxe[:edit]).to eq [:pxe_image_id, :pxe_server_id]
-        expect(show_hide_iso_pxe[:hide]).to eq [:iso_image_id]
-        expect(show_hide_iso_pxe[:hide]).to_not eq [:pxe_image_id, :pxe_server_id]
-      end
-    end
-  end
-
   context "#validate_memory_reservation" do
     let(:values) { {:vm_memory => %w(1024 1024)} }
 
@@ -251,6 +218,106 @@ describe MiqProvisionVirtWorkflow do
       src_vm = FactoryGirl.create(:vm_vmware, :host => host1, :ems_id => ems.id)
       allow(workflow).to receive(:source_vm_rbac_filter).and_return([src_vm])
       expect(workflow.ws_find_template_or_vm("", "VMWARE", "asdf-adsf", "asdfadfasdf")).to be_a(MiqHashStruct)
+    end
+  end
+
+  describe "#update_field_visibility" do
+    let(:workflow) do
+      described_class.new(
+        {
+          :addr_mode                => "addr_mode",
+          :linked_clone             => "linked_clone",
+          :number_of_vms            => "123",
+          :placement_auto           => true,
+          :provision_type           => "provision_type",
+          :retirement               => "321",
+          :service_template_request => "service_template_request",
+          :sysprep_auto_logon       => "sysprep_auto_logon",
+          :sysprep_custom_spec      => "sysprep_custom_spec",
+          :sysprep_enabled          => "sysprep_enabled"
+        },
+        requester,
+        :skip_dialog_load => true
+      )
+    end
+
+    let(:requester) { double("User") }
+
+    let(:dialog_field_visibility_service) { double("DialogFieldVisibilityService") }
+
+    let(:options_hash) do
+      {
+        :addr_mode                       => "addr_mode",
+        :auto_placement_enabled          => true,
+        :customize_fields_list           => [],
+        :linked_clone                    => "linked_clone",
+        :number_of_vms                   => 123,
+        :platform                        => nil,
+        :provision_type                  => "provision_type",
+        :request_type                    => "template",
+        :retirement                      => 321,
+        :service_template_request        => "service_template_request",
+        :snapshot_count                  => 0,
+        :supports_customization_template => false,
+        :supports_iso                    => false,
+        :supports_pxe                    => false,
+        :sysprep_auto_logon              => "sysprep_auto_logon",
+        :sysprep_custom_spec             => "sysprep_custom_spec",
+        :sysprep_enabled                 => "sysprep_enabled"
+      }
+    end
+    let(:dialogs) do
+      {
+        :dialogs => {
+          :dialog_name => {
+            :fields => {:field_name => {}}
+          }
+        }
+      }
+    end
+
+    before do
+      allow(requester).to receive(:kind_of?).with(User).and_return(true)
+      allow(DialogFieldVisibilityService).to receive(:new).and_return(dialog_field_visibility_service)
+      allow(dialog_field_visibility_service).to receive(:determine_visibility).with(options_hash).and_return(
+        "visibility_hash"
+      )
+      allow(dialog_field_visibility_service).to receive(:set_visibility_for_field).with(
+        "visibility_hash", :field_name, {}
+      )
+      workflow.instance_variable_set(:@dialogs, dialogs)
+    end
+
+    it "delegates to the dialog_field_visibility_service with the correct options" do
+      expect(dialog_field_visibility_service).to receive(:determine_visibility).with(options_hash)
+      workflow.update_field_visibility
+    end
+
+    it "sets the visibility for all fields" do
+      expect(dialog_field_visibility_service).to receive(:set_visibility_for_field).with(
+        "visibility_hash", :field_name, {}
+      )
+      workflow.update_field_visibility
+    end
+  end
+
+  context '#make_request (update)' do
+    let(:template) do
+      FactoryGirl.create(
+        :template_vmware,
+        :ext_management_system => FactoryGirl.create(:ems_vmware_with_authentication)
+      )
+    end
+    let(:values)  { {:src_vm_id => [template.id, template.name]} }
+    let(:request) { workflow.make_request(nil, :src_vm_id => [999, 'old_template']) }
+    before { workflow.make_request(request, values) }
+
+    it 'updates options' do
+      expect(request.options).to include(values)
+    end
+
+    it 'updates soruce_id' do
+      expect(request.source_id).to eq(template.id)
     end
   end
 end

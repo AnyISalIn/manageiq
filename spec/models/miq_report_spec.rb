@@ -21,7 +21,7 @@ shared_examples "custom_report_with_custom_attributes" do |base_report, custom_a
       :rpt_type  => "Custom",
       :db        => base_report == "Host" ? "Host" : "ManageIQ::Providers::InfraManager::Vm",
       :cols      => %w(name),
-      :include   => {"#{custom_attributes_field}" => {"columns" => %w(name value)}},
+      :include   => {custom_attributes_field.to_s => {"columns" => %w(name value)}},
       :col_order => %w(miq_custom_attributes.name miq_custom_attributes.value name),
       :headers   => ["EVM Custom Attribute Name", "EVM Custom Attribute Value", "Name"],
       :order     => "Ascending",
@@ -40,6 +40,143 @@ shared_examples "custom_report_with_custom_attributes" do |base_report, custom_a
 end
 
 describe MiqReport do
+  context "report with filtering in Registry" do
+    let(:options)  { {:targets_hash => true, :userid => "admin"} }
+    let(:miq_task) { FactoryGirl.create(:miq_task) }
+
+    before do
+      @user     = FactoryGirl.create(:user_with_group)
+
+      @registry = FactoryGirl.create(:registry_item, :name => "HKLM\\SOFTWARE\\WindowsFirewall : EnableFirewall",
+                                                     :data => 0)
+      @vm       = FactoryGirl.create(:vm_vmware, :registry_items => [@registry])
+      EvmSpecHelper.local_miq_server
+    end
+
+    let(:report) do
+      MiqReport.new(:name => "Custom VM report", :title => "Custom VM report", :rpt_group => "Custom",
+        :rpt_type => "Custom", :db => "Vm", :cols => %w(name),
+        :conditions => MiqExpression.new("=" => {"regkey" => "HKLM\\SOFTWARE\\WindowsFirewall",
+                                                 "regval" => "EnableFirewall", "value" => "0"}),
+        :include   => {"registry_items" => {"columns" => %w(data name value_name)}},
+        :col_order => %w(name registry_items.data registry_items.name registry_items.value_name),
+        :headers   => ["Name", "Registry Data", "Registry Name", "Registry Value Name"],
+        :order     => "Ascending")
+    end
+
+    it "can generate a report filtered by registry items" do
+      report.queue_generate_table(:userid => @user.userid)
+      report._async_generate_table(miq_task.id, :userid => @user.userid, :mode => "async",
+                                   :report_source => "Requested by user")
+
+      report_result = report.table.data.map do |x|
+        x.data.delete("id")
+        x.data
+      end
+
+      expect(report_result.count).to eq(1)
+      expect(report_result.first["name"]).to eq(@vm.name)
+    end
+  end
+
+  context "report with virtual dynamic custom attributes" do
+    let(:options)              { {:targets_hash => true, :userid => "admin"} }
+    let(:custom_column_key_1)  { 'ATTR_Name_1' }
+    let(:custom_column_key_2)  { 'ATTR_Name_2' }
+    let(:custom_column_key_3)  { 'ATTR_Name_3' }
+    let(:custom_column_value)  { 'value1' }
+    let(:user)                 { FactoryGirl.create(:user_with_group) }
+    let(:ems)                  { FactoryGirl.create(:ems_vmware) }
+    let!(:vm_1)                { FactoryGirl.create(:vm_vmware) }
+    let!(:vm_2)                { FactoryGirl.create(:vm_vmware, :retired => false, :ext_management_system => ems) }
+    let(:virtual_column_key_1) { "#{CustomAttributeMixin::CUSTOM_ATTRIBUTES_PREFIX}ATTR_Name_1" }
+    let(:virtual_column_key_2) { "#{CustomAttributeMixin::CUSTOM_ATTRIBUTES_PREFIX}ATTR_Name_2" }
+    let(:virtual_column_key_3) { "#{CustomAttributeMixin::CUSTOM_ATTRIBUTES_PREFIX}ATTR_Name_3" }
+    let(:miq_task)             { FactoryGirl.create(:miq_task) }
+
+    subject! do
+      FactoryGirl.create(:miq_custom_attribute, :resource => vm_1, :name => custom_column_key_1,
+                         :value => custom_column_value)
+      FactoryGirl.create(:miq_custom_attribute, :resource => vm_2, :name => custom_column_key_2,
+                         :value => custom_column_value)
+      FactoryGirl.create(:miq_custom_attribute, :resource => vm_2, :name => custom_column_key_3,
+                         :value => custom_column_value)
+    end
+
+    before do
+      EvmSpecHelper.local_miq_server
+    end
+
+    let(:report) do
+      MiqReport.new(
+        :name => "Custom VM report", :title => "Custom VM report", :rpt_group => "Custom", :rpt_type => "Custom",
+        :db        => "ManageIQ::Providers::InfraManager::Vm",
+        :cols      => %w(name virtual_custom_attribute_ATTR_Name_1 virtual_custom_attribute_ATTR_Name_2),
+        :include   => {:custom_attributes => {}},
+        :col_order => %w(name virtual_custom_attribute_ATTR_Name_1 virtual_custom_attribute_ATTR_Name_2),
+        :headers   => ["Name", custom_column_key_1, custom_column_key_1],
+        :order     => "Ascending"
+      )
+    end
+
+    it "generates report with dynamic custom attributes" do
+      report.queue_generate_table(:userid => user.userid)
+      report._async_generate_table(miq_task.id, :userid => user.userid, :mode => "async",
+                                                :report_source => "Requested by user")
+
+      report_result = report.table.data.map do |x|
+        x.data.delete("id")
+        x.data
+      end
+      expected_results = [{"name" => vm_1.name, virtual_column_key_1 => custom_column_value,
+                           virtual_column_key_2 => nil},
+                          {"name" => vm_2.name, virtual_column_key_1 => nil,
+                           virtual_column_key_2 => custom_column_value}]
+
+      expect(report_result).to match_array(expected_results)
+    end
+
+    let(:exp) { MiqExpression.new("IS NOT EMPTY" => {"field" => "#{vm_1.type}-#{virtual_column_key_1}"}) }
+
+    it "generates report with dynamic custom attributes with MiqExpression filtering" do
+      report.conditions = exp
+
+      report.queue_generate_table(:userid => user.userid)
+      report._async_generate_table(miq_task.id, :userid => user.userid, :mode => "async",
+                                                :report_source => "Requested by user")
+
+      report_result = report.table.data.map do |x|
+        x.data.delete("id")
+        x.data
+      end
+
+      expected_results = ["name" => vm_1.name, virtual_column_key_1 => custom_column_value, virtual_column_key_2 => nil]
+      expect(report_result).to match_array(expected_results)
+    end
+
+    let(:exp_3) do
+      MiqExpression.new("and" => [{"=" => { "field" => "#{vm_2.type}-active", "value" => "true"}},
+                                  {"or" => [{"IS NOT EMPTY" => { "field" => "#{vm_2.type}-name", "value" => ""}},
+                                            {"IS NOT EMPTY" => { "field" => "#{vm_2.type}-#{virtual_column_key_3}"}}]}])
+    end
+
+    it "generates report with dynamic custom attributes with filtering with field which is not listed in cols" do
+      report.conditions = exp_3
+      report.queue_generate_table(:userid => user.userid)
+      report._async_generate_table(miq_task.id, :userid => user.userid, :mode => "async",
+                                   :report_source => "Requested by user")
+
+      report_result = report.table.data.map do |x|
+        x.data.delete("id")
+        x.data
+      end
+
+      expected_results = ["name" => vm_2.name, virtual_column_key_1 => nil, virtual_column_key_2 => custom_column_value]
+
+      expect(report_result).to match_array(expected_results)
+    end
+  end
+
   context "Host and MiqCustomAttributes" do
     include_examples "custom_report_with_custom_attributes", "Host", :miq_custom_attribute
   end
@@ -171,12 +308,10 @@ describe MiqReport do
       host1 = FactoryGirl.create(:host)
       FactoryGirl.create(:vm_vmware, :host => host1, :name => "a")
 
+      ems   = FactoryGirl.create(:ems_vmware)
       host2 = FactoryGirl.create(:host)
-      vmb   = FactoryGirl.create(:vm_vmware, :host => host2, :name => "b")
-      allow(vmb).to receive(:archived?).and_return(false)
-      vmc   = FactoryGirl.create(:vm_vmware, :host => host2, :name => "c")
-      allow(vmc).to receive(:archived?).and_return(false)
-      allow(Vm).to receive(:find_by).and_return(vmb)
+      vmb   = FactoryGirl.create(:vm_vmware, :host => host2, :name => "b", :ext_management_system => ems)
+      vmc   = FactoryGirl.create(:vm_vmware, :host => host2, :name => "c", :ext_management_system => ems)
 
       report = MiqReport.new(:db => "Vm", :sortby => "name", :order => "Descending")
       results, = report.paged_view_search(
@@ -475,7 +610,7 @@ describe MiqReport do
     end
 
     context "Tenant Quota Report" do
-      include QuotaHelper
+      include Spec::Support::QuotaHelper
 
       let!(:tenant_without_quotas) { FactoryGirl.create(:tenant, :name=>"tenant_without_quotas") }
 
@@ -622,6 +757,30 @@ describe MiqReport do
         :col_order => %w(name hostname smart),
       )
       expect(report.sort_col).to eq(0)
+    end
+  end
+
+  describe ".cols" do
+    it "loads given value" do
+      report = MiqReport.new(
+        :cols      => %w(name)
+      )
+      expect(report.cols).to eq(%w(name))
+    end
+
+    it "falls back to col_order" do
+      report = MiqReport.new(
+        :col_order => %w(miq_custom_attributes.name miq_custom_attributes.value name)
+      )
+      expect(report.cols).to eq(%w(name))
+    end
+
+    it "allows manipulation" do
+      report = MiqReport.new(
+        :col_order => %w(miq_custom_attributes.name miq_custom_attributes.value name),
+      )
+      report.cols << "name2"
+      expect(report.cols).to eq(%w(name name2))
     end
   end
 end

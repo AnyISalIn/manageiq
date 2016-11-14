@@ -13,9 +13,19 @@ module ManageIQ::Providers
 
         result[:storages], uids[:storages] = storage_inv_to_hashes(inv[:storage])
         result[:clusters], uids[:clusters] = cluster_inv_to_hashes(inv[:cluster])
+        result[:storage_profiles], uids[:storage_profiles] = storage_profile_inv_to_hashes(inv[:storage_profile], uids[:storages], inv[:storage_profile_datastore])
 
         result[:hosts], uids[:hosts], uids[:clusters_by_host], uids[:lans], uids[:switches], uids[:guest_devices], uids[:scsi_luns] = host_inv_to_hashes(inv[:host], inv, uids[:storages], uids[:clusters])
-        result[:vms], uids[:vms] = vm_inv_to_hashes(inv[:vm], inv[:storage], uids[:storages], uids[:hosts], uids[:clusters_by_host], uids[:lans])
+        result[:vms], uids[:vms] = vm_inv_to_hashes(
+          inv[:vm],
+          inv[:storage],
+          inv[:storage_profile_entity],
+          uids[:storages],
+          uids[:storage_profiles],
+          uids[:hosts],
+          uids[:clusters_by_host],
+          uids[:lans]
+        )
 
         result[:folders], uids[:folders] = inv_to_ems_folder_hashes(inv)
         result[:resource_pools], uids[:resource_pools] = rp_inv_to_hashes(inv[:rp])
@@ -69,6 +79,30 @@ module ManageIQ::Providers
           result_uids[mor] = new_result
           result_uids[:storage_id][uid] = new_result
         end
+        return result, result_uids
+      end
+
+      def self.storage_profile_inv_to_hashes(profile_inv, storage_uids, placement_inv)
+        result = []
+        result_uids = {}
+
+        profile_inv.each do |uid, profile|
+          new_result = {
+            :ems_ref                  => uid,
+            :name                     => profile.name,
+            :profile_type             => profile.profileCategory,
+            :storage_profile_storages => []
+          }
+
+          placement_inv[uid].to_miq_a.each do |placement_hub|
+            datastore = storage_uids[placement_hub.hubId] if placement_hub.hubType == "Datastore"
+            new_result[:storage_profile_storages] << datastore unless datastore.nil?
+          end
+
+          result << new_result
+          result_uids[uid] = new_result
+        end unless profile_inv.nil?
+
         return result, result_uids
       end
 
@@ -736,19 +770,44 @@ module ManageIQ::Providers
 
           result << {
             :storage   => storage_uids[s_mor],
-            :read_only => read_only
+            :read_only => read_only,
+            :ems_ref   => s_mor
           }
         end
 
         result
       end
 
-      def self.vm_inv_to_hashes(inv, storage_inv, storage_uids, host_uids, cluster_uids_by_host, lan_uids)
+      def self.storage_profile_by_entity(storage_profile_entity_inv, storage_profile_uids)
+        groupings = {'virtualDiskId' => {}, 'virtualMachine' => {}}
+        storage_profile_entity_inv.each do |storage_profile_uid, entities|
+          next if storage_profile_uids[storage_profile_uid][:profile_type] == 'RESOURCE'
+          entities.each do |entity|
+            groupings[entity.objectType][entity.key] = storage_profile_uids[storage_profile_uid]
+          end
+        end
+        [groupings['virtualDiskId'], groupings['virtualMachine']]
+      end
+
+      def self.vm_inv_to_hashes(
+        inv,
+        storage_inv,
+        storage_profile_entity_inv,
+        storage_uids,
+        storage_profile_uids,
+        host_uids,
+        cluster_uids_by_host,
+        lan_uids
+      )
         result = []
         result_uids = {}
         guest_device_uids = {}
         return result, result_uids if inv.nil?
 
+        storage_profile_by_disk_mor, storage_profile_by_vm_mor = storage_profile_by_entity(
+          storage_profile_entity_inv,
+          storage_profile_uids
+        )
         inv.each do |mor, vm_inv|
           mor = vm_inv['MOR'] # Use the MOR directly from the data since the mor as a key may be corrupt
 
@@ -836,7 +895,7 @@ module ManageIQ::Providers
 
           host_mor = runtime['host']
           hardware = vm_inv_to_hardware_hash(vm_inv)
-          hardware[:disks] = vm_inv_to_disk_hashes(vm_inv, storage_uids)
+          hardware[:disks] = vm_inv_to_disk_hashes(vm_inv, storage_uids, storage_profile_by_disk_mor)
           hardware[:guest_devices], guest_device_uids[mor] = vm_inv_to_guest_device_hashes(vm_inv, lan_uids[host_mor])
           hardware[:networks] = vm_inv_to_network_hashes(vm_inv, guest_device_uids[mor])
           uid = hardware[:bios]
@@ -875,10 +934,17 @@ module ManageIQ::Providers
             :ems_cluster           => cluster_uids_by_host[host_mor],
             :storages              => storages,
             :storage               => storage,
+            :storage_profile       => storage_profile_by_vm_mor[mor],
             :operating_system      => vm_inv_to_os_hash(vm_inv),
             :hardware              => hardware,
             :custom_attributes     => vm_inv_to_custom_attribute_hashes(vm_inv),
             :snapshots             => vm_inv_to_snapshot_hashes(vm_inv),
+
+            :cpu_hot_add_enabled      => config['cpuHotAddEnabled'],
+            :cpu_hot_remove_enabled   => config['cpuHotRemoveEnabled'],
+            :memory_hot_add_enabled   => config['memoryHotAddEnabled'],
+            :memory_hot_add_limit     => config['hotPlugMemoryLimit'],
+            :memory_hot_add_increment => config['hotPlugMemoryIncrementSize'],
           }
 
           result << new_result
@@ -984,7 +1050,8 @@ module ManageIQ::Providers
         return result, result_uids
       end
 
-      def self.vm_inv_to_disk_hashes(inv, storage_uids)
+      def self.vm_inv_to_disk_hashes(inv, storage_uids, storage_profile_by_disk_mor = {})
+        vm_mor = inv['MOR']
         inv = inv.fetch_path('config', 'hardware', 'device')
 
         result = []
@@ -1022,8 +1089,9 @@ module ManageIQ::Providers
 
           if device_type == 'disk'
             new_result.merge!(
-              :size => device['capacityInKB'].to_i.kilobytes,
-              :mode => backing['diskMode']
+              :size            => device['capacityInKB'].to_i.kilobytes,
+              :mode            => backing['diskMode'],
+              :storage_profile => storage_profile_by_disk_mor["#{vm_mor}:#{device['key']}"]
             )
             new_result[:disk_type] = if backing.key?('compatibilityMode')
                                        "rdm-#{backing['compatibilityMode'].to_s[0...-4]}"  # physicalMode or virtualMode
@@ -1563,7 +1631,7 @@ module ManageIQ::Providers
 
           # Process each Firewall Rule
           data['rule'].each do |rule|
-            rule_string = rule['endPort'].nil? ? "#{rule['port']}" : "#{rule['port']}-#{rule['endPort']}"
+            rule_string = rule['endPort'].nil? ? rule['port'].to_s : "#{rule['port']}-#{rule['endPort']}"
             rule_string << " (#{rule['protocol']}-#{rule['direction']})"
             result << {
               :name          => "#{data['key']} #{rule_string}",
@@ -1608,156 +1676,6 @@ module ManageIQ::Providers
 
       def self.truncate_value(val)
         return val[0, 255] if val.kind_of?(String)
-      end
-
-      #
-      # Inventory parsing for Reconfigure VM Task event
-      #
-
-      def self.reconfig_inv_to_hashes(inv)
-        uids = {}
-        result = {:uid_lookup => uids}
-
-        uids[:storages] = reconfig_storage_inv_to_hashes(inv[:storage])
-        uids[:lans] = reconfig_host_inv_to_lan_hashes(inv[:host])
-        result[:vms] = reconfig_vm_inv_to_hashes(inv[:vm], uids[:storages], uids[:lans])
-
-        result
-      end
-
-      def self.reconfig_storage_inv_to_hashes(inv)
-        result_uids = {}
-        return result_uids if inv.nil?
-
-        inv.each do |mor, storage_inv|
-          mor = storage_inv['MOR'] # Use the MOR directly from the data since the mor as a key may be corrupt
-
-          summary = storage_inv["summary"]
-          next if summary.nil?
-
-          loc = normalize_storage_uid(storage_inv)
-
-          new_result = {
-            :ems_ref     => mor,
-            :ems_ref_obj => mor,
-            :name        => summary["name"],
-            :location    => loc,
-          }
-
-          result_uids[mor] = new_result
-        end
-        result_uids
-      end
-
-      def self.reconfig_host_inv_to_lan_hashes(inv)
-        result_uids = {}
-
-        inv.each do |_mor, host_inv|
-          host_inv = host_inv.fetch_path('config', 'network')
-          return result_uids if host_inv.nil?
-
-          host_inv['portgroup'].to_miq_a.each do |data|
-            spec = data['spec']
-            next if spec.nil?
-
-            uid = spec['name']
-
-            new_result = {
-              :uid_ems => uid,
-            }
-            result_uids[uid] = new_result
-          end
-        end
-        result_uids
-      end
-
-      def self.reconfig_vm_inv_to_hashes(inv, storage_uids, lan_uids)
-        result = []
-        return result if inv.nil?
-
-        inv.each do |mor, vm_inv|
-          mor = vm_inv['MOR'] # Use the MOR directly from the data since the mor as a key may be corrupt
-
-          summary = vm_inv["summary"]
-          summary_config = summary["config"] unless summary.nil?
-          pathname = summary_config["vmPathName"] unless summary_config.nil?
-
-          config = vm_inv["config"]
-
-          # Determine if the data from VC is valid.
-          invalid, err = if summary_config.nil? || config.nil?
-                           type = ['summary_config', 'config'].find_all { |t| eval(t).nil? }.join(", ")
-                           [true, "Missing configuration for VM [#{mor}]: #{type}."]
-                         elsif summary_config["uuid"].blank?
-                           [true, "Missing UUID for VM [#{mor}]."]
-                         elsif pathname.blank?
-                           _log.debug "vmPathname class: [#{pathname.class}] inspect: [#{pathname.inspect}]"
-                           [true, "Missing pathname location for VM [#{mor}]."]
-                         else
-                           false
-                         end
-
-          if invalid
-            _log.warn "#{err} Skipping."
-
-            result << {
-              :invalid     => true,
-              :ems_ref     => mor,
-              :ems_ref_obj => mor
-            }
-            next
-          end
-
-          affinity_set = config.fetch_path('cpuAffinity', 'affinitySet')
-          # The affinity_set will be an array of integers if set
-          cpu_affinity = nil
-          cpu_affinity = affinity_set.kind_of?(Array) ? affinity_set.join(",") : affinity_set.to_s if affinity_set
-
-          tools_status = summary.fetch_path('guest', 'toolsStatus')
-          tools_status = nil if tools_status.blank?
-
-          standby_act = nil
-          power_options = config["defaultPowerOps"]
-          unless power_options.blank?
-            standby_act = power_options["standbyAction"] if power_options["standbyAction"]
-          end
-
-          # Collect the reservation information
-          resource_config = vm_inv["resourceConfig"]
-          memory = resource_config && resource_config["memoryAllocation"]
-          cpu    = resource_config && resource_config["cpuAllocation"]
-
-          hardware = vm_inv_to_hardware_hash(vm_inv)
-          hardware[:disks] = vm_inv_to_disk_hashes(vm_inv, storage_uids)
-          hardware[:guest_devices], = vm_inv_to_guest_device_hashes(vm_inv, lan_uids)
-          uid = hardware[:bios]
-
-          result << {
-            :ems_ref               => mor,
-            :ems_ref_obj           => mor,
-            :uid_ems               => uid,
-            :name                  => URI.decode(summary_config["name"]),
-            :tools_status          => tools_status,
-            :standby_action        => standby_act,
-            :cpu_affinity          => cpu_affinity,
-
-            :memory_reserve        => memory && memory["reservation"],
-            :memory_reserve_expand => memory && memory["expandableReservation"].to_s.downcase == "true",
-            :memory_limit          => memory && memory["limit"],
-            :memory_shares         => memory && memory.fetch_path("shares", "shares"),
-            :memory_shares_level   => memory && memory.fetch_path("shares", "level"),
-
-            :cpu_reserve           => cpu && cpu["reservation"],
-            :cpu_reserve_expand    => cpu && cpu["expandableReservation"].to_s.downcase == "true",
-            :cpu_limit             => cpu && cpu["limit"],
-            :cpu_shares            => cpu && cpu.fetch_path("shares", "shares"),
-            :cpu_shares_level      => cpu && cpu.fetch_path("shares", "level"),
-
-            :operating_system      => vm_inv_to_os_hash(vm_inv),
-            :hardware              => hardware,
-          }
-        end
-        result
       end
     end
   end

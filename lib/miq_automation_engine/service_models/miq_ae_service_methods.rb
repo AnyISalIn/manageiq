@@ -1,6 +1,3 @@
-$LOAD_PATH << File.join(GEMS_PENDING_ROOT, "ServiceNowWebService")
-$LOAD_PATH << File.join(GEMS_PENDING_ROOT, "RcuWebService")
-
 #####################################################
 # This is for $evm.execute from an Automate method
 #####################################################
@@ -104,7 +101,7 @@ module MiqAeMethodService
     end
 
     def self.service_now_eccq_insert(server, username, password, agent, queue, topic, name, source, *params)
-      require 'SnEccqClientBase'
+      require 'ServiceNowWebService/SnEccqClientBase'
       service_now_drb_undumped
 
       payload = params.empty? ? {} : Hash[*params]
@@ -121,7 +118,7 @@ module MiqAeMethodService
       $log.error hserr.backtrace.join("\n")
       raise
     rescue => err
-      _log.error "#{err}"
+      _log.error err.to_s
       $log.error err.backtrace.join("\n")
       raise
     end
@@ -147,17 +144,17 @@ module MiqAeMethodService
       MiqAeServiceModelBase.wrap_results(AutomationRequest.create_request(options, user, auto_approve))
     end
 
-    private
-
     def self.service_now_drb_undumped
       _log.info "Entered"
       [SnsHash, SnsArray].each { |klass| drb_undumped(klass) }
     end
+    private_class_method :service_now_drb_undumped
 
     def self.drb_undumped(klass)
       _log.info "Entered: klass=#{klass.name}"
       klass.include(DRbUndumped) unless klass.ancestors.include?(DRbUndumped)
     end
+    private_class_method :drb_undumped
 
     def self.ar_method
       yield
@@ -168,11 +165,12 @@ module MiqAeMethodService
     ensure
       ActiveRecord::Base.connection_pool.release_connection rescue nil
     end
+    private_class_method :ar_method
 
     def self.service_now_task_service(service, server, username, password, *params)
       log_prefix = "[#{service.underscore}]"
       begin
-        require 'SnSctaskClientBase'
+        require 'ServiceNowWebService/SnSctaskClientBase'
         service_now_drb_undumped
 
         payload = params.empty? ? {} : Hash[*params]
@@ -194,5 +192,6 @@ module MiqAeMethodService
         raise
       end
     end
+    private_class_method :service_now_task_service
   end
 end

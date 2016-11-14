@@ -7,7 +7,9 @@ module ManageIQ::Providers::Openshift::ContainerManagerMixin
 
   included do
     has_many :container_routes, :foreign_key => :ems_id, :dependent => :destroy
-    default_value_for :port, DEFAULT_PORT
+    default_value_for :port do |provider|
+      provider.port || DEFAULT_PORT
+    end
   end
 
   # This is the API version that we use and support throughout the entire code
@@ -32,13 +34,14 @@ module ManageIQ::Providers::Openshift::ContainerManagerMixin
     end
 
     def openshift_connect(hostname, port, options)
-      require 'openshift_client'
+      require 'kubeclient'
 
-      OpenshiftClient::Client.new(
-        raw_api_endpoint(hostname, port),
+      Kubeclient::Client.new(
+        raw_api_endpoint(hostname, port, '/oapi'),
         api_version,
-        :ssl_options  => {:verify_ssl => verify_ssl_mode},
-        :auth_options => kubernetes_auth_options(options),
+        :ssl_options    => { :verify_ssl => verify_ssl_mode },
+        :auth_options   => kubernetes_auth_options(options),
+        :http_proxy_uri => VMDB::Util.http_proxy_uri
       )
     end
   end

@@ -49,15 +49,11 @@ class OntapFileShareController < CimInstanceController
     return unless request.parameters[:controller] == "ontap_file_share"
     @sb[:sfs_id] = params[:id]
     @record = OntapFileShare.find(params[:id])
-    render :update do |page|
-      page << javascript_prologue
-      area = request.parameters["controller"]
-      if role_allows(:feature => "#{area}_tag")
-        page.redirect_to :action => 'create_ds'
-      else
-        add_flash(_("The user is not authorized for this task or item."), :error)
-        page.replace(:flash_msg_div, :partial => "layouts/flash_msg")
-      end
+    area = request.parameters["controller"]
+    if role_allows?(:feature => "#{area}_tag")
+      javascript_redirect :action => 'create_ds'
+    else
+      render_flash(_("The user is not authorized for this task or item."), :error)
     end
   end
 
@@ -82,18 +78,12 @@ class OntapFileShareController < CimInstanceController
       add_flash(_("%{model} \"%{name}\": %{task} successfully initiated") % {:model => ui_lookup(:model => "OntapFileShare"), :name => sfs.name, :task => "Create Datastore"})
       @edit = nil # clean out the saved info
       session[:flash_msgs] = @flash_array.dup                 # Put msgs in session for next transaction
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to(previous_breadcrumb_url)
-      end
+      javascript_redirect previous_breadcrumb_url
     else
       sfs.errors.each do |field, msg|
         add_flash("#{field.to_s.capitalize} #{msg}", :error)
       end
-      render :update do |page|
-        page << javascript_prologue
-        page.replace(:flash_msg_div, :partial => "layouts/flash_msg")
-      end
+      javascript_flash
     end
   end
 
@@ -102,10 +92,7 @@ class OntapFileShareController < CimInstanceController
     add_flash(_("Create Datastore was cancelled by the user"))
     @edit = nil # clean out the saved info
     session[:flash_msgs] = @flash_array.dup                   # Put msgs in session for next transaction
-    render :update do |page|
-      page << javascript_prologue
-      page.redirect_to(previous_breadcrumb_url)
-    end
+    javascript_redirect previous_breadcrumb_url
   end
 
   # Set form vars for create_ds
@@ -122,4 +109,6 @@ class OntapFileShareController < CimInstanceController
     add_flash(_("Host is required"), :error) if @edit[:new][:host_id].blank?
     @flash_array.nil?
   end
+
+  menu_section :nap
 end

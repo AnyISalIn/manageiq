@@ -17,7 +17,7 @@ class TreeBuilderRegion < TreeBuilder
   def x_get_tree_roots(count_only, _options)
     ent = MiqEnterprise.my_enterprise
     objects = ent.miq_regions.sort_by { |a| a.description.downcase }
-    count_only_or_objects(count_only, objects, nil)
+    count_only_or_objects(count_only, objects)
   end
 
   def x_get_tree_region_kids(object, count_only)
@@ -26,8 +26,8 @@ class TreeBuilderRegion < TreeBuilder
               else
                 object.ext_management_systems
               end
-    emses = rbac_filtered_objects(emstype)
-    storages  = rbac_filtered_objects(object.storages)
+    emses = Rbac.filtered(emstype)
+    storages = Rbac.filtered(object.storages)
     if count_only
       emses.count + storages.count
     else
@@ -52,16 +52,16 @@ class TreeBuilderRegion < TreeBuilder
     if object_ems?(nodes, object)
       rec = MiqRegion.find_by_id(id)
       objects = rbac_filtered_sorted_objects(rec.ems_infras, "name")
-      count_only_or_objects(count_only, objects, nil)
+      count_only_or_objects(count_only, objects)
     elsif object_ds?(nodes, object)
       rec = MiqRegion.find_by_id(id)
       objects = rbac_filtered_sorted_objects(rec.storages, "name")
-      count_only_or_objects(count_only, objects, nil)
+      count_only_or_objects(count_only, objects)
     elsif object_cluster?(nodes, object)
       rec = ExtManagementSystem.find_by_id(id)
       objects = rbac_filtered_sorted_objects(rec.ems_clusters, "name") +
                 rbac_filtered_sorted_objects(rec.non_clustered_hosts, "name")
-      count_only_or_objects(count_only, objects, nil)
+      count_only_or_objects(count_only, objects)
     end
   end
 
@@ -81,6 +81,6 @@ class TreeBuilderRegion < TreeBuilder
   end
 
   def rbac_filtered_sorted_objects(records, sort_by, options = {})
-    rbac_filtered_objects(records, options).sort_by { |o| o.deep_send(sort_by).to_s.downcase }
+    Rbac.filtered(records, options).sort_by { |o| o.deep_send(sort_by).to_s.downcase }
   end
 end

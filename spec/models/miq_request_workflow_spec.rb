@@ -48,6 +48,18 @@ describe MiqRequestWorkflow do
       end
     end
 
+    context 'required_method can be a list' do
+      it "multiple items" do
+        dialog.store_path(:dialogs, :customize, :fields, :root_password, :required_method, [:some_required_method_1,
+                                                                                            :some_required_method_2])
+        dialog.store_path(:dialogs, :customize, :fields, :root_password, :required, true)
+
+        expect(workflow).to receive(:some_required_method_1)
+        expect(workflow).to receive(:some_required_method_2)
+        expect(workflow.validate({})).to be true
+      end
+    end
+
     context "failures shouldn't be reverted" do
       it "validation_method" do
         dialog.store_path(:dialogs, :customize, :fields, :root_password, :validation_method, :some_validation_method)
@@ -80,7 +92,7 @@ describe MiqRequestWorkflow do
 
   describe "#init_from_dialog" do
     let(:dialogs) { workflow.instance_variable_get(:@dialogs) }
-    let(:init_values) { {} }
+    let(:init_values) { workflow.instance_variable_get(:@values) }
 
     context "when the initial values already have a value for the field name" do
       let(:init_values) { {:root_password => "root"} }
@@ -101,9 +113,10 @@ describe MiqRequestWorkflow do
       end
 
       it "does not modify the initial values" do
+        old_values = init_values.dup
         workflow.init_from_dialog(init_values)
 
-        expect(init_values).to eq({})
+        expect(init_values).to eq(old_values)
       end
     end
 
@@ -119,7 +132,7 @@ describe MiqRequestWorkflow do
       it "modifies the initial values with the default value" do
         workflow.init_from_dialog(init_values)
 
-        expect(init_values).to eq(:root_password => "not nil")
+        expect(init_values).to include(:root_password => "not nil")
       end
     end
 
@@ -141,10 +154,33 @@ describe MiqRequestWorkflow do
           end
         end
 
-        it "uses the first field value" do
+        it "should not auto select the first field value" do
           workflow.init_from_dialog(init_values)
 
-          expect(init_values).to eq(:root_password => [:something, "test"])
+          expect(init_values).to include(:root_password => [nil, nil])
+        end
+
+        context 'with auto_select_single' do
+          before do
+            allow(workflow).to receive(:allowed_filters).and_return(122 => "name not empty")
+          end
+          let(:values) { {:values_from => {:options => {:category => :EmsCluster}, :method => :allowed_filters}} }
+
+          it "auto-selects single value when true" do
+            values[:auto_select_single] = true
+            dialogs.store_path(:dialogs, :environment, :fields, :cluster_filter, values)
+            workflow.init_from_dialog(init_values)
+
+            expect(init_values).to include(:cluster_filter => [122, 'name not empty'])
+          end
+
+          it "should not auto-select single value when false" do
+            values[:auto_select_single] = false
+            dialogs.store_path(:dialogs, :environment, :fields, :cluster_filter, values)
+            workflow.init_from_dialog(init_values)
+
+            expect(init_values).to include(:cluster_filter => [nil, nil])
+          end
         end
       end
 
@@ -160,7 +196,7 @@ describe MiqRequestWorkflow do
         it "uses values as [value, description] for timezones aray" do
           workflow.init_from_dialog(init_values)
 
-          expect(init_values).to eq(:root_password => [nil, "test2"])
+          expect(init_values).to include(:root_password => [nil, "test2"])
         end
       end
     end
@@ -181,10 +217,34 @@ describe MiqRequestWorkflow do
     end
   end
 
+  context "#allowed_tags" do
+    let!(:managed_classification)   { FactoryGirl.create(:classification) }
+    let!(:no_child_classification)  { FactoryGirl.create(:classification) }
+    let!(:read_only_classification) { FactoryGirl.create(:classification, :read_only => true) }
+    let!(:hidden_classification)    { FactoryGirl.create(:classification, :show => false) }
+    let!(:unmanaged_classification) { FactoryGirl.create(:classification, :ns => "/unmanaged") }
+    let!(:child_classification_1)   { FactoryGirl.create(:classification, :parent => managed_classification) }
+    let!(:child_classification_2)   { FactoryGirl.create(:classification, :parent => unmanaged_classification) }
+
+    it "includes all managed tags" do
+      allowed_tag_ids = workflow.allowed_tags.map { |c| c[:id] }
+      expect(allowed_tag_ids).to match_array([managed_classification.id])
+    end
+
+    it "includes all managed children" do
+      allowed_tags_children = workflow.allowed_tags
+                                      .map { |c| c[:children].map(&:first) }
+                                      .flatten
+
+      expect(allowed_tags_children).to match_array([child_classification_1.id])
+    end
+  end
+
   context "'allowed_*' methods" do
     let(:cluster)       { FactoryGirl.create(:ems_cluster, :ems_id => ems.id) }
     let(:ems)           { FactoryGirl.create(:ext_management_system) }
     let(:resource_pool) { FactoryGirl.create(:resource_pool, :ems_id => ems.id) }
+    let(:host)          { FactoryGirl.create(:host, :ems_id => ems.id) }
 
     before { allow_any_instance_of(User).to receive(:get_timezone).and_return("UTC") }
 
@@ -225,6 +285,24 @@ describe MiqRequestWorkflow do
         expect(workflow).to receive(:allowed_ci).with(:respool, [:cluster, :host, :folder], [resource_pool.id])
 
         workflow.allowed_resource_pools
+      end
+    end
+
+    context "#allowed_hosts does not fail for a deleted provider" do
+      it "allowed_hosts with a missing provider" do
+        host
+        allow(workflow).to receive(:get_source_and_targets).and_return(:ems => nil)
+        expect(workflow).to receive(:allowed_ci).with(:host, [:cluster, :respool, :folder], [])
+        workflow.allowed_hosts
+      end
+    end
+
+    context "#allowed_clusters does not fail for a deleted provider" do
+      it "with deleted provider" do
+        cluster
+        allow(workflow).to receive(:get_source_and_targets).and_return(:ems => nil)
+        expect(workflow).to receive(:allowed_ci).with(:cluster, [:respool, :host, :folder], [])
+        workflow.allowed_clusters
       end
     end
   end
@@ -269,9 +347,26 @@ describe MiqRequestWorkflow do
     end
   end
 
+  context "#ems_folder_to_hash_struct" do
+    it 'contains hidden column' do
+      hs = workflow.ems_folder_to_hash_struct(FactoryGirl.create(:ems_folder, :name => 'vm', :hidden => true))
+
+      expect(hs.id).to               be_kind_of(Integer)
+      expect(hs.evm_object_class).to eq(:EmsFolder)
+      expect(hs.name).to             be_kind_of(String)
+      expect(hs.hidden).to           be true
+    end
+  end
+
   context "#validate regex" do
     let(:regex) { {:required_regex => "^n@test.com$"} }
     let(:regex_two) { {:required_regex => "^n$"} }
+    let(:regex_with_details) do
+      {
+        :required_regex              => "^n@test.com$",
+        :required_regex_fail_details => "We are looking for a specific email here."
+      }
+    end
     let(:value_email) { 'n@test.com' }
     let(:value_no_email) { 'n' }
 
@@ -288,31 +383,36 @@ describe MiqRequestWorkflow do
     it "returns an error when no value exists" do
       expect(workflow.validate_regex(nil, {}, {}, regex, '')).to eq "'/' is required"
     end
+
+    it "returns a detailed formatting message when fail details are defined" do
+      expect(workflow.validate_regex(nil, {}, {}, regex_with_details, value_no_email)).to eq "'/' must be correctly"\
+        " formatted. We are looking for a specific email here."
+    end
   end
 
-  context "#create_request" do
+  context "#make_request (create)" do
     it "sets requester_group" do
       values = {}
-      request = workflow.create_request(values)
+      request = workflow.make_request(nil, values)
       expect(request.options[:requester_group]).to eq(workflow.requester.miq_group_description)
     end
 
     it "doesnt set owner_group" do
       values = {}
-      request = workflow.create_request(values)
+      request = workflow.make_request(nil, values)
       expect(request.options[:owner_group]).not_to be
     end
 
     it "handles bad owner email" do
       values = {:owner_email => "bogus"}
-      request = workflow.create_request(values)
+      request = workflow.make_request(nil, values)
       expect(request.options[:owner_group]).not_to be
     end
 
     it "sets owner group" do
       owner = FactoryGirl.create(:user_with_email, :miq_groups => [FactoryGirl.create(:miq_group)])
       values = {:owner_email => owner.email}
-      request = workflow.create_request(values)
+      request = workflow.make_request(nil, values)
       expect(request.options[:owner_email]).to eq(owner.email)
       expect(request.options[:owner_group]).to eq(owner.current_group.description)
     end

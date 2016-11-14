@@ -1,21 +1,22 @@
 - url = url_for(:action => 'planning_option_changed')
 -# Div to hold the planning options
 #planning_options_div
-  = render :partial => "layouts/flash_msg", :locals => {:div_num => "0"}
+  = render :partial => "layouts/flash_msg"
   %h3
     = _('Reference VM Selection')
   .form.horizontal
     .form-group
       - options = [["<#{_('Choose')}>"],
-        [_("By %s") % ui_lookup(:table => "ems_infras"), "ems"],
-        [_("By %s") % ui_lookup(:table => "ems_clusters"), "cluster"],
+        [_("By Providers"), "ems"],
+        [_("By Clusters / Deployment Roles"), "cluster"],
         [_("By Host"), "host"],
         [_("By Filter"), "filter"],
-        [_("All VMs"), "all"],]
+        [_("All VMs/Instances"), "all"],]
       = select_tag("filter_typ",
                     options_for_select(options, @sb[:planning][:options][:filter_typ]),
                     :disabled              => @sb[:planning][:options][:vm_mode] == :manual,
                     "class"                => "selectpicker",
+                    'data-live-search'     => true,
                     "data-miq_sparkle_on"  => true,
                     "data-miq_sparkle_off" => true)
       :javascript
@@ -23,30 +24,33 @@
         miqSelectPickerEvent("filter_typ", "#{url}");
     .form-group
       - if @sb[:planning][:options][:filter_typ] == "host"
-        - options = [["<#{_('Choose a %s') % title_for_host}>", "<Choose>"]] + Array(@sb[:planning][:hosts].invert).sort_by { |a| a.first.downcase }
+        - options = [["<#{_('Choose a %{host}') % {:host => title_for_host}}>", "<Choose>"]] + Array(@sb[:planning][:hosts].invert).sort_by { |a| a.first.downcase }
         = select_tag("filter_value",
                       options_for_select(options, @sb[:planning][:options][:filter_value]),
                       :disabled              => @sb[:planning][:options][:vm_mode] == :manual,
                       "data-live-search"     => "true",
                       "class"                => "selectpicker",
+                      'data-live-search'     => true,
                       "data-miq_sparkle_on"  => true,
                       "data-miq_sparkle_off" => true,
                       "data-miq_observe"     => {:url => url}.to_json)
       - elsif @sb[:planning][:options][:filter_typ] == "cluster"
-        - options = [["<#{_('Choose a %s')}>" % title_for_cluster, "<Choose>"]] + Array(@sb[:planning][:clusters].invert).sort_by { |a| a.first.downcase }
+        - options = [["<#{_('Choose a %{cluster}')}>" % {:cluster => title_for_cluster}, "<Choose>"]] + Array(@sb[:planning][:clusters].invert).sort_by { |a| a.first.downcase }
         = select_tag("filter_value",
                       options_for_select(options, @sb[:planning][:options][:filter_value]),
                       :disabled              => @sb[:planning][:options][:vm_mode] == :manual,
                       "class"                => "selectpicker",
+                      'data-live-search'     => true,
                       "data-miq_sparkle_on"  => true,
                       "data-miq_sparkle_off" => true,
                       "data-miq_observe"     => {:url => url}.to_json)
       - elsif @sb[:planning][:options][:filter_typ] == "ems"
-        - options = [["<#{_('Choose a %s')}>" % ui_lookup(:table => "ext_management_systems"), "<Choose>"]] + Array(@sb[:planning][:emss].invert).sort_by { |a| a.first.downcase }
+        - options = [["<#{_('Choose a %{provider}')}>" % {:provider => ui_lookup(:table => "ext_management_systems")}, "<Choose>"]] + Array(@sb[:planning][:emss].invert).sort_by { |a| a.first.downcase }
         = select_tag("filter_value",
                       options_for_select(options, @sb[:planning][:options][:filter_value]),
                       :disabled              => @sb[:planning][:options][:vm_mode] == :manual,
                       "class"                => "selectpicker",
+                      'data-live-search'     => true,
                       "data-miq_sparkle_on"  => true,
                       "data-miq_sparkle_off" => true,
                       "data-miq_observe"     => {:url => url}.to_json)
@@ -56,6 +60,7 @@
                       options_for_select(options, @sb[:planning][:options][:filter_value]),
                       :disabled              => @sb[:planning][:options][:vm_mode] == :manual,
                       "class"                => "selectpicker",
+                      'data-live-search'     => true,
                       "data-miq_sparkle_on"  => true,
                       "data-miq_sparkle_off" => true)
       :javascript
@@ -72,6 +77,7 @@
                         :disabled              => @sb[:planning][:options][:vm_mode] == :manual,
                         "data-live-search"     => "true",
                         "class"                => "selectpicker",
+                        'data-live-search'     => true,
                         "data-miq_sparkle_on"  => true,
                         "data-miq_sparkle_off" => true)
           :javascript

@@ -116,6 +116,11 @@ class EvmDatabase
     File.write(SCHEMA_FILE, current_schema(connection).to_yaml)
   end
 
+  def self.raise_server_event(event)
+    msg = "Server IP: #{MiqServer.my_server.ipaddress}, Server Host Name: #{MiqServer.my_server.hostname}"
+    MiqEvent.raise_evm_event_queue(MiqServer.my_server, event, :event_details => msg)
+  end
+
   class << self
     private
 
@@ -152,8 +157,8 @@ class EvmDatabase
     end
 
     def check_schema_tables(connection)
-      current_tables  = current_schema(connection).keys
-      expected_tables = expected_schema.keys
+      current_tables  = current_schema(connection).keys - MiqPglogical::ALWAYS_EXCLUDED_TABLES
+      expected_tables = expected_schema.keys - MiqPglogical::ALWAYS_EXCLUDED_TABLES
 
       return if current_tables == expected_tables
 

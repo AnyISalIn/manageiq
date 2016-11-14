@@ -1,7 +1,7 @@
-include QuotaHelper
-include ServiceTemplateHelper
-
 describe "Quota Validation" do
+  include Spec::Support::QuotaHelper
+  include Spec::Support::ServiceTemplateHelper
+
   def run_automate_method(attrs)
     MiqAeEngine.instantiate("/ManageIQ/system/request/Call_Instance?namespace=System/CommonMethods&" \
                             "class=QuotaMethods&instance=requested&#{attrs.join('&')}", @user)
@@ -27,6 +27,12 @@ describe "Quota Validation" do
     it "generic calculate_requested" do
       setup_model("generic")
       build_generic_service_item
+      expect { run_automate_method(service_attrs) }.not_to raise_exception
+    end
+
+    it "generic ansible tower calculate_requested" do
+      setup_model("generic")
+      build_generic_ansible_tower_service_item
       expect { run_automate_method(service_attrs) }.not_to raise_exception
     end
 

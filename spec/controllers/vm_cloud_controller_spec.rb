@@ -1,12 +1,12 @@
-include CompressedIds
-
 describe VmCloudController do
+  include CompressedIds
+
   let(:vm_openstack) do
     FactoryGirl.create(:vm_openstack,
                        :ext_management_system => FactoryGirl.create(:ems_openstack))
   end
   before(:each) do
-    set_user_privileges
+    stub_user(:features => :all)
     session[:settings] = {:views => {:treesize => 20}}
     EvmSpecHelper.create_guid_miq_server_zone
   end
@@ -135,6 +135,22 @@ describe VmCloudController do
         :id     => vm_openstack.id
       }
       expect(response.status).to eq(200)
+    end
+
+    it 'can open the instance Ownership form' do
+      post :explorer
+      expect(response.status).to eq(200)
+      post :x_button, :params => { :pressed => 'instance_ownership', :id => vm_openstack.id }
+      expect(response.status).to eq(200)
+      expect(response).to render_template(:partial => 'shared/views/_ownership')
+    end
+
+    it 'can open the instance Ownership form from a list' do
+      post :explorer
+      expect(response.status).to eq(200)
+      post :x_button, :params => { :pressed => 'instance_ownership', "check_#{ApplicationRecord.compress_id(vm_openstack.id)}" => "1"}
+      expect(response.status).to eq(200)
+      expect(response).to render_template(:partial => 'shared/views/_ownership')
     end
 
     context "skip or drop breadcrumb" do

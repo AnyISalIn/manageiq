@@ -9,7 +9,7 @@ module ContainerGroupHelper::TextualSummary
 
   def textual_group_relationships
     # Order of items should be from parent to child
-    %i(ems container_project container_services container_replicator containers container_node lives_on)
+    %i(ems container_project container_services container_replicator containers container_node lives_on container_images)
   end
 
   def textual_group_conditions
@@ -102,7 +102,7 @@ module ContainerGroupHelper::TextualSummary
     {
       :label => _("Underlying %{name}") % {:name => lives_on_entity_name},
       :image => "vendor-#{lives_on_ems.image_name}",
-      :value => "#{@record.container_node.lives_on.name}",
+      :value => @record.container_node.lives_on.name.to_s,
       :link  => url_for(
         :action     => 'show',
         :controller => 'vm_or_template',
@@ -129,5 +129,9 @@ module ContainerGroupHelper::TextualSummary
 
   def textual_terminated
     container_statuses_summary[:terminated] || 0
+  end
+
+  def textual_compliance_history
+    super(:title => _("Show Compliance History of this Replicator (Last 10 Checks)"))
   end
 end

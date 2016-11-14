@@ -19,9 +19,16 @@ class ApplicationHelper::Toolbar::EmsContainersCenter < ApplicationHelper::Toolb
         button(
           :ems_container_new,
           'pficon pficon-add-circle-o fa-lg',
-          t = N_('Add a New Containers Provider'),
+          t = N_('Add Existing Containers Provider'),
           t,
           :url => "/new"),
+        button(
+          :ems_container_deployment,
+          'pficon pficon-add-circle-o fa-lg',
+          t = N_('Create Containers Provider'),
+          t,
+          :data   => {'function' => 'miqCallAngular', 'function-data' => '{ "name": "showListener", "args": [] }'},
+          :hidden => ContainerDeploymentService.hide_deployment_wizard?),
         button(
           :ems_container_edit,
           'pficon pficon-edit fa-lg',
@@ -33,10 +40,10 @@ class ApplicationHelper::Toolbar::EmsContainersCenter < ApplicationHelper::Toolb
         button(
           :ems_container_delete,
           'pficon pficon-delete fa-lg',
-          N_('Remove selected Containers Providers from the VMDB'),
-          N_('Remove Containers Providers from the VMDB'),
+          N_('Remove selected Containers Providers'),
+          N_('Remove Containers Providers'),
           :url_parms => "main_div",
-          :confirm   => N_("Warning: The selected Containers Providers and ALL of their components will be permanently removed from the Virtual Management Database.  Are you sure you want to remove the selected Containers Providers?"),
+          :confirm   => N_("Warning: The selected Containers Providers and ALL of their components will be permanently removed!"),
           :enabled   => false,
           :onwhen    => "1+"),
       ]
@@ -66,6 +73,26 @@ class ApplicationHelper::Toolbar::EmsContainersCenter < ApplicationHelper::Toolb
           N_('Manage Policies'),
           :url_parms => "main_div",
           :enabled   => "false",
+          :onwhen    => "1+"),
+      ]
+    ),
+  ])
+  button_group('ems_container_authentication', [
+    select(
+      :ems_container_authentication_choice,
+      'fa fa-lock fa-lg',
+      t = N_('Authentication'),
+      t,
+      :enabled => false,
+      :onwhen  => "1+",
+      :items   => [
+        button(
+          :ems_container_recheck_auth_status,
+          'fa fa-search fa-lg',
+          N_('Re-check Authentication Status for the selected Containers Providers '),
+          N_('Re-check Authentication Status'),
+          :url_parms => "main_div",
+          :enabled   => false,
           :onwhen    => "1+"),
       ]
     ),

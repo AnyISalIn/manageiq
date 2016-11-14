@@ -1,7 +1,10 @@
 module MiqAeClassHelper
   def editable_domain?(record)
-    name = record.class == MiqAeDomain ? record.name : record.domain.name
-    User.current_tenant.editable_domains.collect(&:name).include?(name)
+    record.editable?
+  end
+
+  def git_enabled?(record)
+    record.class == MiqAeDomain && record.git_enabled?
   end
 
   def add_read_only_suffix(node_string, editable, enabled)

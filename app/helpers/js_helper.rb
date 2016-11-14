@@ -14,22 +14,9 @@ module JsHelper
     bool_str = (!!lock).to_s
     element = "#{tree_var}_div"
     "
-      $('##{j_str(tree_var)}box').dynatree('#{lock ? 'disable' : 'enable'}');
+      miqTreeObject('#{j_str(tree_var)}').#{lock ? 'disable' : 'enable'}All({silent: true, keepState: true});
       #{javascript_dim(element, bool_str)}
     ".html_safe
-  end
-
-  # options:
-  #     :legend --- FIXME: fill in docs
-  #     :title  ---
-  def update_element(element, options)
-    if options[:legend]
-      "$('##{element}').html('#{escape_javascript(options[:legend]).html_safe}');"
-    elsif options[:title]
-      "$('##{element}').attr({'title': '#{escape_javascript(options[:title]).html_safe}'});"
-    else
-      ''
-    end
   end
 
   # safe variant of j/escape_javascript that calls .to_s to work with non-string values
@@ -45,24 +32,12 @@ module JsHelper
     "$('##{j_str(element)}').prepend('#{content_tag(:span, nil, :class => cls)}');".html_safe
   end
 
-  def javascript_focus_if_exists(element)
-    "if ($('##{j_str(element)}').length) #{javascript_focus(element)}".html_safe
-  end
-
   def javascript_highlight(element, status)
     "miqHighlight('##{j_str(element)}', #{j_str(status)});".html_safe
   end
 
   def javascript_dim(element, status)
     "miqDimDiv('##{j_str(element)}', #{j_str(status)});".html_safe
-  end
-
-  def javascript_add_class(element, cls)
-    "$('##{j_str(element)}').addClass('#{j_str(cls)}');".html_safe
-  end
-
-  def javascript_del_class(element, cls)
-    "$('##{j_str(element)}').removeClass('#{j_str(cls)}');".html_safe
   end
 
   def javascript_disable_field(element)
@@ -93,20 +68,12 @@ module JsHelper
     "$('##{element}').fadeIn().fadeOut().fadeIn().fadeOut().fadeIn().fadeOut().fadeIn().fadeOut().fadeIn().fadeOut().fadeIn();".html_safe
   end
 
-  def js_for_page_replace_html(div, partial_name, locals = {})
-    "$('##{div}').html('#{escape_javascript(render :partial => partial_name, :locals => locals).html_safe}');"
-  end
-
-  def js_for_page_replace(div, partial_name, locals = {})
-    "$('##{div}').replaceWith('#{escape_javascript(render :partial => partial_name, :locals => locals).html_safe}');"
-  end
-
   def partial_replace(from, partial, locals)
     "$(\"##{h(from)}\").replaceWith(\"#{escape_javascript(render(:partial => partial, :locals => locals))}\");".html_safe
   end
 
   def javascript_checked(element)
-    "if ($('##{j_str(element)}').prop('type') == 'checkbox') {$('##{j_str(element)}').prop('checked', 'checked');}"
+    "if ($('##{j_str(element)}').prop('type') == 'checkbox') {$('##{j_str(element)}').prop('checked', true);}"
       .html_safe
   end
 

@@ -1,6 +1,5 @@
 describe PrivilegeCheckerService do
-  let(:vmdb_config) { {:session => {:timeout => 3600}} }
-  let(:privilege_checker) { described_class.new(vmdb_config) }
+  let(:privilege_checker) { described_class.new }
 
   describe "#valid_session?" do
     shared_examples_for "PrivilegeCheckerService#valid_session? that returns false" do
@@ -36,7 +35,7 @@ describe PrivilegeCheckerService do
         let(:server) { double("MiqServer", :logon_status => logon_status) }
 
         before do
-          allow(MiqServer).to receive(:my_server).with(true).and_return(server)
+          allow(MiqServer).to receive(:my_server).and_return(server)
         end
 
         context "when the server is not ready" do

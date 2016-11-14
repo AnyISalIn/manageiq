@@ -27,6 +27,10 @@ class Classification < ApplicationRecord
   validates :syntax, :inclusion => {:in      => %w( string integer boolean ),
                                     :message => "should be one of 'string', 'integer' or 'boolean'"}
 
+  scope :visible,    -> { where :show => true }
+  scope :read_only,  -> { where :read_only => true }
+  scope :writeable,  -> { where :read_only => false }
+
   DEFAULT_NAMESPACE = "/managed"
 
   default_value_for :read_only,    false
@@ -48,6 +52,23 @@ class Classification < ApplicationRecord
     end
 
     ret
+  end
+
+  def self.parent_ids(parent_ids)
+    where :parent_id => parent_ids
+  end
+
+  def self.tags_arel
+    Tag.arel_table
+  end
+
+  def self.with_tag_name
+    select(arel_table[Arel.star], tags_arel[:name].as('tag_name'))
+      .joins(:tag)
+  end
+
+  def self.managed
+    with_tag_name.where(tags_arel[:name].matches_regexp("/managed/[^\\/]+$"))
   end
 
   attr_writer :ns
@@ -95,7 +116,7 @@ class Classification < ApplicationRecord
 
   def self.unclassify_by_tag(obj, tag, is_request = true)
     parts = tag.split("/")
-    raise _("Tag #{tag} is not a category entry") % {:tag => tag} unless parts[1] == "managed"
+    raise _("Tag %{tag} is not a category entry") % {:tag => tag} unless parts[1] == "managed"
 
     entry_name = parts.pop
     category_name = parts.pop
@@ -209,13 +230,6 @@ class Classification < ApplicationRecord
     nil
   end
 
-  def self.all_cat_entries(name, obj)
-    cat = find_by_name(name, obj.region_id)
-    return [] unless cat
-
-    find_assigned_entries(obj).collect { |e| e if e.parent_id == cat.id }.compact
-  end
-
   # Splits a fully qualified tag into the namespace, category, and entry
   def self.tag_name_split(tag_name)
     parts = tag_name.split("/")
@@ -299,8 +313,12 @@ class Classification < ApplicationRecord
     parent.try(:name)
   end
 
+  def tag_name
+    attribute(:tag_name)
+  end
+
   def name
-    @name ||= tag2name(tag.name)
+    @name ||= tag2name(tag_name || tag.name)
   end
 
   attr_writer :name

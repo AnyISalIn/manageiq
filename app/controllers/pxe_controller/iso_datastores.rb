@@ -49,10 +49,7 @@ module PxeController::IsoDatastores
         add_flash(_("Provider is required"), :error)
       end
       if @flash_array
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
         return
       end
       iso_datastore_set_record_vars(isd)
@@ -70,10 +67,7 @@ module PxeController::IsoDatastores
         isd.errors.each do |field, msg|
           add_flash("#{field.to_s.capitalize} #{msg}", :error)
         end
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
       end
     elsif params[:button] == "reset"
       add_flash(_("All changes have been reset"), :warning)
@@ -195,10 +189,7 @@ module PxeController::IsoDatastores
         end
         @in_a_form = true
         @changed = true
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
         return
       end
     when "reset", nil
@@ -243,7 +234,7 @@ module PxeController::IsoDatastores
     @edit[:key] = "iso_img_edit__#{@img.id || "new"}"
     @edit[:rec_id] = @img.id || nil
     @edit[:pxe_image_types] = PxeImageType.all.sort_by(&:name).collect { |img| [img.name, img.id] }
-    @edit[:new][:img_type] = @img.pxe_image_type ? @img.pxe_image_type.id : nil
+    @edit[:new][:img_type] = @img.pxe_image_type.try(:id)
     @edit[:current] = copy_hash(@edit[:new])
     session[:edit] = @edit
   end
@@ -257,7 +248,7 @@ module PxeController::IsoDatastores
     begin
       @record = @isd = find_by_id_filtered(IsoDatastore, from_cid(params[:id]))
     rescue ActiveRecord::RecordNotFound
-    rescue StandardError => @bang
+    rescue => @bang
     end
   end
 
@@ -288,10 +279,12 @@ module PxeController::IsoDatastores
     @edit[:current] = {}
     @edit[:key] = "isd_edit__#{@isd.id || "new"}"
     @edit[:rec_id] = @isd.id || nil
-    @edit[:new][:ems_id] = @isd.ext_management_system ? @isd.ext_management_system.id : nil
+    @edit[:new][:ems_id] = @isd.ext_management_system.try(:id)
 
-    emses_without_iso_datastores = ManageIQ::Providers::Redhat::InfraManager.includes(:iso_datastore).where(:iso_datastores => {:id => nil})
-    @edit[:emses] = emses_without_iso_datastores.sort_by(&:name).collect { |ems| [ems.name, ems.id] }
+    @edit[:emses] = ManageIQ::Providers::Redhat::InfraManager
+                    .without_iso_datastores
+                    .order(:name)
+                    .pluck(:name, :id)
 
     @edit[:current] = copy_hash(@edit[:new])
     session[:edit] = @edit

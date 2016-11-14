@@ -7,7 +7,7 @@
 # Important - The dialog_parser automate method has to run prior to this in order to populate the dialog information.
 #
 def log_and_update_message(level, msg, update_message = false)
-  $evm.log(level, "#{msg}")
+  $evm.log(level, msg.to_s)
   @task.message = msg if @task && (update_message || level == 'error')
 end
 
@@ -21,12 +21,12 @@ def create_tags(category, single_value, tag)
     log_and_update_message(:info, "Creating Category: {#{category_name} => #{category}}")
     $evm.execute('category_create', :name         => category_name,
                                     :single_value => single_value,
-                                    :description  => "#{category}")
+                                    :description  => category.to_s)
   end
   # if the tag exists else create it
   return if $evm.execute('tag_exists?', category_name, tag_name)
   log_and_update_message(:info, "Creating tag: {#{tag_name} => #{tag}}")
-  $evm.execute('tag_create', category_name, :name => tag_name, :description => "#{tag}")
+  $evm.execute('tag_create', category_name, :name => tag_name, :description => tag.to_s)
 end
 
 def create_category_and_tags_if_necessary(dialog_tags_hash)
@@ -81,17 +81,24 @@ def assign_service_tag(tag_category, tag_value)
   @service.tag_assign("#{tag_category}/#{tag_value}")
 end
 
-def get_vm_name(dialog_options_hash, prov)
-  log_and_update_message(:info, "Processing get_vm_name", true)
+def set_vm_name(dialog_options_hash, prov)
+  log_and_update_message(:info, "Processing set_vm_name", true)
   new_vm_name = dialog_options_hash.fetch(:vm_name, nil) || dialog_options_hash.fetch(:vm_target_name, nil)
+  if new_vm_name.blank?
+    set_all_vm_name_attrs(prov, prov.get_option(:vm_target_name))
+    log_and_update_message(:info, "Using default vm name: #{prov.get_option(:vm_target_name)}", true)
+  else
+    set_all_vm_name_attrs(prov, new_vm_name)
+    log_and_update_message(:info, "Setting vm name to: #{prov.get_option(:vm_target_name)}", true)
+  end
+  log_and_update_message(:info, "Processing set_vm_name...Complete", true)
+end
 
-  new_vm_name = prov.get_option(:vm_target_name) if new_vm_name.blank?
-
-  dialog_options_hash[:vm_target_name] = new_vm_name
-  dialog_options_hash[:vm_target_hostname] = new_vm_name
-  dialog_options_hash[:vm_name] = new_vm_name
-  dialog_options_hash[:linux_host_name] = new_vm_name
-  log_and_update_message(:info, "Processing get_vm_name...Complete", true)
+def set_all_vm_name_attrs(prov, new_vm_name)
+  prov.set_option(:vm_target_name, new_vm_name)
+  prov.set_option(:vm_target_hostname, new_vm_name)
+  prov.set_option(:vm_name, new_vm_name)
+  prov.set_option(:linux_host_name, new_vm_name)
 end
 
 def service_item_dialog_values(dialogs_options_hash)
@@ -172,7 +179,7 @@ end
 def pass_dialog_values_to_provision_task(provision_task, dialog_options_hash, dialog_tags_hash)
   provision_task.miq_request_tasks.each do |prov|
     log_and_update_message(:info, "Grandchild Task: #{prov.id} Desc: #{prov.description} type: #{prov.source_type}")
-    get_vm_name(dialog_options_hash, prov)
+    set_vm_name(dialog_options_hash, prov)
     tag_provision_task(dialog_tags_hash, prov)
     set_option_on_provision_task(dialog_options_hash, prov)
   end
@@ -251,7 +258,7 @@ begin
 
 rescue => err
   log_and_update_message(:error, "[#{err}]\n#{err.backtrace.join("\n")}")
-  @task.finished("#{err}") if @task
+  @task.finished(err.to_s) if @task
   remove_service if @service
   exit MIQ_ABORT
 end

@@ -51,7 +51,9 @@
   font-style: normal;
 }
 
-[class^="product-"], [class*=" product-"] {
+i[class^="product-"], i[class*=" product-"],
+span[class^="product-"], span[class*=" product-"], // i & span tags prevent conflicts with 'About' modal
+ {
     /* use !important to prevent issues with browser extensions that change fonts */
   font-family: 'icomoon' !important;
   speak: none;
@@ -255,6 +257,21 @@
 .product-middleware:before {
   content: "\e636";
 }
+.product-load_balancer:before {
+  content: "\e637";
+}
+.product-server-group:before { // remove when Patternfly is updated with this icon
+  content: "\e638";
+}
+.product-domain:before { // remove when Patternfly is updated with this icon
+  content: "\e639";
+}
+.product-template:before {
+  content: "\e640";
+}
+.product-orchestration_stack:before {
+  content: "\e641";
+}
 
 /* define  colors */
 .product-custom-1:before {
@@ -298,9 +315,6 @@
 }
 .product-miq_condition:before {
   color: #0099cc;
-}
-.product-vendor-atomic-enterprise:before {
-  color: #0088ce;
 }
 
 /*end icon customizations*/

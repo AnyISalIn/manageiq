@@ -18,7 +18,7 @@ module VmHelper::TextualSummary
   #
 
   def textual_group_properties
-    %i(name region server description hostname ipaddress custom_1 container host_platform tools_status osinfo devices cpu_affinity snapshots advanced_settings resources guid)
+    %i(name region server description hostname ipaddress custom_1 container host_platform tools_status load_balancer_health_check_state osinfo devices cpu_affinity snapshots advanced_settings resources guid storage_profile)
   end
 
   def textual_group_lifecycle
@@ -32,7 +32,7 @@ module VmHelper::TextualSummary
   def textual_group_vm_cloud_relationships
     %i(ems ems_infra cluster host availability_zone cloud_tenant flavor vm_template drift scan_history service
        cloud_network cloud_subnet orchestration_stack cloud_networks cloud_subnets network_routers security_groups
-       floating_ips network_ports cloud_volumes)
+       floating_ips network_ports load_balancers cloud_volumes)
   end
 
   def textual_group_template_cloud_relationships
@@ -75,10 +75,6 @@ module VmHelper::TextualSummary
     textual_ems_custom_attributes
   end
 
-  def textual_group_compliance
-    %i(compliance_status compliance_history)
-  end
-
   def textual_group_power_management
     %i(power_state boot_time state_changed_on)
   end
@@ -107,6 +103,15 @@ module VmHelper::TextualSummary
     if @record.hardware.try(:networks) && @record.hardware.networks.present?
       h[:link] = url_for(:action => 'show', :id => @record, :display => 'networks')
     end
+    h
+  end
+
+  def textual_load_balancer_health_check_state
+    return nil if @record.try(:load_balancer_health_check_states).blank?
+    h = {:label    => _("Load Balancer Status"),
+         :value    => @record.load_balancer_health_check_state,
+         :title    => @record.load_balancer_health_check_states_with_reason.join("\n"),
+         :explorer => true}
     h
   end
 
@@ -153,7 +158,7 @@ module VmHelper::TextualSummary
   def textual_snapshots
     num = @record.number_of(:snapshots)
     h = {:label => _("Snapshots"), :image => "snapshot", :value => (num == 0 ? _("None") : num)}
-    if role_allows(:feature => "vm_snapshot_show_list") && @record.supports_snapshots?
+    if role_allows?(:feature => "vm_snapshot_show_list") && @record.supports_snapshots?
       h[:title] = _("Show the snapshot info for this VM")
       h[:explorer] = true
       h[:link]  = url_for(:action => 'show', :id => @record, :display => 'snapshot_info')
@@ -170,6 +175,11 @@ module VmHelper::TextualSummary
     {:label => _("Management Engine GUID"), :value => @record.guid}
   end
 
+  def textual_storage_profile
+    return nil if @record.storage_profile.nil?
+    {:label => _("Storage Profile"), :value => @record.storage_profile.name}
+  end
+
   def textual_discovered
     {:label => _("Discovered"), :image => "discover", :value => format_timezone(@record.created_on)}
   end
@@ -184,7 +194,7 @@ module VmHelper::TextualSummary
     return nil if @record.kind_of?(ManageIQ::Providers::Openstack::CloudManager::Template)
     {:label => _("Retirement Date"),
      :image => "retirement",
-     :value => (@record.retires_on.nil? ? _("Never") : @record.retires_on.to_time.strftime("%x"))}
+     :value => (@record.retires_on.nil? ? _("Never") : @record.retires_on.strftime("%x %R %Z"))}
   end
 
   def textual_retirement_state
@@ -202,14 +212,14 @@ module VmHelper::TextualSummary
   end
 
   def textual_group
-    @record.miq_group.try(:description)
+    {:label => _("Group"), :value => @record.miq_group.try(:description)}
   end
 
   def textual_cluster
-    cluster = @record.host.try(:ems_cluster)
+    cluster = @record.try(:ems_cluster)
     return nil if cluster.nil?
     h = {:label => title_for_cluster, :image => "ems_cluster", :value => (cluster.nil? ? _("None") : cluster.name)}
-    if cluster && role_allows(:feature => "ems_cluster_show")
+    if cluster && role_allows?(:feature => "ems_cluster_show")
       h[:title] = _("Show this VM's %{title}") % {:title => title_for_cluster}
       h[:link]  = url_for(:controller => 'ems_cluster', :action => 'show', :id => cluster)
     end
@@ -220,7 +230,7 @@ module VmHelper::TextualSummary
     host = @record.host
     return nil if host.nil?
     h = {:label => title_for_host, :image => "host", :value => (host.nil? ? _("None") : host.name)}
-    if host && role_allows(:feature => "host_show")
+    if host && role_allows?(:feature => "host_show")
       h[:title] = _("Show this VM's %{title}") % {:title => title_for_host}
       h[:link]  = url_for(:controller => 'host', :action => 'show', :id => host)
     end
@@ -231,7 +241,7 @@ module VmHelper::TextualSummary
     rp = @record.parent_resource_pool
     image = (rp && rp.vapp?) ? "vapp" : "resource_pool"
     h = {:label => _("Resource Pool"), :image => image, :value => (rp.nil? ? _("None") : rp.name)}
-    if rp && role_allows(:feature => "resource_pool_show")
+    if rp && role_allows?(:feature => "resource_pool_show")
       h[:title] = _("Show this VM's Resource Pool")
       h[:link]  = url_for(:controller => 'resource_pool', :action => 'show', :id => rp)
     end
@@ -276,7 +286,7 @@ module VmHelper::TextualSummary
     h = {:label => label,
          :image => "availability_zone",
          :value => (availability_zone.nil? ? _("None") : availability_zone.name)}
-    if availability_zone && role_allows(:feature => "availability_zone_show")
+    if availability_zone && role_allows?(:feature => "availability_zone_show")
       h[:title] = _("Show this VM's %{label}") % {:label => label}
       h[:link]  = url_for(:controller => 'availability_zone', :action => 'show', :id => availability_zone)
     end
@@ -287,7 +297,7 @@ module VmHelper::TextualSummary
     flavor = @record.flavor
     label = ui_lookup(:table => "flavor")
     h = {:label => label, :image => "flavor", :value => (flavor.nil? ? _("None") : flavor.name)}
-    if flavor && role_allows(:feature => "flavor_show")
+    if flavor && role_allows?(:feature => "flavor_show")
       h[:title] = _("Show this VM's %{label}") % {:label => label}
       h[:link]  = url_for(:controller => 'flavor', :action => 'show', :id => flavor)
     end
@@ -298,7 +308,7 @@ module VmHelper::TextualSummary
     vm_template = @record.genealogy_parent
     label = ui_lookup(:table => "miq_template")
     h = {:label => label, :image => "template", :value => (vm_template.nil? ? _("None") : vm_template.name)}
-    if vm_template && role_allows(:feature => "miq_template_show")
+    if vm_template && role_allows?(:feature => "miq_template_show")
       h[:title] = _("Show this VM's %{label}") % {:label => label}
       h[:link]  = url_for(:controller => 'miq_template', :action => 'show', :id => vm_template)
     end
@@ -325,7 +335,7 @@ module VmHelper::TextualSummary
     stack = @record.orchestration_stack
     label = ui_lookup(:table => "orchestration_stack")
     h = {:label => label, :image => "orchestration_stack", :value => (stack.nil? ? _("None") : stack.name)}
-    if stack && role_allows(:feature => "orchestration_stack_show")
+    if stack && role_allows?(:feature => "orchestration_stack_show")
       h[:title] = _("Show this VM's %{label} '%{name}'") % {:label => label, :name => stack.name}
       h[:link]  = url_for(:controller => 'orchestration_stack', :action => 'show', :id => stack)
     end
@@ -334,7 +344,7 @@ module VmHelper::TextualSummary
 
   def textual_service
     h = {:label => _("Service"), :image => "service"}
-    service = @record.service || @record.try(:orchestration_stack).try(:service) || @record.try(:orchestration_stack).try(:root).try(:service)
+    service = @record.service
     if service.nil?
       h[:value] = _("None")
     else
@@ -349,7 +359,7 @@ module VmHelper::TextualSummary
     label = ui_lookup(:tables => "security_group")
     num   = @record.number_of(:security_groups)
     h     = {:label => label, :image => "security_group", :value => num}
-    if num > 0 && role_allows(:feature => "security_group_show_list")
+    if num > 0 && role_allows?(:feature => "security_group_show_list")
       h[:title] = _("Show all %{label}") % {:label => label}
       h[:explorer] = true
       h[:link]  = url_for(:action => 'security_groups', :id => @record, :display => "security_groups")
@@ -361,7 +371,7 @@ module VmHelper::TextualSummary
     label = ui_lookup(:tables => "floating_ip")
     num   = @record.number_of(:floating_ips)
     h     = {:label => label, :image => "floating_ip", :value => num}
-    if num > 0 && role_allows(:feature => "floating_ip_show_list")
+    if num > 0 && role_allows?(:feature => "floating_ip_show_list")
       h[:title] = _("Show all %{label}") % {:label => label}
       h[:explorer] = true
       h[:link]  = url_for(:action => 'floating_ips', :id => @record, :display => "floating_ips")
@@ -373,7 +383,7 @@ module VmHelper::TextualSummary
     label = ui_lookup(:tables => "network_router")
     num   = @record.number_of(:network_routers)
     h     = {:label => label, :image => "network_router", :value => num}
-    if num > 0 && role_allows(:feature => "network_router_show_list")
+    if num > 0 && role_allows?(:feature => "network_router_show_list")
       h[:title] = _("Show all %{label}") % {:label => label}
       h[:explorer] = true
       h[:link]  = url_for(:action => 'network_routers', :id => @record, :display => "network_routers")
@@ -385,7 +395,7 @@ module VmHelper::TextualSummary
     label = ui_lookup(:tables => "cloud_subnet")
     num   = @record.number_of(:cloud_subnets)
     h     = {:label => label, :image => "cloud_subnet", :value => num}
-    if num > 0 && role_allows(:feature => "cloud_subnet_show_list")
+    if num > 0 && role_allows?(:feature => "cloud_subnet_show_list")
       h[:title] = _("Show all %{label}") % {:label => label}
       h[:explorer] = true
       h[:link]  = url_for(:action => 'cloud_subnets', :id => @record, :display => "cloud_subnets")
@@ -397,10 +407,24 @@ module VmHelper::TextualSummary
     label = ui_lookup(:tables => "network_port")
     num   = @record.number_of(:network_ports)
     h     = {:label => label, :image => "network_port", :value => num}
-    if num > 0 && role_allows(:feature => "network_port_show_list")
+    if num > 0 && role_allows?(:feature => "network_port_show_list")
       h[:title] = _("Show all %{label}") % {:label => label}
       h[:explorer] = true
       h[:link]  = url_for(:action => 'network_ports', :id => @record, :display => "network_ports")
+    end
+    h
+  end
+
+  def textual_load_balancers
+    return nil if @record.try(:load_balancers).nil?
+
+    label = ui_lookup(:tables => "load_balancer")
+    num   = @record.number_of(:load_balancers)
+    h     = {:label => label, :image => "load_balancer", :value => num}
+    if num > 0 && role_allows?(:feature => "load_balancer_show_list")
+      h[:title] = _("Show all %{label}") % {:label => label}
+      h[:explorer] = true
+      h[:link]  = url_for(:action => 'load_balancers', :id => @record, :display => "load_balancers")
     end
     h
   end
@@ -409,7 +433,7 @@ module VmHelper::TextualSummary
     label = ui_lookup(:tables => "cloud_network")
     num   = @record.number_of(:cloud_networks)
     h     = {:label => label, :image => "cloud_network", :value => num}
-    if num > 0 && role_allows(:feature => "cloud_network_show_list")
+    if num > 0 && role_allows?(:feature => "cloud_network_show_list")
       h[:title] = _("Show all %{label}") % {:label => label}
       h[:explorer] = true
       h[:link]  = url_for(:action => 'cloud_networks', :id => @record, :display => "cloud_networks")
@@ -421,7 +445,7 @@ module VmHelper::TextualSummary
     cloud_tenant = @record.cloud_tenant if @record.respond_to?(:cloud_tenant)
     label = ui_lookup(:table => "cloud_tenants")
     h = {:label => label, :image => "cloud_tenant", :value => (cloud_tenant.nil? ? _("None") : cloud_tenant.name)}
-    if cloud_tenant && role_allows(:feature => "cloud_tenant_show")
+    if cloud_tenant && role_allows?(:feature => "cloud_tenant_show")
       h[:title] = _("Show this VM's %{label}") % {:label => label}
       h[:link]  = url_for(:controller => 'cloud_tenant', :action => 'show', :id => cloud_tenant)
     end
@@ -432,7 +456,7 @@ module VmHelper::TextualSummary
     label = ui_lookup(:tables => "cloud_volumes")
     num = @record.number_of(:cloud_volumes)
     h = {:label => label, :image => "cloud_volume", :value => num}
-    if num > 0 && role_allows(:feature => "cloud_volume_show_list")
+    if num > 0 && role_allows?(:feature => "cloud_volume_show_list")
       h[:title]    = _("Show all Cloud Volumes attached to this VM.")
       h[:explorer] = true
       h[:link]     = url_for(:action => 'cloud_volumes', :id => @record, :display => "cloud_volumes")
@@ -659,7 +683,7 @@ module VmHelper::TextualSummary
     num = @record.storage_systems_size
     label = ui_lookup(:tables => "ontap_storage_system")
     h = {:label => label, :image => "ontap_storage_system", :value => num}
-    if num > 0 && role_allows(:feature => "ontap_storage_system_show_list")
+    if num > 0 && role_allows?(:feature => "ontap_storage_system_show_list")
       h[:title] = _("Show all %{label}") % {:label => label}
       h[:explorer] = true
       h[:link]  = url_for(:controller => controller.controller_name, :action => 'show', :id => @record, :display => "ontap_storage_systems")
@@ -671,7 +695,7 @@ module VmHelper::TextualSummary
     num = @record.storage_volumes_size
     label = ui_lookup(:tables => "ontap_storage_volume")
     h = {:label => label, :image => "ontap_storage_volume", :value => num}
-    if num > 0 && role_allows(:feature => "ontap_storage_volume_show_list")
+    if num > 0 && role_allows?(:feature => "ontap_storage_volume_show_list")
       h[:title] = _("Show all %{label}") % {:label => label}
       h[:explorer] = true
       h[:link]  = url_for(:controller => controller.controller_name, :action => 'show', :id => @record, :display => "ontap_storage_volumes")
@@ -683,7 +707,7 @@ module VmHelper::TextualSummary
     num = @record.file_shares_size
     label = ui_lookup(:tables => "ontap_file_share")
     h = {:label => label, :image => "ontap_file_share", :value => num}
-    if num > 0 && role_allows(:feature => "ontap_file_share_show_list")
+    if num > 0 && role_allows?(:feature => "ontap_file_share_show_list")
       h[:title] = _("Show all %{label}") % {:label => label}
       h[:explorer] = true
       h[:link]  = url_for(:controller => controller.controller_name, :action => 'show', :id => @record, :display => "ontap_file_shares")
@@ -695,7 +719,7 @@ module VmHelper::TextualSummary
     num = @record.logical_disks_size
     label = ui_lookup(:tables => "ontap_logical_disk")
     h = {:label => label, :image => "ontap_logical_disk", :value => num}
-    if num > 0 && role_allows(:feature => "ontap_logical_disk_show_list")
+    if num > 0 && role_allows?(:feature => "ontap_logical_disk_show_list")
       h[:title] = _("Show all %{label}") % {:label => label}
       h[:explorer] = true
       h[:link]  = url_for(:controller => controller.controller_name, :action => 'show', :id => @record, :display => "ontap_logical_disks")
@@ -746,17 +770,8 @@ module VmHelper::TextualSummary
   end
 
   def textual_compliance_history
-    h = {:label => _("History")}
-    if @record.number_of(:compliances) == 0
-      h[:value] = _("Not Available")
-    else
-      h[:image] = "compliance"
-      h[:value] = _("Available")
-      h[:title] = _("Show Compliance History of this VM (Last 10 Checks)")
-      h[:explorer] = true
-      h[:link]  = url_for(:controller => controller.controller_name, :action => 'show', :id => @record, :display => 'compliance_history')
-    end
-    h
+    super(:title    => _("Show Compliance History of this VM (Last 10 Checks)"),
+          :explorer => true)
   end
 
   def textual_boot_time

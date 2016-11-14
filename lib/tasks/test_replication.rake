@@ -52,13 +52,13 @@ class EvmTestSetupReplication
 
   def write_released_migrations
     file_contents = released_migrations.sort.join("\n")
-    File.write(Rails.root.join("spec/replication/util/data/darga_migrations"), file_contents)
+    File.write(Rails.root.join("spec/replication/util/data/euwe_migrations"), file_contents)
   end
 
   private
 
   def released_migrations
-    unless system("git fetch --depth=1 http://github.com/ManageIQ/manageiq.git refs/heads/darga:#{TEST_BRANCH}")
+    unless system(fetch_command)
       return []
     end
     files = `git ls-tree -r --name-only #{TEST_BRANCH} db/migrate/`
@@ -73,6 +73,10 @@ class EvmTestSetupReplication
     migrations.keep_if { |timestamp| timestamp =~ /\d+/ }
   ensure
     `git branch -D #{TEST_BRANCH}`
+  end
+
+  def fetch_command
+    "git fetch #{'--depth=1 ' if ENV['CI']}http://github.com/ManageIQ/manageiq.git refs/heads/euwe:#{TEST_BRANCH}"
   end
 
   def prepare_slave_database

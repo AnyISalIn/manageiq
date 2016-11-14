@@ -1,7 +1,7 @@
 class MiqSchedule < ApplicationRecord
-  validates_uniqueness_of :name, :scope => [:userid, :towhat]
-  validates_presence_of   :name, :description, :towhat, :run_at
-  validate                :validate_run_at, :validate_file_depot
+  validates :name, :uniqueness => {:scope => [:userid, :towhat]}
+  validates :name, :description, :towhat, :run_at, :presence => true
+  validate  :validate_run_at, :validate_file_depot
 
   before_save :set_start_time_and_prod_default
 
@@ -27,9 +27,9 @@ class MiqSchedule < ApplicationRecord
   serialize :filter
   serialize :run_at
 
-  SYSTEM_SCHEDULE_CLASSES = ["MiqReport", "MiqAlert", "MiqWidget"]
-  VALID_INTERVAL_UNITS = ['minutely', 'hourly', 'daily', 'weekly', 'monthly', 'once']
-  ALLOWED_CLASS_METHOD_ACTIONS = ["db_backup", "db_gc"]
+  SYSTEM_SCHEDULE_CLASSES = %w(MiqReport MiqAlert MiqWidget).freeze
+  VALID_INTERVAL_UNITS = %w(minutely hourly daily weekly monthly once).freeze
+  ALLOWED_CLASS_METHOD_ACTIONS = %w(db_backup db_gc automation_request).freeze
 
   default_value_for :userid,  "system"
   default_value_for :enabled, true
@@ -41,7 +41,7 @@ class MiqSchedule < ApplicationRecord
   end
 
   def run_at
-    val = read_attribute(:run_at)
+    val = self[:run_at]
     if val.kind_of?(Hash)
       st = val[:start_time]
       if st && String === st
@@ -93,7 +93,7 @@ class MiqSchedule < ApplicationRecord
     end
 
     targets = get_targets
-    _log.warn("[#{name}] No targets match filter [#{filter.to_human}]") if (targets.length == 0) && (!filter.nil?)
+    _log.warn("[#{name}] No targets match filter [#{filter.to_human}]") if targets.empty? && !filter.nil?
     targets.each do |obj|
       _log.info("[#{name}] invoking action: [#{sched_action[:method]}] for target: [#{obj.name}]")
       begin
@@ -111,7 +111,7 @@ class MiqSchedule < ApplicationRecord
     # Let RBAC evaluate the filter's MiqExpression, and return the first value (the target ids)
     my_filter = get_filter
     return [] if my_filter.nil?
-    Rbac.filtered(towhat, :filter => my_filter, :results_format => :ids)
+    Rbac.filtered(towhat, :filter => my_filter).pluck(:id)
   end
 
   def get_targets
@@ -217,6 +217,12 @@ class MiqSchedule < ApplicationRecord
     _log.info("Action [#{name}] has been run for target type: [#{obj.class}] with name: [#{obj.name}]")
   end
 
+  def action_automation_request(_klass, _at)
+    parameters = filter[:parameters]
+    user = User.find_by_userid(userid)
+    AutomationRequest.create_from_scheduled_task(user, filter[:uri_parts], parameters)
+  end
+
   def action_db_backup(klass, _at)
     self.sched_action ||= {}
     self.sched_action[:options] ||= {}
@@ -237,6 +243,10 @@ class MiqSchedule < ApplicationRecord
     queue_opts = {:class_name => klass.name, :method_name => "gc", :args => [opts], :role => "database_operations"}
     task_opts  = {:action => "Database GC", :userid => self.sched_action[:options][:userid]}
     MiqTask.generic_action_with_callback(task_opts, queue_opts)
+  end
+
+  def run_automation_request
+    action_automation_request(AutomationRequest, nil)
   end
 
   def run_adhoc_db_backup

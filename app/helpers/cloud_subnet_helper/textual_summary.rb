@@ -11,7 +11,12 @@ module CloudSubnetHelper::TextualSummary
   end
 
   def textual_group_relationships
-    %i(parent_ems_cloud ems_network cloud_tenant availability_zone instances cloud_network network_router)
+    %i(parent_ems_cloud ems_network cloud_tenant availability_zone instances cloud_network network_router parent_subnet managed_subnets)
+  end
+
+  def textual_group_topology
+    items = %w(topology)
+    items.collect { |m| send("textual_#{m}") }.flatten.compact
   end
 
   #
@@ -57,7 +62,7 @@ module CloudSubnetHelper::TextualSummary
     label = ui_lookup(:tables => "vm_cloud")
     num   = @record.number_of(:vms)
     h     = {:label => label, :image => "vm", :value => num}
-    if num > 0 && role_allows(:feature => "vm_show_list")
+    if num > 0 && role_allows?(:feature => "vm_show_list")
       h[:link]  = url_for(:action => 'show', :id => @record, :display => 'instances')
       h[:title] = _("Show all %{label}") % {:label => label}
     end
@@ -76,7 +81,29 @@ module CloudSubnetHelper::TextualSummary
     @record.network_router
   end
 
+  def textual_parent_subnet
+    @record.parent_cloud_subnet
+  end
+
+  def textual_managed_subnets
+    label = _("Managed Subnets")
+    num   = @record.number_of(:cloud_subnets)
+    h     = {:label => label, :image => "cloud_subnet", :value => num}
+    if num > 0 && role_allows?(:feature => "cloud_subnet_show_list")
+      h[:link]  = url_for(:action => 'show', :id => @record, :display => 'cloud_subnets')
+      h[:title] = _("Show all %{label}") % {:label => label}
+    end
+    h
+  end
+
   def textual_availability_zone
     @record.availability_zone
+  end
+
+  def textual_topology
+    {:label => _('Topology'),
+     :image => 'topology',
+     :link => url_for(:controller => 'subnet_topology', :action => 'show', :id => @record.id),
+     :title => _('Show topology')}
   end
 end

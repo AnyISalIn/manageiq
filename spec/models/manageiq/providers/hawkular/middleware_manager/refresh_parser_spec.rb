@@ -1,11 +1,8 @@
-require 'spec_helper'
 require 'recursive-open-struct'
+require_relative 'hawkular_helper'
 
 describe ManageIQ::Providers::Hawkular::MiddlewareManager::RefreshParser do
-  THE_FEED_ID = '70c798a0-6985-4f8a-a525-012d8d28e8a3'.freeze
-
   let(:ems_hawkular) do
-    # allow(MiqServer).to receive(:my_zone).and_return("default")
     _guid, _server, zone = EvmSpecHelper.create_guid_miq_server_zone
     auth = AuthToken.new(:name => "test", :auth_key => "valid-token", :userid => "jdoe", :password => "password")
     FactoryGirl.create(:ems_hawkular,
@@ -18,9 +15,9 @@ describe ManageIQ::Providers::Hawkular::MiddlewareManager::RefreshParser do
   let(:server) do
     FactoryGirl.create(:hawkular_middleware_server,
                        :name                  => 'Local',
-                       :feed                  => THE_FEED_ID,
+                       :feed                  => the_feed_id,
                        :ems_ref               => '/t;Hawkular'\
-                                                 "/f;#{THE_FEED_ID}/r;Local~~",
+                                                 "/f;#{the_feed_id}/r;Local~~",
                        :nativeid              => 'Local~~',
                        :ext_management_system => ems_hawkular)
   end
@@ -31,7 +28,7 @@ describe ManageIQ::Providers::Hawkular::MiddlewareManager::RefreshParser do
       datasource = RecursiveOpenStruct.new(:name => 'ruby-sample-build',
                                            :id   => 'Local~/subsystem=datasources/data-source=ExampleDS',
                                            :path => '/t;Hawkular'\
-                                                    "/f;#{THE_FEED_ID}/r;Local~~"\
+                                                    "/f;#{the_feed_id}/r;Local~~"\
                                                     '/r;Local~%2Fsubsystem%3Ddatasources%2Fdata-source%3DExampleDS'
                                           )
       config = {
@@ -47,7 +44,7 @@ describe ManageIQ::Providers::Hawkular::MiddlewareManager::RefreshParser do
         :middleware_server => server,
         :nativeid          => 'Local~/subsystem=datasources/data-source=ExampleDS',
         :ems_ref           => '/t;Hawkular'\
-                                                 "/f;#{THE_FEED_ID}/r;Local~~"\
+                                                 "/f;#{the_feed_id}/r;Local~~"\
                                                  '/r;Local~%2Fsubsystem%3Ddatasources%2Fdata-source%3DExampleDS',
         :properties        => {
           'Driver Name'    => 'h2',
@@ -57,6 +54,121 @@ describe ManageIQ::Providers::Hawkular::MiddlewareManager::RefreshParser do
         }
       }
       expect(parser.send(:parse_datasource, server, datasource, config)).to eq(parsed_datasource)
+    end
+  end
+
+  describe 'parse_domain' do
+    it 'handles simple data' do
+      properties = {
+        'Running Mode'         => 'NORMAL',
+        'Version'              => '9.0.2.Final',
+        'Product Name'         => 'WildFly Full',
+        'Host State'           => 'running',
+        'Is Domain Controller' => 'true',
+        'Name'                 => 'master',
+      }
+      feed = 'master.Unnamed%20Domain'
+      id = 'Local~/host=master'
+      path = '/t;hawkular/f;master.Unnamed%20Domain/r;Local~~/r;Local~%2Fhost%3Dmaster'
+      type_path = '/t;hawkular/f;master.Unnamed%20Domain/rt;Domain%20Host'
+      domain = OpenStruct.new(:feed       => feed,
+                              :id         => id,
+                              :path       => path,
+                              :properties => properties,
+                              :type_path  => type_path)
+      parsed_domain = {
+        :name       => 'Unnamed Domain',
+        :feed       => feed,
+        :type_path  => type_path,
+        :nativeid   => id,
+        :ems_ref    => path,
+        :properties => properties,
+      }
+      expect(parser.send(:parse_middleware_domain, 'master.Unnamed Domain', domain)).to eq(parsed_domain)
+    end
+  end
+
+  describe 'parse_availability' do
+    it 'handles simple data' do
+      resources_by_metric_id = {
+        'resource_id_1' => [{}],
+        'resource_id_2' => [{}, {}],
+        'resource_id_3' => [{}],
+        'resource_id_4' => [{}]
+      }
+      availabilities = [
+        {
+          'id'   => 'resource_id_1',
+          'data' => [{ 'value' => 'up' }]
+        },
+        {
+          'id'   => 'resource_id_2',
+          'data' => [{ 'value' => 'down' }]
+        },
+        {
+          'id'   => 'resource_id_3',
+          'data' => [{ 'value' => 'something_else' }]
+        },
+        {
+          'id'   => 'resource_id_4',
+          'data' => []
+        }
+      ]
+
+      parsed_resources_with_availability = {
+        'resource_id_1' => [{
+          :status => 'Enabled'
+        }],
+        'resource_id_2' => [
+          {
+          :status => 'Disabled'
+          },
+          {
+            :status => 'Disabled'
+          }
+        ],
+        'resource_id_3' => [{
+          :status => 'Unknown'
+        }],
+        'resource_id_4' => [{
+          :status => 'Unknown'
+        }]
+      }
+      expect(parser.send(:parse_availability,
+                         availabilities,
+                         resources_by_metric_id)).to eq(parsed_resources_with_availability)
+    end
+    it 'handles missing metrics' do
+      resources_by_metric_id = {
+        'resource_id_1' => [{}],
+        'resource_id_2' => [{}],
+        'resource_id_3' => [{}],
+        'resource_id_4' => [{}],
+      }
+      availabilities = [
+        {
+          'id'   => 'resource_id_1',
+          'data' => [{ 'value' => 'up' }]
+        }
+      ]
+
+      parsed_resources_with_availability = {
+        'resource_id_1' => [{
+          :status => 'Enabled'
+        }],
+        'resource_id_2' => [{
+          :status => 'Unknown'
+        }],
+        'resource_id_3' => [{
+          :status => 'Unknown'
+        }],
+        'resource_id_4' => [{
+          :status => 'Unknown'
+        }]
+      }
+      expect(parser.send(:parse_availability,
+                         availabilities,
+                         resources_by_metric_id)).to eq(parsed_resources_with_availability)
     end
   end
 

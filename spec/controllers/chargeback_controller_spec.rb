@@ -1,5 +1,5 @@
 describe ChargebackController do
-  before { set_user_privileges }
+  before { stub_user(:features => :all) }
 
   context "returns current rate assignments or set them to blank if category/tag is deleted" do
     let(:category) { FactoryGirl.create(:classification) }
@@ -188,7 +188,7 @@ describe ChargebackController do
 
     render_views
 
-    let(:chargeback_rate) { FactoryGirl.create(:chargeback_rate_with_details, :description => "foo") }
+    let(:chargeback_rate) { FactoryGirl.create(:chargeback_rate, :with_details, :description => "foo") }
 
     # this index represent first rate detail( "Allocated Memory in MB") chargeback_rate
     let(:index_to_rate_type) { "0" }
@@ -218,17 +218,17 @@ describe ChargebackController do
 
     it "renders edit form with correct values" do
       post :x_button, :params => {:pressed => "chargeback_rates_edit", :id => chargeback_rate.id}
-      response_body = response.body.delete('\\')
       expect(response).to render_template(:partial => 'chargeback/_cb_rate_edit')
       expect(response).to render_template(:partial => 'chargeback/_cb_rate_edit_table')
 
-      expect_input(response_body, "description", "foo")
+      main_content = JSON.parse(response.body)['updatePartials']['main_div']
+      expect_input(main_content, "description", "foo")
 
-      expect_rendered_tiers(response_body, [{:start => "0.0", :finish => "20.0"},
+      expect_rendered_tiers(main_content, [{:start => "0.0", :finish => "20.0"},
                                             {:start => "20.0", :finish => "40.0"},
                                             {:start => "40.0", :finish => Float::INFINITY}])
 
-      expect_rendered_tiers(response_body, [{:start => "0.0", :finish => Float::INFINITY}], 1)
+      expect_rendered_tiers(main_content, [{:start => "0.0", :finish => Float::INFINITY}], 1)
     end
 
     it "removes requested tier line from edit from" do
@@ -378,7 +378,7 @@ describe ChargebackController do
 
       count_of_chargeback_rates = ChargebackRate.count
 
-      post :x_button, :params => {:id => "new", :pressed => "chargeback_rates_new"}
+      post :x_button, :params => {:pressed => "chargeback_rates_new"}
       post :cb_rate_form_field_changed, :params => {:id => "new", :description => "chargeback rate 1"}
       post :cb_rate_edit, :params => {:button => "add"}
 
@@ -396,7 +396,7 @@ describe ChargebackController do
 
       ChargebackRate.seed
 
-      post :x_button, :params => {:id => "new", :pressed => "chargeback_rates_new"}
+      post :x_button, :params => {:pressed => "chargeback_rates_new"}
       post :cb_rate_form_field_changed, :params => {:id => "new", :description => "chargeback rate 1"}
 
       post :cb_tier_add, :params => {:button => "add", :detail_index => index_to_rate_type}
@@ -429,7 +429,7 @@ describe ChargebackController do
 
       ChargebackRate.seed
 
-      post :x_button, :params => {:id => "new", :pressed => "chargeback_rates_new"}
+      post :x_button, :params => {:pressed => "chargeback_rates_new"}
       post :cb_rate_form_field_changed, :params => {:id => "new", :description => "chargeback rate 1"}
 
       post :cb_tier_add, :params => {:button => "add", :detail_index => index_to_rate_type}

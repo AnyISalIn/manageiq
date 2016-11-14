@@ -1,12 +1,12 @@
 - entry_point ||= "Instance"
-.modal.fade#automate_tree_div{"tabindex"        => "-1",
-                              "role"            => "dialog",
-                              "aria-labelledby" => "ep_modal_label",
-                              "aria-describedby" => "modal",
-                              "aria-hidden"     => "true",
-                              "data-keyboard"   => "false",
-                              "data-backdrop"   => "static",
-                              :style            => "display: none"}
+.modal.fade#automate_div{"tabindex"         => "-1",
+                         "role"             => "dialog",
+                         "aria-labelledby"  => "ep_modal_label",
+                         "aria-describedby" => "modal",
+                         "aria-hidden"      => "true",
+                         "data-keyboard"    => "false",
+                         "data-backdrop"    => "static",
+                         :style             => "display: none"}
   .modal-dialog.modal-lg
     .modal-content
       .modal-header
@@ -17,24 +17,13 @@
             Close
         %h4.modal-title#ep_modal_label
           = hidden_field_tag(:ignore_form_changes)
-          = _("Select Entry Point %s") % entry_point
+          = _("Select Entry Point %{entry_point}") % {:entry_point => entry_point}
 
       .modal-body
-        #automate_treebox
-        = render(:partial => "layouts/dynatree",
-                 :locals => {:tree_id             => "automate_treebox",
-                             :tree_name           => "automate_tree",
-                             :json_tree           => @automate_tree,
-                             :onclick             => "miqOnClickSelectAETreeNode",
-                             :tree_root           => "#{x_node(:automate_tree)}",
-                             :base_id             => "root",
-                             :no_base_exp         => true,
-                             :exp_tree            => false,
-                             :highlighting        => true,
-                             :autoload            => true})
+        = render(:partial => 'shared/tree', :locals => {:tree => @automate_tree, :name => @automate_tree.name})
       .modal-footer
         %div{:id => "include_domain_prefix_div"}
-          %input#include_domain_prefix_chk{:onclick  => "miqOnClickIncludeDomainPrefix()",
+          %input#include_domain_prefix_chk{:onchange  => "miqOnClickIncludeDomainPrefix()",
                                            :type     => "checkbox",
                                            :disabled => "disabled"}
           = _("Include Domain prefix in the path")
@@ -56,7 +45,7 @@
                     "data-method" => :post,
                     :title        => t)
         #automate_buttons_off{:style => "display:#{@changed ? "none" : "display"};"}
-          = button_tag(_("Apply"), :class => "btn btn-primary btn-disabled")
+          = button_tag(_("Apply"), :class => "btn btn-primary disabled")
           = link_to(t = _("Cancel"),
                     {:action => "ae_tree_select_toggle",
                      :button => "cancel"},

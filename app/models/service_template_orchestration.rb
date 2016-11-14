@@ -13,11 +13,15 @@ class ServiceTemplateOrchestration < ServiceTemplate
     []
   end
 
-  def self.default_provisioning_entry_point
-    '/Cloud/Orchestration/Provisioning/StateMachines/Provision/default'
+  def self.default_provisioning_entry_point(_service_type)
+    '/Cloud/Orchestration/Provisioning/StateMachines/Provision/CatalogItemInitization'
   end
 
   def self.default_reconfiguration_entry_point
     '/Cloud/Orchestration/Reconfiguration/StateMachines/Reconfigure/default'
+  end
+
+  def my_zone
+    orchestration_manager.try(:my_zone) || MiqServer.my_zone
   end
 end

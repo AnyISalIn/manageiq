@@ -1,6 +1,6 @@
-include CompressedIds
-
 describe EmsCloudController do
+  include CompressedIds
+
   let!(:server) { EvmSpecHelper.local_miq_server(:zone => zone) }
   let(:zone)   { FactoryGirl.build(:zone) }
   describe "#create" do
@@ -165,6 +165,45 @@ describe EmsCloudController do
       expect(response.body).to include('"name":"foo_openstack"')
     end
 
+    let(:openstack_form_params) do
+      {"button"                 => "add",
+       "default_hostname"       => "host_openstack",
+       "name"                   => "foo_openstack",
+       "emstype"                => "openstack",
+       "tenant_mapping_enabled" => "on",
+       "provider_region"        => "",
+       "default_port"           => "5000",
+       "zone"                   => zone.name,
+       "default_userid"         => "foo",
+       "default_password"       => "[FILTERED]",
+       "default_verify"         => "[FILTERED]"}
+    end
+
+    it "creates openstack cloud manager with attributes from form" do
+      post :create, :params => openstack_form_params
+
+      openstack = ManageIQ::Providers::Openstack::CloudManager.where(:name => "foo_openstack").first
+
+      expect(openstack.zone.name).to eq(zone.name)
+      expect(openstack.name).to eq("foo_openstack")
+      expect(openstack.emstype).to eq("openstack")
+      expect(openstack.tenant_mapping_enabled).to be_truthy
+      expect(openstack.provider_region).to eq("")
+    end
+
+    it "updates openstack cloud manager's attribute tenant_mapping_enabled" do
+      post :create, :params => openstack_form_params
+
+      openstack = ManageIQ::Providers::Openstack::CloudManager.where(:name => "foo_openstack").first
+      openstack_form_params[:id] = openstack.id
+      openstack_form_params[:button] = "save"
+      openstack_form_params[:tenant_mapping_enabled] = "off"
+
+      post :update, :params => openstack_form_params
+
+      expect(openstack.reload.tenant_mapping_enabled).to be_falsey
+    end
+
     it 'strips whitespace from name, hostname and api_port form fields on create' do
       post :create, :params => {
         "button"           => "add",
@@ -265,7 +304,7 @@ describe EmsCloudController do
                                        :button    => "validate",
                                        :id        => mocked_ems.id,
                                        :cred_type => "default")
-      expect(mocked_ems).to receive(:authentication_check).with("default", :save => false)
+      expect(mocked_ems).to receive(:authentication_check).with("default", hash_including(:save => false))
       controller.send(:update_ems_button_validate, mocked_ems)
     end
 
@@ -276,7 +315,7 @@ describe EmsCloudController do
                                        :button           => "validate",
                                        :default_password => "[FILTERED]",
                                        :cred_type        => "default")
-      expect(mocked_ems).to receive(:authentication_check).with("default", :save => false)
+      expect(mocked_ems).to receive(:authentication_check).with("default", hash_including(:save => false))
       controller.send(:update_ems_button_validate, mocked_ems)
     end
   end
@@ -312,6 +351,8 @@ describe EmsCloudController do
     end
 
     it 'manage cloud provider policies' do
+      allow(controller).to receive(:protect_build_tree).and_return(nil)
+      controller.instance_variable_set(:@protect_tree, OpenStruct.new(:name => "name"))
       ems = FactoryGirl.create(:ems_amazon)
       post :button, :params => { :miq_grid_checks => to_cid(ems.id), :pressed => "ems_cloud_protect" }
       expect(response.status).to eq(200)
@@ -372,7 +413,7 @@ describe EmsCloudController do
 
     it "redirects to requests show list after dialog is submitted" do
       controller.instance_variable_set(:@_params, :button => 'submit', :id => 'foo')
-      allow(controller).to receive(:role_allows).and_return(true)
+      allow(controller).to receive(:role_allows?).and_return(true)
       allow(wf).to receive(:submit_request).and_return({})
       page = double('page')
       allow(page).to receive(:<<).with(any_args)

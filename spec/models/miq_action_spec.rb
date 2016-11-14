@@ -52,6 +52,14 @@ describe MiqAction do
       expect(MiqQueue).to receive(:put).with(q_options).once
       @action.action_custom_automation(@action, @vm, :synchronous => false)
     end
+
+    it "passes source event to automate if set" do
+      ems_event = FactoryGirl.create(:ems_event, :event_type => "CloneVM_Task")
+      args = {:attrs => {:request => "test_custom_automation", "EventStream::event_stream" => ems_event.id}}
+      expect(MiqAeEngine).to receive(:deliver).with(hash_including(args)).once
+
+      @action.action_custom_automation(@action, @vm, :synchronous => true, :source_event => ems_event)
+    end
   end
 
   context "#action_evm_event" do
@@ -189,7 +197,7 @@ describe MiqAction do
     let(:container_image) { FactoryGirl.create(:container_image) }
     let(:container_image_registry) { FactoryGirl.create(:container_image_registry) }
     let(:event) { FactoryGirl.create(:miq_event_definition, :name => "whatever") }
-    let(:event_loop) { FactoryGirl.create(:miq_event_definition, :name => "request_container_image_scan") }
+    let(:event_loop) { FactoryGirl.create(:miq_event_definition, :name => "request_containerimage_scan") }
     let(:action) { FactoryGirl.create(:miq_action, :name => "container_image_analyze") }
 
     it "scans container images" do
@@ -357,6 +365,26 @@ describe MiqAction do
       expect(a.round_to_nearest_4mb(15)).to eq 16
       expect(a.round_to_nearest_4mb(16)).to eq 16
       expect(a.round_to_nearest_4mb(17)).to eq 20
+    end
+  end
+
+  context 'validate action email should have correct type' do
+    it 'should generate a MiqAction invoking action_email' do
+      action = MiqAction.new
+      inputs = {
+        :policy      => nil,
+        :synchronous => false
+      }
+      q_options = {
+        :class_name  => "MiqAction",
+        :method_name => "queue_email",
+        :args        => [{:to => nil, :from => "cfadmin@cfserver.com"}],
+        :role        => "notifier",
+        :priority    => 20,
+        :zone        => nil
+      }
+      expect(MiqQueue).to receive(:put).with(q_options).once
+      action.action_email(action, nil, inputs)
     end
   end
 end

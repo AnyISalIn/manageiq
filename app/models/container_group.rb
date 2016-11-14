@@ -1,6 +1,10 @@
 class ContainerGroup < ApplicationRecord
+  include SupportsFeatureMixin
+  include ComplianceMixin
   include CustomAttributeMixin
+  include MiqPolicyMixin
   include NewWithTypeStiMixin
+  include TenantIdentityMixin
 
   # :name, :uid, :creation_timestamp, :resource_version, :namespace
   # :labels, :restart_policy, :dns_policy
@@ -8,6 +12,7 @@ class ContainerGroup < ApplicationRecord
   has_many :containers,
            :through => :container_definitions
   has_many :container_definitions, :dependent => :destroy
+  has_many :container_images, -> { distinct }, :through => :container_definitions
   belongs_to  :ext_management_system, :foreign_key => "ems_id"
   has_many :labels, -> { where(:section => "labels") }, :class_name => CustomAttribute, :as => :resource, :dependent => :destroy
   has_many :node_selector_parts, -> { where(:section => "node_selectors") }, :class_name => "CustomAttribute", :as => :resource, :dependent => :destroy
@@ -77,7 +82,7 @@ class ContainerGroup < ApplicationRecord
   end
 
   def disconnect_inv
-    _log.info "Disconnecting Container group [#{name}] id [#{id}] from EMS [#{ext_management_system.name}]" \
+    _log.info "Disconnecting Pod [#{name}] id [#{id}] from EMS [#{ext_management_system.name}]" \
     "id [#{ext_management_system.id}] "
     self.container_definitions.each(&:disconnect_inv)
     self.old_ems_id = ems_id

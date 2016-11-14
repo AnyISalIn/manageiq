@@ -21,6 +21,7 @@ module ManageIQ::Providers
     before_destroy :stop_event_monitor
 
     supports :provisioning
+    supports :smartstate_analysis
 
     def self.ems_type
       @ems_type ||= "vmwarews".freeze
@@ -119,17 +120,17 @@ module ManageIQ::Providers
       begin
         with_provider_connection(:use_broker => false, :auth_type => auth_type) {}
       rescue SocketError, Errno::EHOSTUNREACH, Errno::ENETUNREACH
-        _log.warn("#{$!.inspect}")
+        _log.warn($!.inspect)
         raise MiqException::MiqUnreachableError, $!.message
       rescue Handsoap::Fault
-        _log.warn("#{$!.inspect}")
+        _log.warn($!.inspect)
         if $!.respond_to?(:reason)
           raise MiqException::MiqInvalidCredentialsError, $!.reason if $!.reason =~ /Authorize Exception|incorrect user name or password/
           raise $!.reason
         end
         raise $!.message
       rescue Exception
-        _log.warn("#{$!.inspect}")
+        _log.warn($!.inspect)
         raise "Unexpected response returned from #{ui_lookup(:table => "ext_management_systems")}, see log for details"
       end
 
@@ -178,10 +179,6 @@ module ManageIQ::Providers
 
     def vm_suspend(vm, options = {})
       invoke_vim_ws(:suspend, vm, options[:user_event])
-    end
-
-    def vm_pause(vm, options = {})
-      invoke_vim_ws(:pause, vm, options[:user_event])
     end
 
     def vm_shutdown_guest(vm, options = {})

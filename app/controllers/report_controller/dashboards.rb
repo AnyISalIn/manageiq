@@ -34,10 +34,7 @@ module ReportController::Dashboards
       else
         @in_a_form = true
         @changed = true
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
       end
     when "reset", nil # Reset or first time in
       db_seq_edit_screen
@@ -96,10 +93,7 @@ module ReportController::Dashboards
           add_flash("#{field.to_s.capitalize} #{msg}", :error)
         end
         @changed = session[:changed] = (@edit[:new] != @edit[:current])
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
       end
     else
       add_flash(_("All changes have been reset"), :warning) if params[:button] == "reset"
@@ -233,7 +227,7 @@ module ReportController::Dashboards
       @db_nodes["All Groups"][:text] = "All Groups"
     elsif @sb[:nodes].length == 2 && @sb[:nodes].last == "g"
       # All groups node is selected
-      @miq_groups = rbac_filtered_objects(MiqGroup.non_tenant_groups)
+      @miq_groups = Rbac.filtered(MiqGroup.non_tenant_groups_in_my_region)
       @right_cell_div  = "db_list"
       @right_cell_text = _("All %{models}") % {:models => ui_lookup(:models => "MiqGroup")}
     elsif @sb[:nodes].length == 3 && @sb[:nodes][1] == "g_g"
@@ -356,7 +350,7 @@ module ReportController::Dashboards
     @timezone_abbr = get_timezone_abbr
     @edit = {}
     @edit[:db_id] = @db.id
-    @edit[:read_only] = @db.read_only ? true : false
+    @edit[:read_only] = !!@db.read_only
 
     # Remember how this edit started
     @edit[:type] = params[:id] ? "db_edit" : "db_new"
@@ -429,7 +423,7 @@ module ReportController::Dashboards
                 when "menu"
                   "fa fa-share-square-o"
                 end
-        @widgets_options.push([w.title, w.id, {"data-icon" => "#{image}"}])
+        @widgets_options.push([w.title, w.id, {"data-icon" => image.to_s}])
       end
     end
     @widgets_options

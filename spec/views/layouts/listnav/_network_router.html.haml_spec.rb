@@ -1,11 +1,11 @@
-include QuadiconHelper
-
 describe "layouts/listnav/_network_router.html.haml" do
+  helper(QuadiconHelper)
+
   before :each do
     set_controller_for_view("network_router")
     assign(:panels, "ems_prop" => true, "ems_rel" => true)
     allow(view).to receive(:truncate_length).and_return(15)
-    allow(view).to receive(:role_allows).and_return(true)
+    allow(view).to receive(:role_allows?).and_return(true)
   end
 
   %w(openstack amazon azure google).each do |t|
@@ -38,7 +38,7 @@ describe "layouts/listnav/_network_router.html.haml" do
         @record = @network_router
         render
         expect(response).to include("href=\"/network_router/show/#{@record.id}?display=main\">Summary")
-        expect(response).to include("Show this Network Router&#39;s parent Network Provider\" href=\"/ems_network/show/#{@record.ext_management_system.id}\">")
+        expect(response).to include("Show this Network Router&#39;s parent Network Provider\" href=\"/ems_network/#{@record.ext_management_system.id}\">")
         expect(response).to include("Show all Instances\" onclick=\"return miqCheckForChanges()\" href=\"/network_router/show/#{@record.id}?display=instances\">")
       end
     end

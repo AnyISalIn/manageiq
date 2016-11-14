@@ -13,7 +13,7 @@ describe CatalogController do
   end
 
   before(:each) do
-    set_user_privileges user
+    stub_user(:features => :all)
     controller.instance_variable_set(:@settings, {})
     allow_any_instance_of(ApplicationController).to receive(:fetch_path)
   end
@@ -95,7 +95,7 @@ describe CatalogController do
   end
 
   context "#atomic_st_edit" do
-    it "Atomic Service Template and it's valid Resource Actions are saved" do
+    it "Atomic Service Template and its valid Resource Actions are saved" do
       controller.instance_variable_set(:@sb, {})
       controller.instance_variable_set(:@_params, :button => "save")
       st = FactoryGirl.create(:service_template)
@@ -127,7 +127,7 @@ describe CatalogController do
       end
     end
 
-    it "Atomic Service Template and it's invalid Resource Actions are not saved" do
+    it "Atomic Service Template and its invalid Resource Actions are not saved" do
       controller.instance_variable_set(:@_response, ActionDispatch::TestResponse.new)
       controller.instance_variable_set(:@sb, {})
       controller.instance_variable_set(:@_params, :button => 'save')
@@ -230,7 +230,7 @@ describe CatalogController do
 
     it "displays a message when an image file is not selected " do
       post :st_upload_image, :params => { :format => :js, :id => @st.id, :commit => 'Upload' }
-      expect(assigns(:flash_array).first[:message]).to include("Use the Browse button to locate a .png or .jpg image file")
+      expect(assigns(:flash_array).first[:message]).to include("Use the Choose file button to locate a .png or .jpg image file")
     end
   end
 
@@ -644,6 +644,19 @@ describe CatalogController do
     it "sets catalog for Catalog Bundle even when display is set to false" do
       controller.send(:st_set_record_vars, @st)
       expect(@st.service_template_catalog).to match(@catalog)
+    end
+  end
+
+  context "#st_set_form_vars" do
+    before do
+      bundle = FactoryGirl.create(:service_template)
+      controller.instance_variable_set(:@record, bundle)
+    end
+
+    it "sets default entry points for Catalog Bundle" do
+      controller.send(:st_set_form_vars)
+      expect(assigns(:edit)[:new][:fqname]).to include("CatalogBundleInitialization")
+      expect(assigns(:edit)[:new][:retire_fqname]).to include("Default")
     end
   end
 end

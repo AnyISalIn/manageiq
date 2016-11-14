@@ -26,8 +26,8 @@ class ApplicationController < ActionController::Base
   include ActionView::Helpers::TextHelper
   include ActionView::Helpers::DateHelper
   include ApplicationHelper
-  include JsHelper
   include Mixins::TimeHelper
+  include Mixins::MenuSection
   helper ToolbarHelper
   helper JsHelper
   helper QuadiconHelper
@@ -54,11 +54,22 @@ class ApplicationController < ActionController::Base
   include_concern 'ReportDownloads'
 
   before_action :reset_toolbar
-  before_action :set_session_tenant, :except => [:window_sizes]
-  before_action :get_global_session_data, :except => [:resize_layout, :window_sizes, :authenticate]
-  before_action :set_user_time_zone, :except => [:window_sizes]
-  before_action :set_gettext_locale, :except => [:window_sizes]
-  after_action :set_global_session_data, :except => [:resize_layout, :window_sizes]
+  before_action :set_session_tenant
+  before_action :get_global_session_data, :except => [:resize_layout, :authenticate]
+  before_action :set_user_time_zone
+  before_action :set_gettext_locale
+  before_action :allow_websocket
+  after_action :set_global_session_data, :except => [:resize_layout]
+
+  def local_request?
+    Rails.env.development? || Rails.env.test?
+  end
+
+  def allow_websocket
+    proto = request.ssl? ? 'wss' : 'ws'
+    override_content_security_policy_directives(:connect_src => ["'self'", "#{proto}://#{request.env['HTTP_HOST']}"])
+  end
+  private :allow_websocket
 
   def reset_toolbar
     @toolbars = {}
@@ -83,14 +94,8 @@ class ApplicationController < ActionController::Base
     @table_name ||= model.name.underscore
   end
 
-  # Examples:
-  #   CimBaseStorageExtentController => cim_bse
-  #   OntapFileShareController        => snia_fs
   def self.session_key_prefix
-    @session_key_prefix ||= begin
-      parts = table_name.split('_')
-      "#{parts[0]}_#{parts[1..-1].join('_')}"
-    end
+    table_name
   end
 
   # This will rescue any un-handled exceptions
@@ -162,25 +167,6 @@ class ApplicationController < ActionController::Base
     end
   end
 
-  # Control blinds effects on nav panel divs
-  def panel_control
-    @keep_compare = true
-    panel = params[:panel]
-    render :update do |page|
-      page << javascript_prologue
-      if @panels[panel] == 'down'
-        @panels[panel] = 'up'
-        page << "$('##{j_str(panel)}').slideUp('medium');"
-      else
-        @panels[panel] = 'down'
-        page << "$('##{j_str(panel)}').slideDown('medium');"
-      end
-    end
-    # FIXME: the @panels end up in the session eventually
-    #        so there's a issue with the possibility of inserting arbitrary
-    #        keys to the hash
-  end
-
   # Send chart data to the client
   def render_chart
     if params[:report]
@@ -240,6 +226,10 @@ class ApplicationController < ActionController::Base
   end
   private :browser_refresh_task
 
+  #
+  # :task_id => id of task to wait for
+  # :action  => 'action_to_call' -- action to be called when the task finishes
+  #
   def initiate_wait_for_task(options = {})
     task_id = options[:task_id]
     session[:async] ||= {}
@@ -248,6 +238,9 @@ class ApplicationController < ActionController::Base
 
     session[:async][:params]           = copy_hash(params)  # Save the incoming parms
     session[:async][:params][:task_id] = task_id
+
+    # override method to be called, when the task is done
+    session[:async][:params][:action] = options[:action] if options.key?(:action)
 
     browser_refresh_task(task_id)
   end
@@ -362,17 +355,14 @@ class ApplicationController < ActionController::Base
       if @sb[:active_tab] == "diagnostics_database"
         # coming from diagnostics/database tab
         pfx = "dbbackup"
-        flash_div_num = "database"
       end
     else
       if session[:edit] && session[:edit].key?(:pxe_id)
         # add/edit pxe server
         pfx = "pxe"
-        flash_div_num = ""
       else
         # add/edit dbbackup schedule
         pfx = "schedule"
-        flash_div_num = ""
       end
     end
 
@@ -395,17 +385,14 @@ class ApplicationController < ActionController::Base
         msg = _('Depot Settings successfuly validated')
         MiqSchedule.new.verify_file_depot(settings)
       end
-    rescue StandardError => bang
+    rescue => bang
       add_flash(_("Error during 'Validate': %{error_message}") % {:error_message => bang.message}, :error)
     else
       add_flash(msg)
     end
 
     @changed = (@edit[:new] != @edit[:current]) if pfx == "pxe"
-    render :update do |page|
-      page << javascript_prologue
-      page.replace("flash_msg_div#{flash_div_num}", :partial => "layouts/flash_msg", :locals => {:div_num => flash_div_num})
-    end
+    javascript_flash
   end
 
   # to reload currently displayed summary screen in explorer
@@ -422,18 +409,7 @@ class ApplicationController < ActionController::Base
   protected
 
   def render_flash(add_flash_text = nil, severity = nil)
-    add_flash(add_flash_text, severity) if add_flash_text
-    render :update do |page|
-      page << javascript_prologue
-      page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-      yield(page) if block_given?
-    end
-  end
-
-  def render_flash_and_scroll(*args)
-    render_flash(*args) do |page|
-      page << '$("#main_div").scrollTop(0);'
-    end
+    javascript_flash(:text => add_flash_text, :severity => severity)
   end
 
   def tagging_explorer_controller?
@@ -492,9 +468,12 @@ class ApplicationController < ActionController::Base
       end
     end
 
-    tree = TreeBuilderAeClass.new(name, type, @sb)
-    @automate_tree = tree.tree_nodes if name == :automate_tree
-    tree
+    if name == :ae_tree
+      TreeBuilderAeClass.new(name, type, @sb)
+    else
+      node_builder = TreeBuilderAutomate.select_node_builder(controller_name)
+      @automate_tree = TreeBuilderAutomate.new(name, type, @sb, true, :node_builder => node_builder)
+    end
   end
 
   # moved this method here so it can be accessed from pxe_server controller as well
@@ -643,7 +622,7 @@ class ApplicationController < ActionController::Base
   end
 
   def report_edit_aborted(lastaction)
-    add_flash(_("Edit aborted!  CFME does not support the browser's back button or access from multiple tabs or windows of the same browser.  Please close any duplicate sessions before proceeding."), :error)
+    add_flash(_("Edit aborted!  %{product} does not support the browser's back button or access from multiple tabs or windows of the same browser.  Please close any duplicate sessions before proceeding.") % {:product => I18n.t('product.name')}, :error)
     session[:flash_msgs] = @flash_array.dup
     if request.xml_http_request?  # Is this an Ajax request?
       if lastaction == "configuration"
@@ -652,9 +631,13 @@ class ApplicationController < ActionController::Base
       else
         redirect_to_action = lastaction
       end
-      render :update do |page|
-        page << javascript_prologue
-        page.redirect_to :action => redirect_to_action, :id => params[:id], :escape => false, :load_edit_err => true
+
+      # there's no model for ResourceController - defaulting to traditional routing
+      model = self.class.model rescue nil
+      if model && restful_routed?(model)
+        javascript_redirect polymorphic_path(model.find(params[:id]), :escape => false, :load_edit_err => true)
+      else
+        javascript_redirect :action => redirect_to_action, :id => params[:id], :escape => false, :load_edit_err => true
       end
     else
       redirect_to :action => lastaction, :id => params[:id], :escape => false
@@ -769,7 +752,7 @@ class ApplicationController < ActionController::Base
     user = current_user
     @sb[:grp_title] = reports_group_title
     @data = []
-    if (!group.settings || !group.settings[:report_menus] || group.settings[:report_menus].blank?) || mode == "default"
+    if !group.settings || group.settings[:report_menus].blank? || mode == "default"
       # array of all reports if menu not configured
       @rep = MiqReport.all.sort_by { |r| [r.rpt_type, r.filename.to_s, r.name] }
       if tree_type == "timeline"
@@ -924,6 +907,10 @@ class ApplicationController < ActionController::Base
           celltext = Dictionary.gettext(row[col], :type => :model, :notfound => :titleize)
         when 'approval_state'
           celltext = _(PROV_STATES[row[col]])
+        when "result"
+          new_row[:cells] << {:span => result_span_class(row[col]), :text => row[col].titleize}
+        when "severity"
+          new_row[:cells] << {:span => severity_span_class(row[col]), :text => row[col].titleize}
         when 'state'
           celltext = row[col].titleize
         when 'hardware.bitness'
@@ -936,7 +923,7 @@ class ApplicationController < ActionController::Base
           celltext = format_col_for_display(view, row, col, celltz || tz)
         end
 
-        new_row[:cells] << {:text => celltext}
+        new_row[:cells] << {:text => celltext} if celltext
       end
 
       if @row_button # Show a button in the last col
@@ -948,6 +935,28 @@ class ApplicationController < ActionController::Base
     end
 
     root
+  end
+
+  def result_span_class(value)
+    case value.downcase
+    when "pass"
+      "label label-success center-block"
+    when "fail"
+      "label label-danger center-block"
+    else
+      "label label-primary center-block"
+    end
+  end
+
+  def severity_span_class(value)
+    case value.downcase
+    when "high"
+      "label label-danger center-block"
+    when "medium"
+      "label label-warning center-block"
+    else
+      "label label-low-severity center-block"
+    end
   end
 
   def calculate_pct_img(val)
@@ -1042,13 +1051,18 @@ class ApplicationController < ActionController::Base
     else
       @title = new_bc [:name] # Set the title to be the new breadcrumb
     end
+
+    # Modify user feedback for quick searches when not found
+    unless @search_text.blank?
+      @title += _(" (Names with \"%{search_text}\")") % {:search_text => @search_text}
+    end
   end
 
   def handle_invalid_session(timed_out = nil)
     timed_out = PrivilegeCheckerService.new.user_session_timed_out?(session, current_user) if timed_out.nil?
     reset_session
 
-    session[:start_url] = request.url
+    session[:start_url] = request.url if request.method == "GET"
 
     respond_to do |format|
       format.html do
@@ -1060,10 +1074,7 @@ class ApplicationController < ActionController::Base
       end
 
       format.js do
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to :controller => 'dashboard', :action => 'login', :timeout => timed_out
-        end
+        javascript_redirect :controller => 'dashboard', :action => 'login', :timeout => timed_out
       end
     end
   end
@@ -1077,7 +1088,7 @@ class ApplicationController < ActionController::Base
     common_buttons = %w(rbac_project_add rbac_tenant_add)
     task = common_buttons.include?(params[:pressed]) ? rbac_common_feature_for_buttons(params[:pressed]) : params[:pressed]
     # Intentional single = so we can check auth later
-    rbac_free_for_custom_button?(task, params[:button_id]) || role_allows(:feature => task)
+    rbac_free_for_custom_button?(task, params[:button_id]) || role_allows?(:feature => task)
   end
 
   def handle_button_rbac
@@ -1092,7 +1103,7 @@ class ApplicationController < ActionController::Base
   def check_generic_rbac
     ident = "#{controller_name}_#{action_name}"
     if MiqProductFeature.feature_exists?(ident)
-      role_allows(:feature => ident, :any => true)
+      role_allows?(:feature => ident, :any => true)
     else
       true
     end
@@ -1102,10 +1113,7 @@ class ApplicationController < ActionController::Base
     pass = check_generic_rbac
     unless pass
       if request.xml_http_request?
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to(:controller => 'dashboard', :action => 'auth_error')
-        end
+        javascript_redirect :controller => 'dashboard', :action => 'auth_error'
       else
         redirect_to(:controller => 'dashboard', :action => 'auth_error')
       end
@@ -1404,12 +1412,12 @@ class ApplicationController < ActionController::Base
       end
     end
     if success_count > 0
-      add_flash(n_("Successfully deleted Saved Report from the CFME Database",
-                   "Successfully deleted Saved Reports from the CFME Database", success_count))
+      add_flash(n_("Successfully deleted Saved Report from the %{product} Database",
+                   "Successfully deleted Saved Reports from the %{product} Database", success_count) % {:product => I18n.t('product.name')})
     end
     if failure_count > 0
-      add_flash(n_("Error during Saved Report delete from the CFME Database",
-                   "Error during Saved Reports delete from the CFME Database", failure_count))
+      add_flash(n_("Error during Saved Report delete from the %{product} Database",
+                   "Error during Saved Reports delete from the %{product} Database", failure_count) % {:product => I18n.t('product.name')})
     end
   end
 
@@ -1474,7 +1482,7 @@ class ApplicationController < ActionController::Base
                "%#{stxt}%"
              end
 
-      if MiqServer.my_server.get_config("vmdb").config.fetch_path(:server, :case_sensitive_name_search)
+      if ::Settings.server.case_sensitive_name_search
         sub_filter = ["#{view.db_class.table_name}.#{view.col_order.first} like ? escape '`'", stxt]
       else
         # don't apply sub_filter when viewing sub-list view of a CI
@@ -1562,25 +1570,26 @@ class ApplicationController < ActionController::Base
     @items_per_page = controller_name.downcase == "miq_policy" ? ONE_MILLION : get_view_pages_perpage(dbname)
     @items_per_page = ONE_MILLION if 'vm' == db_sym.to_s && controller_name == 'service'
 
-    @current_page = options[:page] || (params[:page].blank? ? 1 : params[:page].to_i)
+    @current_page = options[:page] || ((params[:page].to_i < 1) ? 1 : params[:page].to_i)
 
     view.conditions = options[:conditions] # Get passed in conditions (i.e. tasks date filters)
 
     # Save the paged_view_search_options for download buttons to use later
     session[:paged_view_search_options] = {
-      :parent                => parent ? minify_ar_object(parent) : nil, # Make a copy of parent object (to avoid saving related objects)
-      :parent_method         => options[:parent_method],
-      :targets_hash          => true,
-      :association           => association,
-      :filter                => get_view_filter(options[:filter]),
-      :sub_filter            => get_view_process_search_text(view),
-      :page                  => options[:all_pages] ? 1 : @current_page,
-      :per_page              => options[:all_pages] ? ONE_MILLION : @items_per_page,
-      :where_clause          => get_view_where_clause(options[:where_clause]),
-      :named_scope           => options[:named_scope],
-      :display_filter_hash   => options[:display_filter_hash],
-      :userid                => session[:userid],
-      :match_via_descendants => options[:match_via_descendants]
+      :parent                    => parent ? minify_ar_object(parent) : nil, # Make a copy of parent object (to avoid saving related objects)
+      :parent_method             => options[:parent_method],
+      :targets_hash              => true,
+      :association               => association,
+      :filter                    => get_view_filter(options[:filter]),
+      :sub_filter                => get_view_process_search_text(view),
+      :supported_features_filter => options[:supported_features_filter],
+      :page                      => options[:all_pages] ? 1 : @current_page,
+      :per_page                  => options[:all_pages] ? ONE_MILLION : @items_per_page,
+      :where_clause              => get_view_where_clause(options[:where_clause]),
+      :named_scope               => options[:named_scope],
+      :display_filter_hash       => options[:display_filter_hash],
+      :userid                    => session[:userid],
+      :match_via_descendants     => options[:match_via_descendants]
     }
     # Call paged_view_search to fetch records and build the view.table and additional attrs
     view.table, attrs = view.paged_view_search(session[:paged_view_search_options])
@@ -1608,22 +1617,11 @@ class ApplicationController < ActionController::Base
   def get_view_where_clause(default_where_clause)
     # If doing charts, limit the records to ones showing in the chart
     if session[:menu_click] && session[:sandboxes][params[:sb_controller]][:chart_reports]
-      click_parts = session[:menu_click].split('_')
-      click_last  = click_parts.last.split('-')
-
+      click_parts = session[:menu_click]
       chart_reports = session[:sandboxes][params[:sb_controller]][:chart_reports]
-      legend_idx    = click_last.first.to_i
-      data_idx      = click_last[-2].to_i
-      chart_idx     = click_last.last.to_i
-
-      if Charting.backend == :ziya
-        legend_idx -= 1
-        data_idx   -= 1
-      end
-
-      _, model, typ = click_parts.first.split('-')
-      report        = chart_reports.kind_of?(Array) ? chart_reports[chart_idx] : chart_reports
-      data_row      = report.table.data[data_idx]
+      legend_idx, data_idx, chart_idx, _cmd, model, typ = parse_chart_click(Array(click_parts).first)
+      report = chart_reports.kind_of?(Array) ? chart_reports[chart_idx] : chart_reports
+      data_row = report.table.data[data_idx]
 
       if typ == "bytag"
         ["\"#{model.downcase.pluralize}\".id IN (?)",
@@ -1681,45 +1679,33 @@ class ApplicationController < ActionController::Base
   def render_or_redirect_partial(pfx)
     if @redirect_controller
       if ["#{pfx}_clone", "#{pfx}_migrate", "#{pfx}_publish"].include?(params[:pressed])
-        render :update do |page|
-          page << javascript_prologue
-          if flash_errors?
-            page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-          else
-            page.redirect_to :controller => @redirect_controller,
-                             :action     => @refresh_partial,
-                             :id         => @redirect_id,
-                             :prov_type  => @prov_type,
-                             :prov_id    => @prov_id
-          end
+        if flash_errors?
+          javascript_flash
+        else
+          javascript_redirect :controller => @redirect_controller,
+                              :action     => @refresh_partial,
+                              :id         => @redirect_id,
+                              :prov_type  => @prov_type,
+                              :prov_id    => @prov_id
         end
       else
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to :controller => @redirect_controller, :action => @refresh_partial, :id => @redirect_id
-        end
+        javascript_redirect :controller => @redirect_controller, :action => @refresh_partial, :id => @redirect_id
       end
     else
       if params[:pressed] == "ems_cloud_edit" && params[:id]
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to edit_ems_cloud_path(params[:id])
-        end
+        javascript_redirect edit_ems_cloud_path(params[:id])
       elsif params[:pressed] == "ems_infra_edit" && params[:id]
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to edit_ems_infra_path(params[:id])
-        end
+        javascript_redirect edit_ems_infra_path(params[:id])
       elsif params[:pressed] == "ems_container_edit" && params[:id]
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to edit_ems_container_path(params[:id])
-        end
+        javascript_redirect edit_ems_container_path(params[:id])
+      elsif params[:pressed] == "ems_middleware_edit" && params[:id]
+        javascript_redirect edit_ems_middleware_path(params[:id])
+      elsif params[:pressed] == "ems_network_edit" && params[:id]
+        javascript_redirect edit_ems_network_path(params[:id])
+      elsif %w(arbitration_profile_edit arbitration_profile_new).include?(params[:pressed]) && params[:id]
+        javascript_redirect :action => @refresh_partial, :id => params[:id], :show => @redirect_id
       else
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to :action => @refresh_partial, :id => @redirect_id
-        end
+        javascript_redirect :action => @refresh_partial, :id => @redirect_id
       end
     end
   end
@@ -1828,7 +1814,13 @@ class ApplicationController < ActionController::Base
     end
 
     vms = VmOrTemplate.where(:id => vm_ids)
-    vms.each { |vm| render_flash_not_applicable_to_model(typ) unless vm.is_available?(typ) }
+    vms.each do |vm|
+      if vm.respond_to?("supports_#{typ}?")
+        render_flash_not_applicable_to_model(typ) unless vm.send("supports_#{typ}?")
+      else
+        render_flash_not_applicable_to_model(typ) unless vm.is_available?(typ)
+      end
+    end
   end
 
   def prov_redirect(typ = nil)
@@ -1884,6 +1876,20 @@ class ApplicationController < ActionController::Base
       if typ
         prov_edit
       else
+        if %w(image_miq_request_new miq_template_miq_request_new).include?(params[:pressed])
+          # skip pre prov grid
+          set_pre_prov_vars
+          templates = find_checked_items
+          templates = [params[:id]] if templates.blank?
+
+          template = VmOrTemplate.find_by_id(from_cid(templates.first))
+          render_flash_not_applicable_to_model("provisioning") unless template.supports_provisioning?
+          return if performed?
+
+          @edit[:src_vm_id] = templates.first
+          session[:edit] = @edit
+          @_params[:button] = "continue"
+        end
         vm_pre_prov
       end
     end
@@ -1891,6 +1897,7 @@ class ApplicationController < ActionController::Base
   alias_method :image_miq_request_new, :prov_redirect
   alias_method :instance_miq_request_new, :prov_redirect
   alias_method :vm_miq_request_new, :prov_redirect
+  alias_method :miq_template_miq_request_new, :prov_redirect
 
   def vm_clone
     prov_redirect("clone")
@@ -1908,41 +1915,17 @@ class ApplicationController < ActionController::Base
     prov_redirect("publish")
   end
 
-  def remember_tab_url(inbound_url)
-    # Customize URLs for controllers that don't use breadcrumbs
-    case controller_name
-    when "dashboard", "report", "alert", "chargeback"
-      session[:tab_url][:vi] = inbound_url if ["show", "show_list", "timeline", "jobs", "ui_jobs", "usage", "chargeback", "explorer"].include?(action_name)
-    when "support"
-      session[:tab_url][:set] = inbound_url if ["index"].include?(action_name)
-    when "configuration", "miq_task", "ops"
-      session[:tab_url][:set] = inbound_url if ["explorer", "index"].include?(action_name)
-    when "miq_ae_tools", "miq_ae_class", "miq_ae_customization"
-      session[:tab_url][:aut] = inbound_url if ["explorer", "resolve", "index", "explorer", "log", "import_export", "automate_button"].include?(action_name)
-    when "miq_policy" # Only grab controller and action for policy URLs
-      session[:tab_url][:con] = {:controller => controller_name, :action => action_name} if ["explorer", "rsop", "export", "log"].include?(action_name)
-    when "miq_capacity"
-      session[:tab_url][:opt] = inbound_url if ["utilization", "planning", "bottlenecks", "waste"].include?(action_name)
-    when "catalog", "vm", "vm_or_template", "miq_template", "service"
-      session[:tab_url][:svc] = inbound_url if ["show", "show_list", "explorer"].include?(action_name)
-    when "availability_zone", "ems_cloud", "flavor", "vm_cloud", "orchestration_stack"
-      session[:tab_url][:compute] = session[:tab_url][:clo] = inbound_url if ["show", "show_list", "explorer"].include?(action_name)
-    when "ems_cluster", "ems_infra", "host", "pxe", "resource_pool", "storage", "vm_infra"
-      session[:tab_url][:compute] = session[:tab_url][:inf] = inbound_url if ["show", "show_list", "explorer"].include?(action_name)
-    when "container", "container_group", "container_node", "container_service", "ems_container",
-         "container_route", "container_project", "container_replicator", "persistent_volume",
-         "container_image_registry", "container_image", "container_topology", "container_dashboard",
-         "container_build"
-      session[:tab_url][:compute] = session[:tab_url][:cnt] = inbound_url if %w(explorer show show_list).include?(action_name)
-    when "ems_network", "cloud_network", "cloud_subnet", "network_router", "security_group", "floating_ip"
-      session[:tab_url][:net] = inbound_url if %w(show show_list).include?(action_name)
-    when "ems_middleware", "middleware_server", "middleware_deployment", "middleware_datasource", "middleware_topology"
-      session[:tab_url][:mdl] = inbound_url if %w(show show_list).include?(action_name)
-    when "miq_request"
-      session[:tab_url][:svc] = inbound_url if ["index"].include?(action_name) && request.parameters["typ"] == "vm"
-      session[:tab_url][:compute] = session[:tab_url][:inf] = inbound_url if ["index"].include?(action_name) && request.parameters["typ"] == "host"
-    when "provider_foreman"
-      session[:tab_url][:conf] = inbound_url if %w(show explorer).include?(action_name)
+  def remember_tab
+    section_id = menu_section_id(params)
+    return if section_id.nil?
+
+    section = Menu::Manager.section(section_id)
+    return if section.nil?
+
+    url = URI.parse(request.url).path
+
+    section.parent_path.each do |sid|
+      session[:tab_url][sid] = url
     end
   end
 
@@ -1968,9 +1951,6 @@ class ApplicationController < ActionController::Base
     # Get performance hash, if it is in the sandbox for the running controller
     @perf_options = @sb[:perf_options] ? copy_hash(@sb[:perf_options]) : {}
 
-    # Set window height for views to use
-    @winH = session[:winH] ? session[:winH].to_i : 805
-
     # Set @edit key default for the expression editor to use
     @expkey = session[:expkey] ? session[:expkey] : :expression
 
@@ -1983,30 +1963,7 @@ class ApplicationController < ActionController::Base
     session[:host_url] = request.host_with_port
     session[:tab_url] ||= {}
 
-    unless request.xml_http_request?  # Don't capture ajax URLs
-      # Capture current top tab bar URLs as they come in
-      if action_name == "explorer" # For explorers, don't capture any parms, nil out id
-        inbound_url = {
-          :controller => controller_name,
-          :action     => action_name,
-          :id         => nil}
-      else
-        inbound_url = {
-          :controller  => controller_name,
-          :action      => action_name,
-          :id          => request.parameters["id"],
-          :display     => request.parameters["display"],
-          :role        => request.parameters["role"],
-          :config_tab  => request.parameters["config_tab"],
-          :support_tab => request.parameters["support_tab"],
-          :rpt_group   => request.parameters["rpt_group"],
-          :rpt_index   => request.parameters["rpt_index"],
-          :typ         => request.parameters["typ"]
-        }
-      end
-
-      remember_tab_url(inbound_url)
-    end
+    remember_tab if !request.xml_http_request? && request.get? && request.format == Mime[:html] && request.headers['X-Angular-Request'].nil?
 
     # Get all of the global variables used by most of the controllers
     @pp_choices = PPCHOICES
@@ -2162,7 +2119,7 @@ class ApplicationController < ActionController::Base
 
       when "ontap_storage_system", "ontap_logical_disk", "cim_base_storage_extent", "ontap_storage_volume", "ontap_file_share", "snia_local_file_system", "storage_manager"
         session[:tab_bc][:sto] = @breadcrumbs.dup if ["show", "show_list", "index"].include?(action_name)
-      when "ems_cloud", "availability_zone", "flavor"
+      when "ems_cloud", "availability_zone", "host_aggregate", "flavor"
         session[:tab_bc][:clo] = @breadcrumbs.dup if ["show", "show_list"].include?(action_name)
       when "ems_infra", "datacenter", "ems_cluster", "resource_pool", "storage", "pxe_server"
         session[:tab_bc][:inf] = @breadcrumbs.dup if ["show", "show_list"].include?(action_name)
@@ -2225,9 +2182,9 @@ class ApplicationController < ActionController::Base
     @sb[:detail_sortdir] = @detail_sortdir
 
     @sb[:tree_hosts_hash] = nil if !%w(ems_folders descendant_vms).include?(params[:display]) &&
-                                   !%w(treesize tree_autoload_dynatree tree_autoload_quads).include?(params[:action])
+                                   !%w(treesize tree_autoload).include?(params[:action])
     @sb[:tree_vms_hash] = nil if !%w(ems_folders descendant_vms).include?(params[:display]) &&
-                                 !%w(treesize tree_autoload_dynatree tree_autoload_quads).include?(params[:action])
+                                 !%w(treesize tree_autoload).include?(params[:action])
 
     # Set/clear sandbox (@sb) per controller in the session object
     session[:sandboxes] ||= HashWithIndifferentAccess.new
@@ -2240,17 +2197,16 @@ class ApplicationController < ActionController::Base
     end
 
     # Clearing out session objects that are no longer needed
-    session[:myco_tree] = session[:hac_tree] = session[:vat_tree] = nil if controller_name != "ops"
+    session[:hac_tree] = session[:vat_tree] = nil if controller_name != "ops"
     session[:ch_tree] = nil if !["compliance_history"].include?(params[:display]) && params[:action] != "treesize" && params[:action] != "squash_toggle"
     session[:vm_tree] = nil if !["vmtree_info"].include?(params[:display]) && params[:action] != "treesize"
     session[:policy_tree] = nil if params[:action] != "policies" && params[:pressed] != "vm_protect" && params[:action] != "treesize"
     session[:resolve] = session[:resolve_object] = nil unless ["catalog", "miq_ae_customization", "miq_ae_tools"].include?(request.parameters[:controller])
     session[:report_menu] = session[:report_folders] = session[:menu_roles_tree] = nil if controller_name != "report"
-    session[:rsop_tree] = nil if controller_name != "miq_policy"
     if session.class != Hash
       session_hash = session.respond_to?(:to_hash) ? session.to_hash : session.data
       get_data_size(session_hash)
-      dump_session_data(session_hash) if get_vmdb_config[:product][:dump_session]
+      dump_session_data(session_hash) if ::Settings.product.dump_session
     end
   end
 
@@ -2258,37 +2214,33 @@ class ApplicationController < ActionController::Base
   def find_by_id_filtered(db, id)
     raise _("Invalid input") unless is_integer?(id)
 
-    unless db.where(:id => from_cid(id)).exists?
+    db_obj = db.find_by(:id => from_cid(id))
+    if db_obj.nil?
       msg = _("Selected %{model_name} no longer exists") % {:model_name => ui_lookup(:model => db.to_s)}
       raise msg
     end
 
-    Rbac.filtered(db, :conditions => ["#{db.table_name}.id = ?", id], :user => current_user).first ||
+    Rbac.filtered_object(db_obj, :user => current_user) ||
       raise(_("User '%{user_id}' is not authorized to access '%{model}' record id '%{record_id}'") %
               {:user_id   => current_userid,
                :record_id => id,
                :model     => ui_lookup(:model => db.to_s)})
   end
 
-  def find_filtered(db, options = {})
+  def find_filtered(db)
     user     = current_user
     mfilters = user ? user.get_managed_filters : []
     bfilters = user ? user.get_belongsto_filters : []
 
     if db.respond_to?(:find_tags_by_grouping) && !mfilters.empty?
-      result = db.where(options[:conditions]).find_tags_by_grouping(mfilters, :ns => "*")
+      result = db.find_tags_by_grouping(mfilters, :ns => "*")
     else
-      result = db.apply_legacy_finder_options(options)
+      result = db.all
     end
 
     result = MiqFilter.apply_belongsto_filters(result, bfilters) if db.respond_to?(:apply_belongsto_filters) && result
 
     result
-  end
-
-  def ruport_ize_filtered(report, options = {})
-    options[:tag_filters] = current_user.try(:get_filters) || []
-    report.ruport_ize!(options)
   end
 
   VISIBILITY_TYPES = {'role' => 'role', 'group' => 'group', 'all' => 'all'}
@@ -2327,7 +2279,7 @@ class ApplicationController < ActionController::Base
       begin
         authrec = find_by_id_filtered(model.constantize, id)
       rescue ActiveRecord::RecordNotFound
-      rescue StandardError => @bang
+      rescue => @bang
       end
     end
     if rec.nil?
@@ -2342,8 +2294,8 @@ class ApplicationController < ActionController::Base
 
   def get_record_display_name(record)
     return record.label                      if record.respond_to?("label")
-    return record.ext_management_system.name if record.respond_to?("ems_id")
     return record.description                if record.respond_to?("description") && !record.description.nil?
+    return record.ext_management_system.name if record.respond_to?("ems_id")
     return record.title                      if record.respond_to?("title")
     return record.name                       if record.respond_to?("name")
     "<Record ID #{record.id}>"
@@ -2355,7 +2307,12 @@ class ApplicationController < ActionController::Base
 
   def assert_privileges(feature)
     raise MiqException::RbacPrivilegeException,
-          _("The user is not authorized for this task or item.") unless role_allows(:feature => feature)
+          _("The user is not authorized for this task or item.") unless role_allows?(:feature => feature)
+  end
+
+  def assert_rbac(user, klass, ids)
+    filtered, _ = Rbac.search(:targets => ids.map(&:to_i), :user => user, :class => klass, :results_format => :ids)
+    raise _("Unauthorized object or action") unless ids.length == filtered.length
   end
 
   def previous_breadcrumb_url
@@ -2395,7 +2352,7 @@ class ApplicationController < ActionController::Base
     add_flash(_("%{task} does not apply to at least one of the selected %{model}") %
                 {:model => model_type,
                  :task  => type.split.map(&:capitalize).join(' ')}, :error)
-    render_flash_and_scroll if @explorer
+    javascript_flash(:scroll_top => true) if @explorer
   end
 
   def set_gettext_locale
@@ -2404,9 +2361,7 @@ class ApplicationController < ActionController::Base
                                                       user_settings.key?(:display) &&
                                                       user_settings[:display].key?(:locale)
     if user_locale == 'default' || user_locale.nil?
-      unless MiqServer.my_server.nil?
-        server_locale = MiqServer.my_server.get_config("vmdb").config.fetch_path(:server, :locale)
-      end
+      server_locale = ::Settings.server.locale
       # user settings && server settings == 'default'
       # OR not defined
       # use HTTP_ACCEPT_LANGUAGE
@@ -2448,6 +2403,16 @@ class ApplicationController < ActionController::Base
       self.x_active_accord ||= feature.accord_name
     end
     get_node_info(x_node)
+  end
+
+  # reset node to root node when previously viewed item no longer exists
+  def set_root_node
+    self.x_node = "root"
+    get_node_info(x_node)
+  end
+
+  def clear_flash_msg
+    @flash_array = nil if params[:button] != "reset"
   end
 
   def build_accordions_and_trees

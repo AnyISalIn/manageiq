@@ -27,10 +27,16 @@ class ApplicationHelper::Toolbar::EmsCloudCenter < ApplicationHelper::Toolbar::B
         button(
           :ems_cloud_delete,
           'pficon pficon-delete fa-lg',
-          t = N_('Remove this Cloud Provider from the VMDB'),
+          t = N_('Remove this Cloud Provider'),
           t,
           :url_parms => "&refresh=y",
-          :confirm   => N_("Warning: This Cloud Provider and ALL of its components will be permanently removed from the Virtual Management Database.  Are you sure you want to remove this Cloud Provider?")),
+          :confirm   => N_("Warning: This Cloud Provider and ALL of its components will be permanently removed!")),
+        separator,
+        button(
+          :arbitration_profile_new,
+          'pficon pficon-edit fa-lg',
+          t = N_('Add a new Arbitration Profile to this Cloud Provider'),
+          t),
       ]
     ),
   ])
@@ -83,7 +89,8 @@ class ApplicationHelper::Toolbar::EmsCloudCenter < ApplicationHelper::Toolbar::B
           'fa fa-search fa-lg',
           N_('Re-check Authentication Status for this Cloud Provider'),
           N_('Re-check Authentication Status'),
-          :klass => ApplicationHelper::Button::EmsCloudRecheckAuthStatus),
+          :klass => ApplicationHelper::Button::GenericFeatureButton,
+          :options => {:feature => :authentication_status}),
       ]
     ),
   ])

@@ -51,10 +51,7 @@ module OpsController::Settings::Ldap
       end
 
       if @flash_array
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
         return
       end
 
@@ -77,10 +74,7 @@ module OpsController::Settings::Ldap
           add_flash("#{field.to_s.capitalize} #{msg}", :error)
         end
         @changed = session[:changed] = (@edit[:new] != @edit[:current])
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
       end
     when "reset", nil # Reset or first time in
       obj = find_checked_items
@@ -115,19 +109,13 @@ module OpsController::Settings::Ldap
       ldap_regions = find_checked_items
       if ldap_regions.empty?
         add_flash(_("No %{model} were selected for deletion") % {:model => ui_lookup(:tables => "ldap_region")}, :error)
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
       end
       process_ldap_regions(ldap_regions, "destroy") unless ldap_regions.empty?
     else # showing 1 ldap_region, delete it
       if params[:id].nil? || LdapRegion.find_by_id(params[:id]).nil?
         add_flash(_("%{table} no longer exists") % {:table => ui_lookup(:table => "ldap_region")}, :error)
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
       else
         ldap_regions.push(params[:id])
       end
@@ -154,15 +142,12 @@ module OpsController::Settings::Ldap
       @in_a_form = true
       begin
         ldap_server.verify_credentials
-      rescue StandardError => bang
-        add_flash("#{bang}", :error)
+      rescue => bang
+        add_flash(bang.to_s, :error)
       else
         add_flash(_("Credential validation was successful"))
       end
-      render :update do |page|
-        page << javascript_prologue
-        page.replace("flash_msg_div_entries", :partial => "layouts/flash_msg", :locals => {:div_num => "entries"})
-      end
+      javascript_flash
     elsif params[:button] == "cancel"
       @ldap_domain = session[:edit][:ldap_domain] if session[:edit] && session[:edit][:ldap_domain]
       if !@ldap_domain || @ldap_domain.id.blank?
@@ -187,10 +172,7 @@ module OpsController::Settings::Ldap
       end
 
       if @flash_array
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
         return
       end
 
@@ -211,10 +193,7 @@ module OpsController::Settings::Ldap
           add_flash("#{field.to_s.capitalize} #{msg}", :error)
         end
         @changed = session[:changed] = (@edit[:new] != @edit[:current])
-        render :update do |page|
-          page << javascript_prologue
-          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-        end
+        javascript_flash
       end
     elsif params[:accept]
       id = params[:id] ? params[:id] : "new"
@@ -224,11 +203,7 @@ module OpsController::Settings::Ldap
         server = {}
         server[:hostname] = params[:entry][:hostname]
         if params[:entry][:hostname] == ""
-          add_flash(_("Hostname is required"), :error)
-          render :update do |page|
-            page << javascript_prologue
-            page.replace("flash_msg_div_entries", :partial => "layouts/flash_msg", :locals => {:div_num => "entries"})
-          end
+          render_flash(_("Hostname is required"), :error)
           return
         else
           server[:mode] = params[:entry_mode]
@@ -308,10 +283,7 @@ module OpsController::Settings::Ldap
     ldap_domains = []
     if params[:id].nil? || LdapDomain.find_by_id(params[:id]).nil?
       add_flash(_("%{table} no longer exists") % {:table => ui_lookup(:table => "ldap_domain")}, :error)
-      render :update do |page|
-        page << javascript_prologue
-        page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-      end
+      javascript_flash
     else
       ldap_domains.push(params[:id])
     end
@@ -394,7 +366,7 @@ module OpsController::Settings::Ldap
 
     @edit[:new][:name] = @ldap_region.name
     @edit[:new][:description] = @ldap_region.description
-    @edit[:new][:zone_id] = @ldap_region.zone ? @ldap_region.zone.id : nil
+    @edit[:new][:zone_id] = @ldap_region.zone.try(:id)
     @edit[:zones] = Zone.all.sort_by { |z| z.name.to_s }.collect { |z| [z.name, z.id] }
     @edit[:current] = copy_hash(@edit[:new])
     session[:edit] = @edit

@@ -56,14 +56,14 @@ module UiConstants
 
   # Per page choices and default
   PPCHOICES = [
-    [5, 5],
-    [10, 10],
-    [20, 20],
-    [50, 50],
-    [100, 100],
-    [200, 200],
-    [500, 500],
-    [1000, 1000]
+    [N_("5 items"), 5],
+    [N_("10 items"), 10],
+    [N_("20 items"), 20],
+    [N_("50 items"), 50],
+    [N_("100 items"), 100],
+    [N_("200 items"), 200],
+    [N_("500 items"), 500],
+    [N_("1000 items"), 1000]
   ]
 
   # Per page choices for task/jobs
@@ -169,6 +169,7 @@ module UiConstants
     :views     => { # List view setting, by resource type
       :authkeypaircloud                         => "list",
       :availabilityzone                         => "list",
+      :hostaggregate                            => "list",
       :catalog                                  => "list",
       :cm_providers                             => "list",
       :cm_configured_systems                    => "list",
@@ -186,12 +187,14 @@ module UiConstants
       :containerimageregistry                   => "list",
       :persistentvolume                         => "list",
       :containerbuild                           => "list",
+      :containertemplate                        => "list",
       :cimbasestorageextent                     => "list",
       :cimstorageextent                         => "list",
       :cloudobjectstorecontainer                => "list",
       :cloudobjectstoreobject                   => "list",
       :cloudtenant                              => "list",
       :cloudvolume                              => "list",
+      :cloudvolumebackup                        => "list",
       :cloudvolumesnapshot                      => "list",
       :drift                                    => "expanded",
       :drift_mode                               => "details",
@@ -209,9 +212,13 @@ module UiConstants
       :manageiq_providers_inframanager_vm       => "grid",
       :manageiq_providers_inframanager_template => "list",
       :manageiq_providers_middlewaremanager     => "grid",
-      :middlewareserver                         => "list",
-      :middlewaredeployment                     => "list",
+      :manageiq_providers_storagemanager        => "list",
       :middlewaredatasource                     => "list",
+      :middlewaredeployment                     => "list",
+      :middlewaredomain                         => "list",
+      :middlewaremessaging                      => "list",
+      :middlewareserver                         => "list",
+      :middlewareservergroup                    => "list",
       :miqaction                                => "list",
       :miqaeclass                               => "list",
       :miqaeinstance                            => "list",
@@ -263,7 +270,8 @@ module UiConstants
       :vmcompare     => "Compressed",     # Start VM compare and drift in compressed mode
       :hostcompare   => "Compressed",     # Start Host compare in compressed mode
       :nav_style     => NAV_STYLES.first,  # Navigation style
-      :timezone      => nil               # This will be set when the user logs in
+      :timezone      => nil,               # This will be set when the user logs in
+      :display_vms   => false # don't display vms by default
     },
     # Commented in sprint 67 - new widget based dashboards
     #    :dashboard => {
@@ -380,7 +388,6 @@ module UiConstants
   NOTHING_STRING = "<<< Nothing >>>"
   SHOWALL_STRING = "<<< Show All >>>"
   MAX_REPORT_COLUMNS = 100      # Default maximum number of columns in a report
-  BAND_UNITS = ["Second", "Minute", "Hour", "Day", "Week", "Month", "Year", "Decade"]
   GRAPH_MAX_COUNT = 10
 
   TREND_MODEL = "VimPerformanceTrend"   # Performance trend model name requiring special processing
@@ -512,6 +519,9 @@ module UiConstants
                                end,
     "vm-tags"               => PostponedTranslation.new(N_("Tagged %{tables}")) do
                                  {:tables => ui_lookup(:tables => "vm")}
+                               end,
+    "container_image-tags"  => PostponedTranslation.new(N_("Tagged %{tables}")) do
+                                 {:tables => ui_lookup(:tables => "container_image")}
                                end,
     "tenant"                => N_("Tenants")
   }

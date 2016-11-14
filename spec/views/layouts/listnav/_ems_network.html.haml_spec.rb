@@ -1,11 +1,11 @@
-include QuadiconHelper
-
 describe "layouts/listnav/_ems_network.html.haml" do
+  helper(QuadiconHelper)
+
   before :each do
     set_controller_for_view("ems_network")
     assign(:panels, "ems_prop" => true, "ems_rel" => true)
     allow(view).to receive(:truncate_length).and_return(15)
-    allow(view).to receive(:role_allows).and_return(true)
+    allow(view).to receive(:role_allows?).and_return(true)
   end
 
   %w(openstack amazon google).each do |t|
@@ -32,8 +32,8 @@ describe "layouts/listnav/_ems_network.html.haml" do
       it "relationships links uses restful path in #{t.camelize}" do
         @record = @provider.network_manager
         render
-        expect(response).to include("href=\"/ems_network/show/#{@record.id}?display=main\">Summary")
-        expect(response).to include("href=\"/ems_network/show/#{@record.id}?display=security_groups\">Security Groups (1)")
+        expect(response).to include("href=\"/ems_network/#{@record.id}?display=main\">Summary")
+        expect(response).to include("href=\"/ems_network/#{@record.id}?display=security_groups\">Security Groups (1)")
       end
     end
   end

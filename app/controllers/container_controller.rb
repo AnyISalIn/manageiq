@@ -20,27 +20,12 @@ class ContainerController < ApplicationController
     return if ["custom_button"].include?(params[:pressed])
   end
 
-  def whitelisted_action(action)
-    raise ActionController::RoutingError.new('invalid button action') unless
-      CONTAINER_X_BUTTON_ALLOWED_ACTIONS.key?(action)
-
-    send_action = CONTAINER_X_BUTTON_ALLOWED_ACTIONS[action]
-    if [:container_tag].include?(send_action)
-      send(send_action, 'Container')
-    else
-      send(send_action)
-    end
-    send_action
-  end
-  private :whitelisted_action
-
   def x_button
     @explorer = true
 
     model, action = pressed2model_action(params[:pressed])
-    @sb[:action] = action
 
-    performed_action = whitelisted_action(params[:pressed])
+    performed_action = generic_x_button(CONTAINER_X_BUTTON_ALLOWED_ACTIONS)
     return if [:container_delete, :container_edit].include?(performed_action)
 
     if @refresh_partial
@@ -49,10 +34,7 @@ class ContainerController < ApplicationController
       unless @flash_array
         add_flash(_("Button not yet implemented %{model}: %{action}") % {:model => model, :action => action}, :error)
       end
-      render :update do |page|
-        page << javascript_prologue
-        page.replace("flash_msg_div", :partial => "layouts/flash_msg")
-      end
+      javascript_flash
     end
   end
 
@@ -119,6 +101,7 @@ class ContainerController < ApplicationController
     session.delete(:exp_parms)
     @in_a_form = false
     render :layout => "application"
+    process_show_list(:where_clause => 'containers.deleted_on IS NULL')
   end
 
   def identify_container(id = nil)
@@ -129,19 +112,7 @@ class ContainerController < ApplicationController
   def x_show
     get_tagdata(Container.find_by_id(from_cid(params[:id])))
     identify_container(from_cid(params[:id]))
-    respond_to do |format|
-      format.js do                  # AJAX, select the node
-        @explorer = true
-        params[:id] = x_build_node_id(@record, x_tree(:containers_tree))  # Get the tree node id
-        tree_select
-      end
-      format.html do                # HTML, redirect to explorer
-        tree_node_id = TreeBuilder.build_node_id(@record)
-        session[:exp_parms] = {:id => tree_node_id}
-        redirect_to :action => "explorer"
-      end
-      format.any { head :not_found }
-    end
+    generic_x_show(x_tree(:containers_tree))
   end
 
   # Tree node selected in explorer
@@ -150,7 +121,7 @@ class ContainerController < ApplicationController
 
     @lastaction = "explorer"
     self.x_node = params[:id]
-    @nodetype, id = params[:id].split("_").last.split("-")
+    @nodetype, id = parse_nodetype_and_id(params[:id])
 
     if x_tree[:type] == :containers_filter && TreeBuilder.get_model_for_prefix(@nodetype) != "Container"
       search_id = @nodetype == "root" ? 0 : from_cid(id)
@@ -166,15 +137,6 @@ class ContainerController < ApplicationController
       end
     end
 
-    replace_right_cell
-  end
-
-  # Accordion selected in explorer
-  def accordion_select
-    @layout     = "explorer"
-    @lastaction = "explorer"
-    self.x_active_accord = params[:id].sub(/_accord$/, '')
-    self.x_active_tree   = "#{self.x_active_accord}_tree"
     replace_right_cell
   end
 
@@ -199,7 +161,7 @@ class ContainerController < ApplicationController
   # Get all info for the node about to be displayed
   def get_node_info(treenodeid)
     @show_adv_search = true
-    @nodetype, id = valid_active_node(treenodeid).split("_").last.split("-")
+    @nodetype, id = parse_nodetype_and_id(valid_active_node(treenodeid))
     # resetting action that was stored during edit to determine what is being edited
     @sb[:action] = nil
     if x_node == "root" || TreeBuilder.get_model_for_prefix(@nodetype) == "MiqSearch"
@@ -252,7 +214,7 @@ class ContainerController < ApplicationController
     partial, action_url, @right_cell_text = set_right_cell_vars(action) if action
     get_node_info(x_node) if !@in_a_form && !params[:display]
     replace_trees = @replace_trees if @replace_trees  # get_node_info might set this
-    type, = x_node.split("_").last.split("-")
+    type, = parse_nodetype_and_id(x_node)
     trees = {}
     if replace_trees
       trees[:containers] = build_containers_tree if replace_trees.include?(:containers)
@@ -318,19 +280,19 @@ class ContainerController < ApplicationController
 
     presenter.set_visibility(h_tb.present? || c_tb.present? || v_tb.present?, :toolbar)
 
-    presenter[:record_id] = @record ? @record.id : nil
+    presenter[:record_id] = @record.try(:id)
 
     # Hide/show searchbox depending on if a list is showing
     presenter.set_visibility(!(@record || @in_a_form), :adv_searchbox_div)
-    presenter[:clear_search_show_or_hide] = clear_search_show_or_hide
+    presenter[:clear_search_toggle] = clear_search_status
 
     presenter[:osf_node] = x_node  # Open, select, and focus on this node
 
     presenter.hide(:blocker_div) unless @edit && @edit[:adv_search_open]
     presenter.hide(:quicksearchbox)
-    presenter[:lock_unlock_trees][x_active_tree] = @in_a_form && @edit
-    # Render the JS responses to update the explorer screen
-    render :js => presenter.to_html
+    presenter.lock_tree(x_active_tree, @in_a_form && @edit)
+
+    render :json => presenter.for_render
   end
 
   # Build a Containers explorer tree
@@ -349,4 +311,6 @@ class ContainerController < ApplicationController
   def tagging_explorer_controller?
     @explorer
   end
+
+  menu_section :cnt
 end

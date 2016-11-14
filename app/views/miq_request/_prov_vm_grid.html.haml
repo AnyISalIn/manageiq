@@ -31,6 +31,7 @@
             %td
             %td
             %td
+            %td
             - if @edit[:vm_headers].key? 'cloud_tenant'
               %td
 
@@ -52,13 +53,15 @@
             %td
               = h(number_to_human_size(row.allocated_disk_storage))
             %td
+              = h(row.deprecated)
+            %td
               - if row.ext_management_system
                 = h(row.ext_management_system.name)
             %td
               = h(row.v_total_snapshots)
             - if @edit[:vm_headers].key? 'cloud_tenant'
               %td
-                = h(row.cloud_tenant)
+                = h(row.cloud_tenant ? row.cloud_tenant.name : _('None'))
   - elsif @vm
     -# grid with only one record for Redhat provisioning
     %table.table.table-striped.table-bordered.table-selectable
@@ -89,7 +92,7 @@
             = h(@vm.v_total_snapshots)
           - if @edit[:vm_headers].key? 'cloud_tenant'
             %td
-              = h(@vm.cloud_tenant)
+              = h(@vm.cloud_tenant.name)
 
 :javascript
   miqScrollToSelected('prov_vm_div')

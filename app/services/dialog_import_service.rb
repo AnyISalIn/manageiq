@@ -62,25 +62,6 @@ class DialogImportService
     queue_deletion(import_file_upload.id)
   end
 
-  private
-
-  def create_import_file_upload(file_contents)
-    ImportFileUpload.create.tap do |import_file_upload|
-      import_file_upload.store_binary_data_as_yml(file_contents, "Service dialog import")
-    end
-  end
-
-  def import_from_dialogs(dialogs)
-    raise ParsedNonDialogYamlError if dialogs.empty?
-
-    dialogs.each do |dialog|
-      new_or_existing_dialog = Dialog.where(:label => dialog["label"]).first_or_create
-      new_or_existing_dialog.update_attributes(dialog.merge("dialog_tabs" => build_dialog_tabs(dialog)))
-    end
-  rescue DialogFieldImporter::InvalidDialogFieldTypeError
-    raise
-  end
-
   def build_dialog_tabs(dialog)
     dialog["dialog_tabs"].collect do |dialog_tab|
       DialogTab.create(dialog_tab.merge("dialog_groups" => build_dialog_groups(dialog_tab)))
@@ -97,6 +78,31 @@ class DialogImportService
     dialog_group["dialog_fields"].collect do |dialog_field|
       @dialog_field_importer.import_field(dialog_field)
     end
+  end
+
+  def import(dialog)
+    @dialog_import_validator.determine_dialog_validity(dialog)
+    new_dialog = Dialog.create(dialog.except('dialog_tabs'))
+    new_dialog.update!(dialog.merge('dialog_tabs' => build_dialog_tabs(dialog)))
+    new_dialog
+  end
+
+  private
+
+  def create_import_file_upload(file_contents)
+    ImportFileUpload.create.tap do |import_file_upload|
+      import_file_upload.store_binary_data_as_yml(file_contents, "Service dialog import")
+    end
+  end
+
+  def import_from_dialogs(dialogs)
+    raise ParsedNonDialogYamlError if dialogs.empty?
+    dialogs.each do |dialog|
+      new_or_existing_dialog = Dialog.where(:label => dialog["label"]).first_or_create
+      new_or_existing_dialog.update_attributes(dialog.merge("dialog_tabs" => build_dialog_tabs(dialog)))
+    end
+  rescue DialogFieldImporter::InvalidDialogFieldTypeError
+    raise
   end
 
   def dialog_with_label?(label)

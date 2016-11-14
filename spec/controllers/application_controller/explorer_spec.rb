@@ -44,7 +44,7 @@ describe VmInfraController do
         user.current_group.entitlement.set_managed_filters([["/managed/service_level/gold"]])
         user.current_group.save
         login_as user
-        expect(controller.send(:rbac_filtered_objects, [ems_folder], :match_via_descendants => "VmOrTemplate")).to(
+        expect(Rbac.filtered([ems_folder], :match_via_descendants => "VmOrTemplate")).to(
           eq([ems_folder]))
       end
     end
@@ -110,9 +110,11 @@ describe ReportController do
       TreeBuilderReportWidgets.new('widgets_tree', 'widgets', {})
       nodes = controller.send(:tree_add_child_nodes, 'xx-r')
       expected = [{:key     => "-#{controller.to_cid(widget.id)}",
-                   :title   => "Foo",
-                   :icon    => ActionController::Base.helpers.image_path('100/report_widget.png'),
-                   :tooltip => "Foo"}]
+                   :text    => "Foo",
+                   :image   => ActionController::Base.helpers.image_path('100/report_widget.png'),
+                   :tooltip => "Foo",
+                   :state   => {:expanded => false},
+                   :class   => ""}]
       expect(nodes).to eq(expected)
     end
   end

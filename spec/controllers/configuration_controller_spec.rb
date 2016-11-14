@@ -13,16 +13,27 @@ describe ConfigurationController do
     end
   end
 
-  context "#timeprofile_get_form_vars" do
-    before do
-      timeprofile = FactoryGirl.create(:time_profile)
-      @request.session = {:edit => {:new         => {:profile_type => 'Not a user'},
-                                    :userid      => 1234,
-                                    :timeprofile_id => timeprofile.id}}
+  describe "building tabs" do
+    before(:each) do
+      controller.instance_variable_set(:@tabform, "ui_2")
+      controller.instance_variable_set(:@config_tab, "ui")
     end
-    it 'sets @timeprofile' do
-      controller.send(:timeprofile_get_form_vars)
-      expect(controller.instance_variable_get(:@timeprofile)).to be_a_kind_of(TimeProfile)
+
+    it 'sets the active tab' do
+      controller.send(:build_tabs)
+      expect(assigns(:active_tab)).to eq("2")
+    end
+
+    it 'sets the available tabs' do
+      allow(controller).to receive(:role_allows?).and_return(true)
+      controller.send(:build_tabs)
+
+      expect(assigns(:tabs)).to eq([
+        ["1", _("Visual")],
+        ["2", _("Default Views")],
+        ["3", _("Default Filters")],
+        ["4", _("Time Profiles")]
+      ])
     end
   end
 end

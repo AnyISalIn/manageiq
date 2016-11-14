@@ -518,37 +518,24 @@ ActiveRecord::ConnectionAdapters::PostgreSQLAdapter.class_eval do
     end.compact
   end
 
-  # Returns an array of primary-key indexes (indisprimary = true) for the given table.
-  def primary_key_indexes(table_name, name = nil)
-    schemas = schema_search_path.split(/,/).map { |p| quote(p) }.join(',')
-    result = query(<<-SQL, name)
-       SELECT distinct i.relname, d.indisunique, d.indkey, t.oid
-       FROM pg_class t
-       INNER JOIN pg_index d ON t.oid = d.indrelid
-       INNER JOIN pg_class i ON d.indexrelid = i.oid
-       WHERE i.relkind = 'i'
-         AND d.indisprimary = 't'
-         AND t.relname = '#{table_name}'
-         AND i.relnamespace IN (SELECT oid FROM pg_namespace WHERE nspname IN (#{schemas}) )
-      ORDER BY i.relname
+  # Returns the primary-key index definition for the given table if it exists
+  def primary_key_index(table_name)
+    result = select_all(<<-SQL).cast_values.first
+      SELECT c.relname, array_agg(a.attname)
+      FROM pg_index i
+      JOIN pg_attribute a ON
+        a.attrelid = i.indrelid AND
+        a.attnum = ANY(i.indkey)
+      JOIN pg_class c ON
+        i.indexrelid = c.oid
+      WHERE
+        i.indrelid = '#{table_name}'::regclass AND
+        i.indisprimary group by c.relname;
     SQL
 
-    result.map do |row|
-      index_name = row[0]
-      unique     = row[1] == 't'
-      indkey     = row[2].split(" ")
-      oid        = row[3]
+    return nil unless result
 
-      columns = Hash[query(<<-SQL, "Columns for index #{row[0]} on #{table_name}")]
-      SELECT a.attnum, a.attname
-      FROM pg_attribute a
-      WHERE a.attrelid = #{oid}
-      AND a.attnum IN (#{indkey.join(",")})
-      SQL
-
-      column_names = columns.values_at(*indkey).compact
-      column_names.empty? ? nil : IndexDefinition.new(table_name, index_name, unique, column_names)
-    end.compact
+    ActiveRecord::ConnectionAdapters::IndexDefinition.new(table_name, result[0], true, result[1])
   end
 
   def primary_key?(table_name)
@@ -874,37 +861,4 @@ ActiveRecord::ConnectionAdapters::PostgreSQLAdapter.class_eval do
   def vacuum_full_analyze_table(table)
     execute("VACUUM FULL ANALYZE #{quote_table_name(table)}")
   end
-
-  def self.parse_dsn(dsn)
-    scanner = StringScanner.new(dsn)
-
-    dsn_hash = {}
-
-    until scanner.eos?
-      # get the key by matching up to and including the (optionally) white space bordered '='
-      key = scanner.scan_until(/\s?=\s?/)
-      key = key[0...-scanner.matched_size]
-
-      dsn_hash[key.to_sym] = get_dsn_value(scanner)
-    end
-
-    dsn_hash
-  end
-
-  def self.get_dsn_value(scanner)
-    value =
-      if scanner.peek(1) == "'"
-        # if we are a quoted value get the first quote and the
-        # string that ends with a quote not preceded by a backslash
-        scanner.getch + scanner.scan_until(/(?<!\\)'\s*/).strip
-      else
-        scanner.scan_until(/\s+|$/).strip
-      end
-
-    value = value[1..-2] if value.start_with?("'") && value.end_with?("'")
-
-    # un-escape any single quotes in the remaining value
-    value.gsub(/\\'/, "'")
-  end
-  private_class_method :get_dsn_value
 end

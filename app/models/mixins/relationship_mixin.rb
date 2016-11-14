@@ -19,6 +19,7 @@ module RelationshipMixin
     :subtree_arranged,     :subtree_rels_arranged,
     :fulltree,             :fulltree_rels,
     :fulltree_arranged,    :fulltree_rels_arranged,
+    :parent_rel_ids,
   ]
 
   included do
@@ -48,7 +49,7 @@ module RelationshipMixin
   def clear_relationships_cache(*args)
     options = args.extract_options!
     to_clear = RelationshipMixin::MEMOIZED_METHODS - Array.wrap(options[:except])
-    flush_cache(*to_clear)
+    flush_cache(*to_clear) unless to_clear.empty?
 
     @association_cache.delete(:all_relationships)
   end
@@ -109,16 +110,22 @@ module RelationshipMixin
   # has_ancestry methods
   #
 
+  # Returns the id in the relationship table for this record's parents
+  # from this id, relationship records can be brought back and mapped to the resource of interest
+  # NOTE: parent_id is read from ancestry field, while parent is a db hit (N+1)
+  def parent_rel_ids
+    relationships.where.not(:ancestry => [nil, ""]).select(:ancestry).collect(&:parent_id)
+  end
+
   # Returns all of the relationships of the parents of the record, [] for a root node
   def parent_rels(*args)
     options = args.extract_options!
-    rels = relationships.collect(&:parent).compact
+    rels = Relationship.where(:id => parent_rel_ids)
     Relationship.filter_by_resource_type(rels, options)
   end
 
   # Returns all of the parents of the record, [] for a root node
   def parents(*args)
-    args = RelationshipMixin.deprecate_of_type_parameter(*args)
     Relationship.resources(parent_rels(*args))
   end
 
@@ -141,9 +148,9 @@ module RelationshipMixin
 
   # Returns the parent of the record, nil for a root node
   def parent(*args)
-    rels = parents(*args).take(2)
+    rels = parent_rels(*args).take(2)
     raise _("Multiple parents found.") if rels.length > 1
-    rels.first
+    rels.first.try(:resource)
   end
 
   # Returns the class/id pair of the parent of the record, nil for a root node
@@ -155,19 +162,19 @@ module RelationshipMixin
 
   # Returns the relationship of the root of the tree the record is in
   def root_rel(*_args)
-    rel = relationship
-    rel.nil? ? nil : rel.root # TODO: Should this return nil or init_relationship or Relationship.new?
+    rel = relationship.try!(:root)
+    # micro-optimization: if the relationship is us, "load" the resource
+    rel.resource = self if rel && rel.resource_id == id && rel.resource_type == self.class.base_class.name.to_s
+    rel || relationship_for_isolated_root
   end
 
   # Returns the root of the tree the record is in, self for a root node
   def root(*args)
-    return self if self.is_root?(*args)
     Relationship.resource(root_rel(*args))
   end
 
   # Returns the id of the root of the tree the record is in
   def root_id(*args)
-    return [self.class.base_class.name, id] if self.is_root?(*args)
     Relationship.resource_pair(root_rel(*args))
   end
 
@@ -177,11 +184,12 @@ module RelationshipMixin
     rel.nil? ? true : rel.is_root?
   end
 
-  # Returns true if the record is a root node and does not have a corresponding
-  #   relationship record, meaning it is an isolated root node; false otherwise
-  def is_isolated_root?(*_args)
-    relationship.nil?
+  # Returns a relationship for a record that is a root node with no corresponding
+  #   relationship record, meaning it is an isolated root node
+  def relationship_for_isolated_root
+    Relationship.new(:resource => self)
   end
+  private :relationship_for_isolated_root
 
   # Returns a list of ancestor relationships, starting with the root relationship
   #   and ending with the parent relationship
@@ -195,7 +203,6 @@ module RelationshipMixin
   # Returns a list of ancestor records, starting with the root record and ending
   #   with the parent record
   def ancestors(*args)
-    args = RelationshipMixin.deprecate_of_type_parameter(*args)
     Relationship.resources(ancestor_rels(*args))
   end
 
@@ -215,27 +222,24 @@ module RelationshipMixin
   def path_rels(*args)
     options = args.extract_options!
     rel = relationship(:raise_on_multiple => true) # TODO: Handle multiple nodes with a way to detect which node you want
-    rels = rel.nil? ? [] : rel.path
+    rels = rel.nil? ? [relationship_for_isolated_root] : rel.path
     Relationship.filter_by_resource_type(rels, options)
   end
 
   # Returns a list of the path records, starting with the root record and ending
   #   with the node's own record
   def path(*args)
-    return [self] if self.is_isolated_root? # TODO: Should this return nil or init_relationship or Relationship.new in an Array?
     Relationship.resources(path_rels(*args)) # TODO: Prevent preload of self which is in the list
   end
 
   # Returns a list of the path class/id pairs, starting with the root class/id
   #   and ending with the node's own class/id
   def path_ids(*args)
-    return [[self.class.base_class.name, id]] if self.is_isolated_root? # TODO: Should this return nil or init_relationship or Relationship.new in a Array?
     Relationship.resource_pairs(path_rels(*args))
   end
 
   # Returns the number of records in the path
   def path_count(*args)
-    return 1 if self.is_isolated_root? # TODO: Should this return nil or init_relationship or Relationship.new?
     path_rels(*args).size
   end
 
@@ -248,7 +252,6 @@ module RelationshipMixin
 
   # Returns a list of child records
   def children(*args)
-    args = RelationshipMixin.deprecate_of_type_parameter(*args)
     Relationship.resources(child_rels(*args))
   end
 
@@ -313,7 +316,6 @@ module RelationshipMixin
 
   # Returns a list of descendant records
   def descendants(*args)
-    args = RelationshipMixin.deprecate_of_type_parameter(*args)
     Relationship.resources(descendant_rels(*args))
   end
 
@@ -332,7 +334,7 @@ module RelationshipMixin
     options = args.extract_options!
     rel = relationship(:raise_on_multiple => true)
     return {} if rel.nil?  # TODO: Should this return nil or init_relationship or Relationship.new in a Hash?
-    Relationship.filter_arranged_rels_by_resource_type(rel.descendants.arrange, options)
+    Relationship.filter_by_resource_type(rel.descendants, options).arrange
   end
 
   # Returns the descendant class/id pairs arranged in a tree
@@ -348,25 +350,25 @@ module RelationshipMixin
   # Returns a list of all relationships in the record's subtree
   def subtree_rels(*args)
     options = args.extract_options!
+    # TODO: make this a single query (vs 3)
+    # thus making filter_by_resource_type into a query
     rels = relationships.flat_map(&:subtree).uniq
+    rels = [relationship_for_isolated_root] if rels.empty?
     Relationship.filter_by_resource_type(rels, options)
   end
 
   # Returns a list of all records in the record's subtree
   def subtree(*args)
-    return [self] if self.is_isolated_root? # TODO: Should this return nil or init_relationship or Relationship.new in an Array?
     Relationship.resources(subtree_rels(*args)) # TODO: Prevent preload of self which is in the list
   end
 
   # Returns a list of all class/id pairs in the record's subtree
   def subtree_ids(*args)
-    return [[self.class.base_class.name, id]] if self.is_isolated_root? # TODO: Should this return nil or init_relationship or Relationship.new in an Array?
     Relationship.resource_pairs(subtree_rels(*args))
   end
 
   # Returns the number of records in the record's subtree
   def subtree_count(*args)
-    return 1 if self.is_isolated_root? # TODO: Should this return nil or init_relationship or Relationship.new?
     subtree_rels(*args).size
   end
 
@@ -374,20 +376,34 @@ module RelationshipMixin
   def subtree_rels_arranged(*args)
     options = args.extract_options!
     rel = relationship(:raise_on_multiple => true)
-    return {} if rel.nil?  # TODO: Should this return nil or init_relationship or Relationship.new in a Hash?
-    Relationship.filter_arranged_rels_by_resource_type(rel.subtree.arrange, options)
+    return {relationship_for_isolated_root => {}} if rel.nil?
+    Relationship.filter_by_resource_type(rel.subtree, options).arrange
   end
 
   # Returns the subtree class/id pairs arranged in a tree
   def subtree_ids_arranged(*args)
-    return {[self.class.base_class.name, id] => {}} if self.is_isolated_root? # TODO: Should this return nil or init_relationship or Relationship.new in a Hash?
     Relationship.arranged_rels_to_resource_pairs(subtree_rels_arranged(*args))
   end
 
   # Returns the subtree records arranged in a tree
   def subtree_arranged(*args)
-    return {self => {}} if self.is_isolated_root? # TODO: Should this return nil or init_relationship or Relationship.new in a Hash?
     Relationship.arranged_rels_to_resources(subtree_rels_arranged(*args))
+  end
+
+  def grandchild_rels(*args)
+    options = args.extract_options!
+    rels = relationships.inject(Relationship.none) do |stmt, r|
+      stmt.or(Relationship.where(r.grandchild_conditions))
+    end
+    Relationship.filter_by_resource_type(rels, options)
+  end
+
+  def child_and_grandchild_rels(*args)
+    options = args.extract_options!
+    rels = relationships.inject(Relationship.none) do |stmt, r|
+      stmt.or(Relationship.where(r.child_and_grandchild_conditions))
+    end
+    Relationship.filter_by_resource_type(rels, options)
   end
 
   # Return the depth of the node, root nodes are at depth 0
@@ -456,48 +472,42 @@ module RelationshipMixin
   # Returns a list of all relationships in the tree from the root
   def fulltree_rels(*args)
     options = args.extract_options!
-    return [] if self.is_isolated_root? # TODO: Should this return nil or init_relationship or Relationship.new in an Array?
-    root_id = relationship.root_id
-    rels = Relationship.subtree_of(root_id).uniq
+    root_id = relationship.try(:root_id)
+    rels = root_id ? Relationship.subtree_of(root_id).uniq : [relationship_for_isolated_root]
     Relationship.filter_by_resource_type(rels, options)
   end
 
   # Returns a list of all records in the tree from the root
   def fulltree(*args)
-    return [self] if self.is_isolated_root? # TODO: Should this return nil or init_relationship or Relationship.new in an Array?
     Relationship.resources(fulltree_rels(*args)) # TODO: Prevent preload of self which is in the list
   end
 
   # Returns a list of all class/id pairs in the tree from the root
   def fulltree_ids(*args)
-    return [[self.class.base_class.name, id]] if self.is_isolated_root? # TODO: Should this return nil or init_relationship or Relationship.new in an Array?
     Relationship.resource_pairs(fulltree_rels(*args))
   end
 
   # Returns the number of records in the tree from the root
   def fulltree_count(*args)
-    return 1 if self.is_isolated_root?
     fulltree_rels(*args).size
   end
 
   # Returns the relationships in the tree from the root arranged in a tree
   def fulltree_rels_arranged(*args)
     options = args.extract_options!
-    return {} if self.is_isolated_root? # TODO: Should this return nil or init_relationship or Relationship.new in a Hash?
-    root_id = relationship.root_id
+    root_id = relationship.try(:root_id)
+    return {relationship_for_isolated_root => {}} if root_id.nil?
     rels = Relationship.subtree_of(root_id).arrange
-    Relationship.filter_arranged_rels_by_resource_type(rels, options)
+    Relationship.filter_by_resource_type(Relationship.subtree_of(root_id), options).arrange
   end
 
   # Returns the class/id pairs in the tree from the root arranged in a tree
   def fulltree_ids_arranged(*args)
-    return {[self.class.base_class.name, id] => {}} if self.is_isolated_root? # TODO: Should this return nil or init_relationship or Relationship.new in a Hash?
     Relationship.arranged_rels_to_resource_pairs(fulltree_rels_arranged(*args))
   end
 
   # Returns the records in the tree from the root arranged in a tree
   def fulltree_arranged(*args)
-    return {self => {}} if self.is_isolated_root? # TODO: Should this return nil or init_relationship or Relationship.new in a Hash?
     Relationship.arranged_rels_to_resources(fulltree_rels_arranged(*args))
   end
 
@@ -611,13 +621,10 @@ module RelationshipMixin
   alias_method :remove_child, :remove_children
 
   def remove_all_parents(*args)
-    args = RelationshipMixin.deprecate_of_type_and_rel_type_parameter(*args)
     parents(*args).collect { |p| remove_parent(p) }
   end
 
   def remove_all_children(*args)
-    args = RelationshipMixin.deprecate_of_type_and_rel_type_parameter(*args)
-
     # Determine if we are removing all or some children
     options = args.last.kind_of?(Hash) ? args.last : {}
     of_type = options[:of_type].to_miq_a
@@ -652,13 +659,8 @@ module RelationshipMixin
   end
 
   def detect_ancestor(*args, &block)
-    args = RelationshipMixin.deprecate_start_parameter(*args)
     ancestors(*args).reverse.detect(&block)
   end
-
-  # TODO: Replace these or get rid of them
-  alias_method :clear_children_cache, :clear_relationships_cache
-  alias_method :clear_parents_cache,  :clear_relationships_cache
 
   #
   # Diagnostic methods
@@ -666,40 +668,5 @@ module RelationshipMixin
 
   def puts_relationship_tree
     Relationship.puts_arranged_resources(subtree_arranged)
-  end
-
-  #
-  # Deprecation methods
-  #
-
-  def self.deprecate_of_type_parameter(*args)
-    return args if args.empty? || args.first.kind_of?(Hash)
-
-    Vmdb::Deprecation.deprecation_warning("of_type parameter without hash symbol", "use :of_type => 'Type' style instead", caller(2)) unless Rails.env.production?
-
-    options = args.extract_options!
-    [options.merge(:of_type => args.first)]
-  end
-
-  def self.deprecate_of_type_and_rel_type_parameter(*args)
-    return args if args.empty? || args.first.kind_of?(Hash)
-
-    Vmdb::Deprecation.deprecation_warning("of_type parameter without hash symbol", "use :of_type => 'Type' style instead", caller(2)) unless Rails.env.production?
-
-    options = args.extract_options!
-
-    if args.length > 1
-      Vmdb::Deprecation.deprecation_warning("relationship_type parameter", "use with_relationship_type method before calling instead", caller(2)) unless Rails.env.production?
-    end
-
-    [options.merge(:of_type => args.first)]
-  end
-
-  def self.deprecate_start_parameter(*args)
-    return args if args.empty? || args.first.kind_of?(Hash)
-
-    Vmdb::Deprecation.deprecation_warning("start parameter", nil, caller(2)) unless Rails.env.production?
-
-    [args.extract_options!]
   end
 end

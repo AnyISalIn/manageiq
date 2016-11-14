@@ -26,12 +26,12 @@
   %h3
     = _('Placement')
   .form-horizontal
-    .form-group
+    .form-group{"ng-class" => "{'has-error': angularForm.cloud_tenant_id.$invalid}"}
       %label.col-md-2.control-label
         = _('Cloud Tenant')
       .col-md-8
         = select_tag("cloud_tenant_id",
-                      options_for_select(@cloud_tenant_choices.sort),
+          options_for_select([["<#{_('Choose')}>", nil]] + @cloud_tenant_choices.sort),
                       "ng-model"                    => "cloudVolumeModel.cloud_tenant_id",
                       "required"                    => "",
                       :miqrequired                  => true,
@@ -43,23 +43,23 @@
       %td{:align => 'right'}
         #buttons_on
           - if @volume.id.nil?
-            = button_tag("Add",
+            = button_tag(_("Add"),
                          :class        => "btn btn-primary",
-                         "ng-class"    => "{'btn-disabled': angularForm.$invalid}",
+                         "ng-class"    => "{ disabled: angularForm.$invalid}",
                          "ng-disabled" => "angularForm.$invalid",
                          "ng-click"    => "addClicked()")
           - else
-            = button_tag("Save",
+            = button_tag(_("Save"),
                          :class        => "btn btn-primary",
                          "ng-click"    => "saveClicked()",
                          "ng-disabled" => "angularForm.$pristine || angularForm.$invalid",
-                         "ng-class"    => "{'btn-disabled': angularForm.$pristine || angularForm.$invalid}")
-            = button_tag("Reset",
+                         "ng-class"    => "{ disabled: angularForm.$pristine || angularForm.$invalid}")
+            = button_tag(_("Reset"),
                          :class        => "btn btn-primary",
                          "ng-click"    => "resetClicked()",
                          "ng-disabled" => "angularForm.$pristine",
-                         "ng-class"    => "{'btn-disabled': angularForm.$pristine}")
-          = button_tag("Cancel",
+                         "ng-class"    => "{ disabled: angularForm.$pristine}")
+          = button_tag(_("Cancel"),
                         :class     => "btn btn-default",
                         "ng-click" => "cancelClicked()")
 

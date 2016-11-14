@@ -9,7 +9,7 @@ module EmsInfraHelper::TextualSummary
   end
 
   def textual_group_relationships
-    %i(infrastructure_folders folders clusters hosts used_tenants used_availability_zones datastores vms templates orchestration_stacks)
+    %i(infrastructure_folders folders clusters hosts datastores vms templates orchestration_stacks ems_cloud)
   end
 
   def textual_group_status
@@ -21,6 +21,8 @@ module EmsInfraHelper::TextualSummary
   end
 
   def textual_group_topology
+    items = %w(topology)
+    items.collect { |m| send("textual_#{m}") }.flatten.compact
   end
 
   #
@@ -36,7 +38,7 @@ module EmsInfraHelper::TextualSummary
   end
 
   def textual_type
-    @ems.emstype_description
+    {:label => _("Type"), :value => @ems.emstype_description}
   end
 
   def textual_port
@@ -93,7 +95,7 @@ module EmsInfraHelper::TextualSummary
     label = title_for_clusters
     num   = @ems.number_of(:ems_clusters)
     h     = {:label => label, :image => "cluster", :value => num}
-    if num > 0 && role_allows(:feature => "ems_cluster_show_list")
+    if num > 0 && role_allows?(:feature => "ems_cluster_show_list")
       h[:link] = ems_infra_path(@ems.id, :display => 'ems_clusters', :vat => true)
       h[:title] = _("Show all %{label}") % {:label => label}
     end
@@ -104,7 +106,7 @@ module EmsInfraHelper::TextualSummary
     label = title_for_hosts
     num   = @ems.number_of(:hosts)
     h     = {:label => label, :image => "host", :value => num}
-    if num > 0 && role_allows(:feature => "host_show_list")
+    if num > 0 && role_allows?(:feature => "host_show_list")
       h[:link]  = ems_infra_path(@ems.id, :display => 'hosts')
       h[:title] = _("Show all %{label}") % {:label => label}
     end
@@ -127,10 +129,16 @@ module EmsInfraHelper::TextualSummary
                  :link => ems_infra_path(@record.id, :display => 'availability_zones'))
   end
 
+  def textual_ems_cloud
+    return nil unless @record.provider.respond_to?(:cloud_ems)
+
+    textual_link(@record.provider.try(:cloud_ems).first)
+  end
+
   def textual_datastores
     return nil if @record.kind_of?(ManageIQ::Providers::Openstack::InfraManager)
 
-    textual_link(@record.storages,
+    textual_link(@record.storages.sort_by { |s| s.name.downcase },
                  :as   => Storage,
                  :link => ems_infra_path(@record.id, :display => 'storages'))
   end
@@ -138,11 +146,11 @@ module EmsInfraHelper::TextualSummary
   def textual_vms
     return nil if @record.kind_of?(ManageIQ::Providers::Openstack::InfraManager)
 
-    textual_link(@ems.vms)
+    textual_link(@ems.vms, :label => _("Virtual Machines"))
   end
 
   def textual_templates
-    @ems.miq_templates
+    textual_link(@ems.miq_templates, :label => _("Templates"))
   end
 
   def textual_orchestration_stacks_status
@@ -168,5 +176,12 @@ module EmsInfraHelper::TextualSummary
     return nil if @ems.host_default_vnc_port_start.blank?
     value = "#{@ems.host_default_vnc_port_start} - #{@ems.host_default_vnc_port_end}"
     {:label => _("%{title} Default VNC Port Range") % {:title => title_for_host}, :value => value}
+  end
+
+  def textual_topology
+    {:label => _('Topology'),
+     :image => 'topology',
+     :link  => url_for(:controller => '/infra_topology', :action => 'show', :id => @ems.id),
+     :title => _("Show topology")}
   end
 end

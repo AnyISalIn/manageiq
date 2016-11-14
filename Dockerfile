@@ -6,19 +6,20 @@ ARG REF=master
 # Set ENV, LANG only needed if building with docker-1.8
 ENV LANG en_US.UTF-8
 ENV TERM xterm
-ENV RUBY_GEMS_ROOT /opt/rubies/ruby-2.2.5/lib/ruby/gems/2.2.0
+ENV RUBY_GEMS_ROOT /opt/rubies/ruby-2.3.1/lib/ruby/gems/2.3.0
 ENV APP_ROOT /var/www/miq/vmdb
 ENV APPLIANCE_ROOT /opt/manageiq/manageiq-appliance
-ENV SSUI_ROOT /opt/manageiq/manageiq-ui-self_service
+ENV SUI_ROOT /opt/manageiq/manageiq-ui-service
 
-# Fetch postgresql 9.4 COPR and pglogical repos
-RUN curl -sSLko /etc/yum.repos.d/rhscl-rh-postgresql94-epel-7.repo \
-      https://copr-fe.cloud.fedoraproject.org/coprs/rhscl/rh-postgresql94/repo/epel-7/rhscl-rh-postgresql94-epel-7.repo && \
-    curl -sSLko /etc/yum.repos.d/ncarboni-pglogical-SCL-epel-7.repo \
+# Fetch pglogical and manageiq repo
+RUN curl -sSLko /etc/yum.repos.d/ncarboni-pglogical-SCL-epel-7.repo \
       https://copr.fedorainfracloud.org/coprs/ncarboni/pglogical-SCL/repo/epel-7/ncarboni-pglogical-SCL-epel-7.repo
+RUN curl -sSLko /etc/yum.repos.d/manageiq-ManageIQ-epel-7.repo \
+      https://copr.fedorainfracloud.org/coprs/manageiq/ManageIQ/repo/epel-7/manageiq-ManageIQ-epel-7.repo
 
 ## Install EPEL repo, yum necessary packages for the build without docs, clean all caches
 RUN yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm && \
+    yum -y install centos-release-scl-rh && \
     yum -y install --setopt=tsflags=nodocs \
                    bison                   \
                    bzip2                   \
@@ -26,6 +27,7 @@ RUN yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.n
                    file                    \
                    gcc-c++                 \
                    git                     \
+                   libcurl-devel           \
                    libffi-devel            \
                    libtool                 \
                    libxml2-devel           \
@@ -37,10 +39,11 @@ RUN yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.n
                    nodejs                  \
                    openssl-devel           \
                    patch                   \
-                   rh-postgresql94-postgresql-server \
-                   rh-postgresql94-postgresql-devel  \
-                   rh-postgresql94-postgresql-pglogical-output \
-                   rh-postgresql94-postgresql-pglogical \
+                   rh-postgresql95-postgresql-server \
+                   rh-postgresql95-postgresql-devel  \
+                   rh-postgresql95-postgresql-pglogical-output \
+                   rh-postgresql95-postgresql-pglogical \
+                   rh-postgresql95-repmgr  \
                    readline-devel          \
                    sqlite-devel            \
                    sysvinit-tools          \
@@ -62,7 +65,17 @@ RUN yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.n
     yum clean all
 
 # Add persistent data volume for postgres
-VOLUME [ "/var/opt/rh/rh-postgresql94/lib/pgsql/data" ]
+VOLUME [ "/var/opt/rh/rh-postgresql95/lib/pgsql/data" ]
+
+## Systemd cleanup base image
+RUN (cd /lib/systemd/system/sysinit.target.wants && for i in *; do [ $i == systemd-tmpfiles-setup.service ] || rm -vf $i; done) && \
+    rm -vf /lib/systemd/system/multi-user.target.wants/* && \
+    rm -vf /etc/systemd/system/*.wants/* && \
+    rm -vf /lib/systemd/system/local-fs.target.wants/* && \
+    rm -vf /lib/systemd/system/sockets.target.wants/*udev* && \
+    rm -vf /lib/systemd/system/sockets.target.wants/*initctl* && \
+    rm -vf /lib/systemd/system/basic.target.wants/* && \
+    rm -vf /lib/systemd/system/anaconda.target.wants/*
 
 # Download chruby and chruby-install, install, setup environment, clean all
 RUN curl -sL https://github.com/postmodern/chruby/archive/v0.3.9.tar.gz | tar xz && \
@@ -74,19 +87,19 @@ RUN curl -sL https://github.com/postmodern/chruby/archive/v0.3.9.tar.gz | tar xz
     curl -sL https://github.com/postmodern/ruby-install/archive/v0.6.0.tar.gz | tar xz && \
     cd ruby-install-0.6.0 && \
     make install && \
-    ruby-install ruby 2.2.5 -- --disable-install-doc && \
-    echo "chruby ruby-2.2.5" >> ~/.bash_profile && \
+    ruby-install ruby 2.3.1 -- --disable-install-doc && \
+    echo "chruby ruby-2.3.1" >> ~/.bash_profile && \
     rm -rf /chruby-* && \
     rm -rf /usr/local/src/* && \
     yum clean all
 
-## GIT clone manageiq-appliance and self-service UI repo (SSUI)
+## GIT clone manageiq-appliance and service UI repo (SUI)
 RUN mkdir -p ${APP_ROOT} && \
     mkdir -p ${APPLIANCE_ROOT} && \
-    mkdir -p ${SSUI_ROOT} && \
+    mkdir -p ${SUI_ROOT} && \
     ln -vs ${APP_ROOT} /opt/manageiq/manageiq && \
     curl -L https://github.com/ManageIQ/manageiq-appliance/tarball/${REF} | tar vxz -C ${APPLIANCE_ROOT} --strip 1 && \
-    curl -L https://github.com/ManageIQ/manageiq-ui-self_service/tarball/${REF} | tar vxz -C ${SSUI_ROOT} --strip 1
+    curl -L https://github.com/ManageIQ/manageiq-ui-service/tarball/${REF} | tar vxz -C ${SUI_ROOT} --strip 1
 
 ## Add ManageIQ source from local directory (dockerfile development) or from Github (official build)
 ADD . ${APP_ROOT}
@@ -94,7 +107,7 @@ ADD . ${APP_ROOT}
 
 ## Setup environment
 RUN ${APPLIANCE_ROOT}/setup && \
-    echo "export PATH=\$PATH:/opt/rubies/ruby-2.2.5/bin" >> /etc/default/evm && \
+    echo "export PATH=\$PATH:/opt/rubies/ruby-2.3.1/bin" >> /etc/default/evm && \
     mkdir ${APP_ROOT}/log/apache && \
     mv /etc/httpd/conf.d/ssl.conf{,.orig} && \
     echo "# This file intentionally left blank. ManageIQ maintains its own SSL configuration" > /etc/httpd/conf.d/ssl.conf && \
@@ -105,7 +118,6 @@ RUN ${APPLIANCE_ROOT}/setup && \
 WORKDIR ${APP_ROOT}
 RUN source /etc/default/evm && \
     export RAILS_USE_MEMORY_STORE="true" && \
-    npm install npm -g && \
     npm install gulp bower -g && \
     gem install bundler -v ">=1.8.4" && \
     bin/setup --no-db --no-tests && \
@@ -121,9 +133,9 @@ RUN source /etc/default/evm && \
     rm -rvf /root/.bundle/cache && \
     rm -rvf ${APP_ROOT}/tmp/cache/assets
 
-## Build SSUI
+## Build SUI
 RUN source /etc/default/evm && \
-    cd ${SSUI_ROOT} && \
+    cd ${SUI_ROOT} && \
     npm install && \
     bower -F --allow-root install && \
     gulp build && \
@@ -168,6 +180,12 @@ LABEL name="manageiq" \
             $IMAGE' \
       STOP='docker stop ${NAME}_run && echo "Container ${NAME}_run has been stopped"' \
       UNINSTALL='docker rm -v ${NAME}_volume ${NAME}_run && echo "Uninstallation complete"'
+
+## OpenShift Labels
+LABEL io.k8s.description="ManageIQ is a management and automation platform for virtual, private, and hybrid cloud infrastructures." \
+      io.k8s.display-name="ManageIQ" \
+      io.openshift.expose-services="443:https" \
+      io.openshift.tags="ManageIQ,miq,manageiq"
 
 ## Call systemd to bring up system
 CMD [ "/usr/sbin/init" ]

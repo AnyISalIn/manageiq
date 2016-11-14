@@ -11,7 +11,7 @@ class ApplicationController
           @edit[:new][:sysprep_upload_text] = SysprepFile.new(params[:upload][:file]).content
           msg = _('Sysprep "%{params}" upload was successful') % {:params => params[:upload][:file].original_filename}
           add_flash(msg)
-        rescue StandardError => bang
+        rescue => bang
           @edit[:new][:sysprep_upload_text] = nil
           msg = _("Error during Sysprep \"%{params}\" file upload: %{message}") %
                   {:params => params[:upload][:file].original_filename, :message => bang.message}
@@ -19,7 +19,7 @@ class ApplicationController
         end
       else
         @edit[:new][:sysprep_upload_text] = nil
-        msg = _("Use the Browse button to locate an Upload file")
+        msg = _("Use the Choose file button to locate an Upload file")
         add_flash(msg, :error)
       end
     end

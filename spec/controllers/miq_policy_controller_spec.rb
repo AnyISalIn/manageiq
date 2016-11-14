@@ -1,6 +1,6 @@
 describe MiqPolicyController do
   before(:each) do
-    set_user_privileges
+    stub_user(:features => :all)
   end
 
   describe "#import" do
@@ -60,7 +60,7 @@ describe MiqPolicyController do
         expect(response).to redirect_to(
           :action      => "export",
           :dbtype      => "dbtype",
-          :flash_msg   => "Use the Browse button to locate an Import file",
+          :flash_msg   => "Use the Choose file button to locate an Import file",
           :flash_error => true
         )
       end

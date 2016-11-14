@@ -54,14 +54,16 @@ module ApplicationController::Compare
       @items_per_page = params[:ppsetting].to_i           # Set the new per page value
     end
     @compare = create_compare_view
-    build_sections_tree
+    @sections_tree = TreeBuilderSections.new(:all_sections,
+                                             :all_sections_tree,
+                                             @sb,
+                                             true,
+                                             @compare,
+                                             controller_name,
+                                             current_tenant.name)
     compare_to_json(@compare)
-    if params[:ppsetting]                     # Came in from per page setting
-      render :update do |page|
-        page << javascript_prologue
-        page.replace_html("main_div", :partial => "layouts/compare")  # Replace the main div area contents
-        page << "miqSparkle(false);"
-      end
+    if params[:ppsetting] # Came in from per page setting
+      replace_main_div({:partial => "layouts/compare"}, {:spinner_off => true})
     else
       if @explorer
         @refresh_partial = "layouts/compare"
@@ -152,12 +154,7 @@ module ApplicationController::Compare
     @exists_mode = session[:miq_exists_mode]
     @compare.set_base_record(params[:id].to_i) if @lastaction == "compare_miq"                      # Remove the VM from the vm compare
     compare_to_json(@compare)
-    render :update do |page|
-      page << javascript_prologue
-      # page.replace("view_buttons_div", :partial=>"layouts/view_buttons")   # Replace the view buttons
-      page.replace_html("main_div", :partial => "layouts/compare")  # Replace the main div area contents
-      page << "miqSparkle(false);"
-    end
+    replace_main_div({:partial => "layouts/compare"}, {:spinner_off => true})
   end
 
   # Toggle compressed/expanded view
@@ -237,11 +234,7 @@ module ApplicationController::Compare
     @exists_mode = session[:miq_exists_mode]
     @compare.remove_record(params[:id].to_i) if @lastaction == "compare_miq"                      # Remove the VM from the vm compare
     compare_to_json(@compare)
-    render :update do |page|
-      page << javascript_prologue
-      page.replace_html("main_div", :partial => "layouts/compare")  # Replace the main div area contents
-      page << "miqSparkle(false);"
-    end
+    replace_main_div({:partial => "layouts/compare"}, {:spinner_off => true})
   end
 
   # Send the current compare data in text format
@@ -391,7 +384,7 @@ module ApplicationController::Compare
               next if r[0] == @compare.records[0]["id"] # Skip the base VM
               cols.push(r[1][section[:name]][:_match_].to_s + "%")  # Grab the % value for this attr for this VM
             else
-              if @compare.results[r][section[:name]][:_match_]  # Does it match?
+              if r[1][section[:name]][:_match_]  # Does it match?
                 cols.push("")                     # Yes, push a blank string
               else
                 cols.push("*")                    # No, mark it with an *
@@ -424,7 +417,7 @@ module ApplicationController::Compare
                     {:name => ui_lookup(:model => @sb[:compare_db])}
     else
       rpt.db = "<drift>"            # Set special db setting for report formatter
-      rpt.title = _("${name} '%{vm_name}' Drift Report") % {:name    => ui_lookup(:model => @sb[:compare_db]),
+      rpt.title = _("%{name} '%{vm_name}' Drift Report") % {:name    => ui_lookup(:model => @sb[:compare_db]),
                                                             :vm_name => @sb[:miq_vm_name]}
     end
 
@@ -560,17 +553,19 @@ module ApplicationController::Compare
   def drift
     @lastaction = "drift"
     @compare = create_drift_view
-    build_sections_tree
+    @sections_tree = TreeBuilderSections.new(:all_sections,
+                                             :all_sections_tree,
+                                             @sb,
+                                             true,
+                                             @compare,
+                                             controller_name,
+                                             current_tenant.name)
     drift_to_json(@compare)
     drop_breadcrumb(:name => _("'%{name}' Drift Analysis") % {:name => @drift_obj.name},
                     :url  => "/#{@sb[:compare_db].downcase}/drift")
     @sb[:miq_vm_name] = @drift_obj.name
     if params[:ppsetting] # Came in from per page setting
-      render :update do |page| # Use RJS to update the display
-        # Replace the main div area contents
-        page << javascript_prologue
-        page.replace_html("main_div", :partial => "layouts/compare", :id => @drift_obj.id)
-      end
+      replace_main_div :partial => "layouts/compare", :id => @drift_obj.id
     else
       @showtype = "drift"
       if @explorer
@@ -645,12 +640,12 @@ module ApplicationController::Compare
   # AJAX driven routine to check for changes in ANY field on the form
   def sections_field_changed
     @keep_compare = true
-    set_checked_sections
     if params[:check] == "drift"
       drift_checked
     elsif params[:check] == "compare_miq"
       compare_checked
     else
+      set_checked_sections
       render :update do |page|
         page << javascript_prologue
         page << "miqSparkle(false);"
@@ -660,10 +655,9 @@ module ApplicationController::Compare
   end
 
   def set_checked_sections
-    if params[:check] != "drift" && params[:check] != "compare_miq" && params[:all_checked]
-      arr = params[:all_checked].split(',')
+    if params[:all_checked]
       session[:selected_sections] = []
-      arr.each do |a|
+      params[:all_checked].each do |a|
         s = a.split(':')
         if s.length > 1
           session[:selected_sections].push(s[1])
@@ -899,10 +893,7 @@ module ApplicationController::Compare
       if @explorer
         compare_miq(@sb[:compare_db])
       else
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to :action => 'compare_miq'    # redirect to build the compare screen
-        end
+        javascript_redirect :action => 'compare_miq' # redirect to build the compare screen
       end
     end
   end
@@ -947,22 +938,11 @@ module ApplicationController::Compare
       if @explorer
         drift
       else
-        render :update do |page|
-          page << javascript_prologue
-          page.redirect_to :controller => controller_name, :action => 'drift', :id => @drift_obj.id
-        end
+        javascript_redirect :controller => controller_name, :action => 'drift', :id => @drift_obj.id
       end
     end
   end
   alias_method :common_drift, :drift_analysis
-
-  def set_sections_groups_len
-    @compare.master_list.each_slice(3) do |section, _records, _fields|  # Go thru all of the Sections
-      @sb[section[:group]] ||= {}
-      @sb[section[:group]][:section_len] = 0    # to track number sections are in a group in oder to uncheck/check group checkbox on initial load
-      @sb[section[:group]][:checked_len] = 0    # to track number checked sections in a group in oder to uncheck/check group checkbox on initial load
-    end
-  end
 
   def section_checked(mode)
     @compare = Marshal.load(session[:miq_compare])
@@ -979,69 +959,7 @@ module ApplicationController::Compare
       end
     end
     send("#{mode}_to_json", @compare)
-    render :update do |page|
-      page << javascript_prologue
-      page.replace_html("main_div", :partial => "layouts/compare") # Replace the main div area contents
-      page << "miqSparkle(false);"
-    end
-  end
-
-  def build_sections_tree
-    all_sections = []
-    i = 0
-    set_sections_groups_len
-    @compare.master_list.each_slice(3) do |section, _records, _fields|  # Go thru all of the Sections
-      if @group.blank? || section[:group] != @group
-        if section[:group] != @group && @group
-          @ci_node[:select] = !(@sb[@group][:checked_len] == 0 && @sb[@group][:section_len] > 0)
-          @ci_node[:children] = @ci_kids unless @ci_kids.blank?
-          all_sections.push(@ci_node)
-        end
-        @group = section[:group]
-        @ci_node = TreeNodeBuilder.generic_tree_node(
-          "group_#{section[:group]}",
-          section[:group] == "Categories" ? "#{current_tenant.name} Tags" : section[:group],
-          false,
-          section[:group],
-          :cfmeNoClick => true,
-          :noLink      => true,
-          :style_class => "cfme-no-cursor-node"
-        )
-        @ci_kids = []
-      end
-      if !@group.blank? && section[:group] == @group
-        i += 1
-        temp = TreeNodeBuilder.generic_tree_node(
-          "group_#{section[:group]}:#{section[:name]}",
-          section[:header],
-          false,
-          section[:header],
-          :cfmeNoClick => true,
-          :noLink      => true,
-          :style_class => "cfme-no-cursor-node"
-        )
-        # number of checked sections
-        @sb[@group][:section_len] += 1
-        if @compare.include[section[:name]][:checked]
-          temp[:select] = true
-          # number of checked items under sections
-          @sb[@group][:checked_len] += 1
-        else
-          temp[:select] = false
-        end
-        @ci_kids.push(temp) unless @ci_kids.include?(temp)
-      end
-      # Adding last node/ or when there is only one node in a tree
-      if i == @compare.master_list.length / 3 - 1 || @compare.master_list.length / 3 - 1 == 0
-        @ci_node[:children] = @ci_kids unless @ci_kids.blank?
-        @ci_node[:select] = !(@sb[@group][:checked_len] == 0 && @sb[@group][:section_len] > 0)
-        all_sections.push(@ci_node)
-      end
-    end
-
-    @all_sections_tree = all_sections.to_json # Add ci node array to root of tree
-    session[:tree] = "all_sections"
-    session[:tree_name] = "all_sections_tree"
+    replace_main_div({:partial => "layouts/compare"}, {:spinner_off => true})
   end
 
   # Build the header row of the compare grid xml
@@ -1104,8 +1022,8 @@ module ApplicationController::Compare
       :indent     => 0,
       :parent     => nil,
       :section    => true,
-      :exp_id     => "#{section[:name]}",
-      :_collapsed => collapsed_state("#{section[:name]}")
+      :exp_id     => section[:name].to_s,
+      :_collapsed => collapsed_state(section[:name].to_s)
     }
     row.merge!(drift_section_data_cols(view, section))
     @section_parent_id = @rows.length
@@ -1253,7 +1171,7 @@ module ApplicationController::Compare
 
   def drift_record_field_compressed(view, section, record, field)
     basval = ""
-    row = {:col0 => "#{field[:header]}"}
+    row = {:col0 => field[:header].to_s}
 
     view.ids.each_with_index do |id, idx|
       match_condition = view.results[view.ids[0]][section[:name]][record].nil? &&
@@ -1262,7 +1180,7 @@ module ApplicationController::Compare
       if !view.results[id][section[:name]][record].nil? && # Record exists
          !view.results[id][section[:name]][record][field[:name]].nil?      # Field exists
 
-        val = "#{view.results[id][section[:name]][record][field[:name]][:_value_]}"
+        val = view.results[id][section[:name]][record][field[:name]][:_value_].to_s
         row.merge!(drift_record_field_exists_compressed(idx, match_condition, val))
       else
         val = view.results[id][section[:name]].include?(record) ? "Found" : "Missing"
@@ -1274,7 +1192,7 @@ module ApplicationController::Compare
   end
 
   def drift_record_field_expanded(view, section, record, field)
-    row = {:col0 => "#{field[:header]}"}
+    row = {:col0 => field[:header].to_s}
 
     view.ids.each_with_index do |id, idx|
       if !view.results[id][section[:name]][record].nil? && !view.results[id][section[:name]][record][field[:name]].nil?
@@ -1284,7 +1202,7 @@ module ApplicationController::Compare
                           view.results[view.ids[idx - 1]][section[:name]][record][field[:name]][:_value_].to_s ==
                           view.results[id][section[:name]][record][field[:name]][:_value_].to_s
 
-        val = "#{view.results[id][section[:name]][record][field[:name]][:_value_]}"
+        val = view.results[id][section[:name]][record][field[:name]][:_value_].to_s
         row.merge!(drift_record_field_exists_expanded(idx, match_condition, val))
       else
         match_condition = !view.results[view.ids[0]][section[:name]][record].nil? &&
@@ -1375,9 +1293,9 @@ module ApplicationController::Compare
   end
 
   def drift_add_section_field_compressed(view, section, field)
-    row = {:col0 => "#{field[:header]}"}
+    row = {:col0 => field[:header].to_s}
     view.ids.each_with_index do |id, idx|
-      val = "#{view.results[id][section[:name]][field[:name]][:_value_]}"
+      val = view.results[id][section[:name]][field[:name]][:_value_].to_s
       if !view.results[id][section[:name]][field[:name]].nil? && idx == 0     # On base object
         row.merge!(drift_add_same_image(idx, val))
       elsif !view.results[id][section[:name]].nil? && !view.results[id][section[:name]][field[:name]].nil?
@@ -1399,17 +1317,17 @@ module ApplicationController::Compare
     row = {:col0 => field[:header]}
     view.ids.each_with_index do |id, idx|
       if !view.results[id][section[:name]][field[:name]].nil? && idx == 0       # On base object
-        col = "#{view.results[id][section[:name]][field[:name]][:_value_]}"
+        col = view.results[id][section[:name]][field[:name]][:_value_].to_s
         img_bkg = "cell-stripe"
         row.merge!(drift_add_txt_col(idx, col, img_bkg))
       elsif !view.results[id][section[:name]].nil? && !view.results[id][section[:name]][field[:name]].nil?
         if view.results[id][section[:name]][field[:name]][:_match_]
-          col = "#{view.results[id][section[:name]][field[:name]][:_value_]}"
+          col = view.results[id][section[:name]][field[:name]][:_value_].to_s
           img_bkg = "cell-bkg-plain-no-shade"
           row.merge!(drift_add_txt_col(idx, col, img_bkg))
         else
           @same = false
-          col = "#{view.results[id][section[:name]][field[:name]][:_value_]}"
+          col = view.results[id][section[:name]][field[:name]][:_value_].to_s
           img_bkg = "cell-bkg-plain-mark-txt-no-shade"
           row.merge!(drift_add_txt_col(idx, col, img_bkg))
         end
@@ -1665,8 +1583,8 @@ module ApplicationController::Compare
       :indent     => 0,
       :parent     => nil,
       :section    => true,
-      :exp_id     => "#{section[:name]}",
-      :_collapsed => collapsed_state("#{section[:name]}")
+      :exp_id     => section[:name].to_s,
+      :_collapsed => collapsed_state(section[:name].to_s)
     }
     row.merge!(compare_section_data_cols(view, section, records))
 

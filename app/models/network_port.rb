@@ -2,9 +2,7 @@ class NetworkPort < ApplicationRecord
   include NewWithTypeStiMixin
   acts_as_miq_taggable
 
-  # TODO(lsmola) NetworkManager, once all providers use network manager rename this to
-  # "ManageIQ::Providers::NetworkManager"
-  belongs_to :ext_management_system, :foreign_key => :ems_id, :class_name => "ManageIQ::Providers::BaseManager"
+  belongs_to :ext_management_system, :foreign_key => :ems_id, :class_name => "ManageIQ::Providers::NetworkManager"
   belongs_to :cloud_tenant
   belongs_to :device, :polymorphic => true
 
@@ -17,6 +15,7 @@ class NetworkPort < ApplicationRecord
   has_many :cloud_subnet_network_ports
   has_many :cloud_subnets, :through => :cloud_subnet_network_ports
   has_many :network_routers, -> { distinct }, :through => :cloud_subnets
+  has_many :public_networks, :through => :cloud_subnets
 
   # Use for virtual columns, mainly for modeling array and hash types, we get from the API
   serialize :extra_attributes
@@ -31,6 +30,7 @@ class NetworkPort < ApplicationRecord
   virtual_column :ipaddresses, :type => :string_set, :uses => [:cloud_subnet_network_ports, :floating_ips]
   virtual_column :fixed_ip_addresses, :type => :string_set, :uses => :cloud_subnet_network_ports
   virtual_column :floating_ip_addresses, :type => :string_set, :uses => :floating_ips
+  virtual_column :cloud_subnets_names, :type => :string_set, :uses => :cloud_subnets
 
   def floating_ip_addresses
     @floating_ip_addresses ||= floating_ips.collect(&:address).compact.uniq
@@ -44,14 +44,18 @@ class NetworkPort < ApplicationRecord
     @ipaddresses ||= (fixed_ip_addresses || []) + (floating_ip_addresses || [])
   end
 
+  def cloud_subnets_names
+    @cloud_subnets_names ||= cloud_subnets.collect(&:name).compact.uniq
+  end
+
   # Define all getters and setters for extra_attributes related virtual columns
   %i(binding_virtual_interface_details binding_virtual_nic_type binding_profile extra_dhcp_opts
      allowed_address_pairs fixed_ips).each do |action|
-	  define_method("#{action.to_s}=") do |value|
+	  define_method("#{action}=") do |value|
       extra_attributes_save(action, value)
     end
 
-    define_method("#{action.to_s}") do
+    define_method(action) do
       extra_attributes_load(action)
     end
   end

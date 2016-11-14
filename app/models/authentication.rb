@@ -22,7 +22,7 @@ class Authentication < ApplicationRecord
   ERRORS = {
     :incomplete => "Incomplete credentials",
     :invalid    => "Invalid credentials",
-  }
+  }.freeze
 
   STATUS_SEVERITY = Hash.new(-1).merge(
     ""            => -1,
@@ -34,13 +34,20 @@ class Authentication < ApplicationRecord
     "invalid"     => 3,
   ).freeze
 
-  # To address problem with url resolution when displayed as a quadicon
+  RETRYABLE_STATUS = %w(error unreachable).freeze
+
+  # FIXME: To address problem with url resolution when displayed as a quadicon,
+  # but it's not *really* the db_name. Might be more proper to override `to_partial_path`
   def self.db_name
     "auth_key_pair_cloud"
   end
 
   def status_severity
     STATUS_SEVERITY[status.to_s.downcase]
+  end
+
+  def retryable_status?
+    RETRYABLE_STATUS.include?(status.to_s.downcase)
   end
 
   def authentication_type
@@ -78,6 +85,10 @@ class Authentication < ApplicationRecord
     return if prefix.blank?
 
     MiqEvent.raise_evm_event_queue(ci, "#{prefix}_auth_#{status}")
+  end
+
+  def assign_values(options)
+    self.attributes = options
   end
 
   private
