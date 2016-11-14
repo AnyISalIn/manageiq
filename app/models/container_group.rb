@@ -1,5 +1,7 @@
 class ContainerGroup < ApplicationRecord
+  include ComplianceMixin
   include CustomAttributeMixin
+  include MiqPolicyMixin
   include ReportableMixin
   include NewWithTypeStiMixin
 
@@ -9,6 +11,7 @@ class ContainerGroup < ApplicationRecord
   has_many :containers,
            :through => :container_definitions
   has_many :container_definitions, :dependent => :destroy
+  has_many :container_images, -> { distinct }, :through => :container_definitions
   belongs_to  :ext_management_system, :foreign_key => "ems_id"
   has_many :labels, -> { where(:section => "labels") }, :class_name => CustomAttribute, :as => :resource, :dependent => :destroy
   has_many :node_selector_parts, -> { where(:section => "node_selectors") }, :class_name => "CustomAttribute", :as => :resource, :dependent => :destroy
@@ -66,6 +69,14 @@ class ContainerGroup < ApplicationRecord
     when :policy_events
       # TODO: implement policy events and its relationship
       ["#{events_table_name(assoc)}.ems_id = ?", ems_id]
+    end
+  end
+
+  def tenant_identity
+    if ext_management_system
+      ext_management_system.tenant_identity
+    else
+      User.super_admin.tap { |u| u.current_group = Tenant.root_tenant.default_miq_group }
     end
   end
 

@@ -46,7 +46,7 @@ class MiqAeCustomizationController < ApplicationController
 
   def upload_import_file
     if params[:upload].nil? || params[:upload][:file].blank?
-      add_flash(_("Use the browse button to locate an import file"), :warning)
+      add_flash(_("Use the Choose file button to locate an import file"), :warning)
     else
       begin
         import_file = dialog_import_service.store_for_import(params[:upload][:file].read)
@@ -69,6 +69,15 @@ class MiqAeCustomizationController < ApplicationController
     if params[:commit] == _('Commit')
       import_file_upload = ImportFileUpload.find_by(:id => params[:import_file_upload_id])
 
+      if params[:dialogs_to_import].blank?
+        add_flash(_("At least one Service Dialog must be selected."), :error)
+        render :update do |page|
+          page << javascript_prologue
+          page.replace("flash_msg_div", :partial => "layouts/flash_msg")
+          page << "miqSparkle(false);"
+        end
+        return
+      end
       if import_file_upload
         dialog_import_service.import_service_dialogs(import_file_upload, params[:dialogs_to_import])
         add_flash(_("Service dialogs imported successfully"), :success)

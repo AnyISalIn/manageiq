@@ -5,6 +5,7 @@ require 'uri'
 class VmOrTemplate < ApplicationRecord
   include NewWithTypeStiMixin
   include ScanningMixin
+  include SupportsFeatureMixin
 
   self.table_name = 'vms'
 
@@ -29,6 +30,8 @@ class VmOrTemplate < ApplicationRecord
   include TenancyMixin
 
   include AvailabilityMixin
+
+  supports_not :retire
 
   has_many :ems_custom_attributes, -> { where(:source => 'VC') }, :as => :resource, :dependent => :destroy,
            :class_name => "CustomAttribute"
@@ -69,7 +72,7 @@ class VmOrTemplate < ApplicationRecord
   has_one                   :miq_provision, :dependent => :nullify, :as => :destination
   has_many                  :miq_provisions_from_template, :class_name => "MiqProvision", :as => :source, :dependent => :nullify
   has_many                  :miq_provision_vms, :through => :miq_provisions_from_template, :source => :destination, :source_type => "VmOrTemplate"
-  has_many                  :miq_provision_requests, :as => :source, :dependent => :destroy
+  has_many                  :miq_provision_requests, :as => :source
 
   has_many                  :guest_applications, :dependent => :destroy
   has_many                  :patches, :dependent => :destroy
@@ -139,8 +142,6 @@ class VmOrTemplate < ApplicationRecord
   virtual_column :v_owning_blue_folder_path,            :type => :string,     :uses => :all_relationships
   virtual_column :v_datastore_path,                     :type => :string,     :uses => :storage
   virtual_column :thin_provisioned,                     :type => :boolean,    :uses => {:hardware => :disks}
-  virtual_column :used_disk_storage,                    :type => :integer,    :uses => {:hardware => :disks}
-  virtual_column :allocated_disk_storage,               :type => :integer,    :uses => {:hardware => :disks}
   virtual_column :provisioned_storage,                  :type => :integer,    :uses => [:allocated_disk_storage, :mem_cpu]
   virtual_column :used_storage,                         :type => :integer,    :uses => [:used_disk_storage, :mem_cpu]
   virtual_column :used_storage_by_state,                :type => :integer,    :uses => :used_storage
@@ -1585,22 +1586,8 @@ class VmOrTemplate < ApplicationRecord
   # Hardware Disks/Memory storage methods
   #
 
-  def disk_storage(col)
-    return nil if hardware.nil? || hardware.disks.blank?
-    hardware.disks.inject(0) do |t, d|
-      val = d.send(col)
-      t + (val.nil? ? d.size.to_i : val.to_i)
-    end
-  end
-  protected :disk_storage
-
-  def allocated_disk_storage
-    disk_storage(:size)
-  end
-
-  def used_disk_storage
-    disk_storage(:size_on_disk)
-  end
+  virtual_delegate :allocated_disk_storage, :used_disk_storage,
+                   :to => :hardware, :allow_nil => true, :uses => {:hardware => :disks}
 
   def provisioned_storage
     allocated_disk_storage.to_i + ram_size_in_bytes

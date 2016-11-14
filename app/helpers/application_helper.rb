@@ -25,8 +25,16 @@ module ApplicationHelper
               :class => 'documentation-link', :target => '_blank')
     end
   end
+
+  def valid_html_id(id)
+    id = id.to_s.gsub("::", "__")
+    raise "HTML ID is not valid" if /[^\w_]/.match(id)
+    id
+  end
+
   # Create a collapsed panel based on a condition
   def miq_accordion_panel(title, condition, id, &block)
+    id = valid_html_id(id)
     content_tag(:div, :class => "panel panel-default") do
       out = content_tag(:div, :class => "panel-heading") do
         content_tag(:h4, :class => "panel-title") do
@@ -49,11 +57,16 @@ module ApplicationHelper
     name = ui_lookup(:table => table_name.to_s)
     if role_allows(:feature => "#{table_name}_show") && !ent.nil?
       out = content_tag(:li) do
+        link_params = if restful_routed?(ent)
+                        polymorphic_path(ent)
+                      else
+                        {:controller => table_name, :action => 'show', :id => ent.id.to_s}
+                      end
         link_to("#{name}: #{ent.name}",
-                {:controller => table_name, :action => 'show', :id => ent.id.to_s},
-                :title       => _("Show this %{entity_name}'s parent %{linked_entity_name}") %
-                                {:entity_name        => record.class.name.demodulize.titleize,
-                                 :linked_entity_name => name})
+                link_params,
+                :title => _("Show this %{entity_name}'s parent %{linked_entity_name}") %
+                          {:entity_name        => record.class.name.demodulize.titleize,
+                           :linked_entity_name => name})
       end
     end
     out
@@ -71,9 +84,18 @@ module ApplicationHelper
         end
       else
         out = content_tag(:li) do
-          link_to("#{plural} (#{count})",
-                  polymorphic_path(@record, :display => table_name.to_s.pluralize),
-                  :title => _("Show %{plural_linked_name}") % {:plural_linked_name => plural})
+          if restful_routed?(record)
+            link_to("#{plural} (#{count})",
+                    polymorphic_path(record, :display => table_name.to_s.pluralize),
+                    :title => _("Show %{plural_linked_name}") % {:plural_linked_name => plural})
+          else
+            link_to("#{plural} (#{count})",
+                    {:controller => controller_name,
+                     :action     => 'show',
+                     :id         => record.id,
+                     :display    => table_name.to_s.pluralize},
+                    :title => _("Show %{plural_linked_name}") % {:plural_linked_name => plural})
+          end
         end
       end
     end
@@ -330,7 +352,9 @@ module ApplicationHelper
     when "MiqWorker"
       controller = request.parameters[:controller]
       action = "diagnostics_worker_selected"
-    when "OrchestrationStackOutput", "OrchestrationStackParameter", "OrchestrationStackResource"
+    when "OrchestrationStackOutput", "OrchestrationStackParameter", "OrchestrationStackResource",
+        "ManageIQ::Providers::CloudManager::OrchestrationStack",
+        "ManageIQ::Providers::AnsibleTower::ConfigurationManager::Job"
       controller = request.parameters[:controller]
     when "ContainerVolume"
       controller = "persistent_volume"
@@ -357,6 +381,7 @@ module ApplicationHelper
       :button_group          => @button_group,
       :changed               => @changed,
       :condition             => @condition,
+      :condition_policy      => @condition_policy,
       :db                    => @db,
       :display               => @display,
       :edit                  => @edit,
@@ -369,6 +394,7 @@ module ApplicationHelper
       :lastaction            => @lastaction,
       :layout                => @layout,
       :miq_request           => @miq_request,
+      :msg_title             => @msg_title,
       :perf_options          => @perf_options,
       :policy                => @policy,
       :pxe_image_types_count => @pxe_image_types_count,
@@ -753,6 +779,7 @@ module ApplicationHelper
   def _toolbar_chooser
     ToolbarChooser.new(
       self,
+      binding,
       :alert_profiles => @alert_profiles,
       :button_group   => @button_group,
       :conditions     => @conditions,
@@ -767,6 +794,7 @@ module ApplicationHelper
       :record         => @record,
       :report         => @report,
       :sb             => @sb,
+      :showtype       => @showtype,
       :tabform        => @tabform,
       :view           => @view,
     )
@@ -816,7 +844,7 @@ module ApplicationHelper
        ems_network security_group floating_ip cloud_subnet network_router network_port cloud_network
        resource_pool ems_infra ontap_storage_system ontap_storage_volume
        ontap_file_share snia_local_file_system ontap_logical_disk
-       orchestration_stack cim_base_storage_extent storage storage_manager).include?(@layout)
+       orchestration_stack cim_base_storage_extent storage storage_manager configuration_job).include?(@layout)
   end
 
   # Do we show or hide the clear_search link in the list view title
@@ -886,6 +914,15 @@ module ApplicationHelper
       "vm_infra"
     else
       "vm_or_template"
+    end
+  end
+
+  def controller_for_stack(model)
+    case model.to_s
+    when "ManageIQ::Providers::AnsibleTower::ConfigurationManager::Job"
+      "configuration_job"
+    else
+      model.name.underscore
     end
   end
 
@@ -1071,7 +1108,7 @@ module ApplicationHelper
   GTL_VIEW_LAYOUTS = %w(action availability_zone auth_key_pair_cloud
                         cim_base_storage_extent cloud_object_store_container
                         cloud_object_store_object cloud_tenant cloud_volume cloud_volume_snapshot
-                        condition container_group container_route container_project
+                        configuration_job condition container_group container_route container_project
                         container_replicator container_image container_image_registry
                         container_topology container_dashboard middleware_topology persistent_volume container_build
                         container_node container_service ems_cloud ems_cluster ems_container ems_infra event
@@ -1120,7 +1157,7 @@ module ApplicationHelper
          ems_infra host miq_template offline orchestration_stack persistent_volume ems_middleware
          middleware_server middleware_deployment
          ems_network security_group floating_ip cloud_subnet network_router network_port cloud_network
-         resource_pool retired service templates vm).include?(@layout) && !@in_a_form
+         resource_pool retired service storage templates vm configuration_job).include?(@layout) && !@in_a_form
       "show_list"
     elsif @compare
       "compare_sections"
@@ -1135,7 +1172,7 @@ module ApplicationHelper
              ems_middleware middleware_server middleware_deployment flavor
              ems_network security_group floating_ip cloud_subnet network_router network_port cloud_network
              host miq_schedule miq_template policy ontap_file_share ontap_logical_disk
-             ontap_storage_system ontap_storage_volume orchestration_stack resource_pool
+             ontap_storage_system ontap_storage_volume orchestration_stack resource_pool configuration_job
              scan_profile service snia_local_file_system storage_manager timeline).include?(@layout)
       @layout
     end
@@ -1148,7 +1185,7 @@ module ApplicationHelper
                      ems_cloud ems_cluster ems_container ems_infra flavor host miq_template offline
                      ontap_file_share ontap_logical_disk ontap_storage_system ontap_storage_volume
                      ems_network security_group floating_ip cloud_subnet network_router network_port cloud_network
-                     orchestration_stack resource_pool retired service
+                     orchestration_stack resource_pool retired service configuration_job
                      snia_local_file_system storage_manager templates vm)
     (@lastaction == "show_list" && !session[:menu_click] && show_search.include?(@layout) && !@in_a_form) ||
       (@explorer && x_tree && tree_with_advanced_search? && !@record)
@@ -1485,6 +1522,21 @@ module ApplicationHelper
       return false
     end
     true
+  end
+
+  def auth_mode_name
+    case get_vmdb_config.fetch_path(:authentication, :mode).downcase
+    when "ldap"
+      _("LDAP")
+    when "ldaps"
+      _("LDAPS")
+    when "amazon"
+      _("Amazon")
+    when "httpd"
+      _("External Authentication")
+    when "database"
+      _("Database")
+    end
   end
 
   def ext_auth?(auth_option = nil)

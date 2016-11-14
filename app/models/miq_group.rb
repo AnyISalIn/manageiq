@@ -20,7 +20,7 @@ class MiqGroup < ApplicationRecord
 
   delegate :self_service?, :limited_self_service?, :to => :miq_user_role, :allow_nil => true
 
-  validates :description, :presence => true, :uniqueness => true
+  validates :description, :presence => true, :uniqueness => {:conditions => -> { in_my_region } }
   validate :validate_default_tenant, :on => :update, :if => :tenant_id_changed?
   before_destroy :ensure_can_be_destroyed
 
@@ -81,7 +81,11 @@ class MiqGroup < ApplicationRecord
     tenant_role = MiqUserRole.default_tenant_role
     if tenant_role
       tenant_groups.includes(:entitlement).where(:entitlements => {:miq_user_role_id => nil}).each do |group|
-        group.update_attributes(:miq_user_role => tenant_role)
+        if group.entitlement.present? # Relation is read-only if present
+          Entitlement.update(group.entitlement.id, :miq_user_role => tenant_role)
+        else
+          group.update_attributes(:miq_user_role => tenant_role)
+        end
       end
     else
       _log.warn("Unable to find default tenant role for tenant access")
@@ -186,6 +190,10 @@ class MiqGroup < ApplicationRecord
   # @return true if this is a default tenant group
   def tenant_group?
     group_type == TENANT_GROUP
+  end
+
+  def self.non_tenant_groups_in_my_region
+    in_my_region.non_tenant_groups
   end
 
   # Asks about the tenant's default_miq_group

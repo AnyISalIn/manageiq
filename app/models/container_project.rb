@@ -6,7 +6,9 @@ class ContainerProject < ApplicationRecord
   has_many :container_routes
   has_many :container_replicators
   has_many :container_services
+  has_many :containers, :through => :container_groups
   has_many :container_definitions, :through => :container_groups
+  has_many :container_images, -> { distinct }, :through => :container_groups
   has_many :container_nodes, -> { distinct }, :through => :container_groups
   has_many :container_quotas
   has_many :container_quota_items, :through => :container_quotas
@@ -27,6 +29,7 @@ class ContainerProject < ApplicationRecord
   virtual_column :routes_count,      :type => :integer
   virtual_column :replicators_count, :type => :integer
   virtual_column :containers_count,  :type => :integer
+  virtual_column :images_count,      :type => :integer
 
   def groups_count
     container_groups.size
@@ -48,10 +51,18 @@ class ContainerProject < ApplicationRecord
     container_definitions.size
   end
 
+  def images_count
+    container_images.size
+  end
+
   include EventMixin
   include Metric::CiMixin
 
-  PERF_ROLLUP_CHILDREN = :container_groups
+  PERF_ROLLUP_CHILDREN = :all_container_groups
+
+  def all_container_groups
+    ContainerGroup.where(:container_project_id => id).or(ContainerGroup.where(:old_container_project_id => id))
+  end
 
   acts_as_miq_taggable
 

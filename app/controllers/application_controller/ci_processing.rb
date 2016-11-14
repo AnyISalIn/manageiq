@@ -88,7 +88,7 @@ module ApplicationController::CiProcessing
     # need to do this only if 1 vm is selected and miq_group has been set for it
     group = record.miq_group if @edit[:ownership_items].length == 1
     @edit[:new][:group] = group ? group.id.to_s : nil
-    rbac_filtered_objects(MiqGroup).each { |g| @groups[g.description] = g.id.to_s }
+    rbac_filtered_objects(MiqGroup.non_tenant_groups).each { |g| @groups[g.description] = g.id.to_s }
 
     @edit[:new][:user] = @edit[:new][:group] = DONT_CHANGE_OWNER if @edit[:ownership_items].length > 1
 
@@ -192,7 +192,8 @@ module ApplicationController::CiProcessing
   def retirevms
     assert_privileges(params[:pressed])
     vms = find_checked_items
-    if VmOrTemplate.includes_template?(vms.map(&:to_i).uniq)
+    if !%w(orchestration_stack service).include?(request.parameters["controller"]) &&
+       VmOrTemplate.find(vms).any? { |vm| !vm.supports_retire? }
       add_flash(_("Set Retirement Date does not apply to selected %{model}") %
         {:model => ui_lookup(:table => "miq_template")}, :error)
       render_flash_and_scroll
@@ -449,7 +450,7 @@ module ApplicationController::CiProcessing
     recs = find_checked_items
     recs = [params[:id].to_i] if recs.blank?
     @record = find_by_id_filtered(VmOrTemplate, recs.first)
-    if @record.is_available?(:live_migrate) && !@record.ext_management_system.nil?
+    if @record.supports_live_migrate?
       if @explorer
         live_migrate
         @refresh_partial = "vm_common/live_migrate"
@@ -463,7 +464,7 @@ module ApplicationController::CiProcessing
       add_flash(_("Unable to live migrate %{instance} \"%{name}\": %{details}") % {
         :instance => ui_lookup(:table => 'vm_cloud'),
         :name     => @record.name,
-        :details  => @record.is_available_now_error_message(:live_migrate)}, :error)
+        :details  => @record.unsupported_reason(:live_migrate)}, :error)
     end
   end
   alias instance_live_migrate livemigratevms
@@ -515,7 +516,7 @@ module ApplicationController::CiProcessing
         :model => ui_lookup(:table => "vm_cloud"), :name => @record.name})
       @record = @sb[:action] = nil
     when "submit"
-      if @record.is_available?(:live_migrate)
+      if @record.supports_live_migrate?
         if params['auto_select_host'] == 'on'
           hostname = nil
         else
@@ -542,7 +543,7 @@ module ApplicationController::CiProcessing
         add_flash(_("Unable to live migrate %{instance} \"%{name}\": %{details}") % {
           :instance => ui_lookup(:table => 'vm_cloud'),
           :name     => @record.name,
-          :details  => @record.is_available_now_error_message(:live_migrate)}, :error)
+          :details  => @record.unsupported_reason(:live_migrate)}, :error)
       end
       params[:id] = @record.id.to_s # reset id in params for show
       @record = nil
@@ -1123,6 +1124,7 @@ module ApplicationController::CiProcessing
     @client_id = ""
     @client_key = ""
     @azure_tenant_id = ""
+    @subscription = ""
     if session[:type] == "hosts"
       @discover_type = Host.host_discovery_types
     elsif session[:type] == "ems"
@@ -1179,9 +1181,10 @@ module ApplicationController::CiProcessing
         @client_id = params[:client_id] if params[:client_id]
         @client_key = params[:client_key] if params[:client_key]
         @azure_tenant_id = params[:azure_tenant_id] if params[:azure_tenant_id]
+        @subscription = params[:subscription] if params[:subscription]
 
-        if @client_id == "" || @client_key == "" || @azure_tenant_id == ""
-          add_flash(_("Client ID, Client Key and Azure Tenant ID are required"), :error)
+        if @client_id == "" || @client_key == "" || @azure_tenant_id == "" || @subscription == ""
+          add_flash(_("Client ID, Client Key, Azure Tenant ID and Subscription ID are required"), :error)
           render :action => 'discover'
           return
         end
@@ -1220,7 +1223,7 @@ module ApplicationController::CiProcessing
             Host.discoverByIpRange(from_ip, to_ip, options)
           else
             if params[:discover_type_selected] == ExtManagementSystem.ems_cloud_discovery_types['azure']
-              ManageIQ::Providers::Azure::CloudManager.discover_queue(@client_id, @client_key, @azure_tenant_id)
+              ManageIQ::Providers::Azure::CloudManager.discover_queue(@client_id, @client_key, @azure_tenant_id, @subscription)
             else
               ManageIQ::Providers::Amazon::CloudManager.discover_queue(@userid, @password)
             end
@@ -1616,7 +1619,9 @@ module ApplicationController::CiProcessing
          request.parameters["controller"]) # showing a list
 
       vms = find_checked_items
-      if method == 'retire_now' && VmOrTemplate.includes_template?(vms)
+      if method == 'retire_now' &&
+         !%w(orchestration_stack service).include?(request.parameters["controller"]) &&
+         VmOrTemplate.find(vms).any? { |vm| !vm.supports_retire? }
         add_flash(_("Retire does not apply to selected %{model}") %
           {:model => ui_lookup(:table => "miq_template")}, :error)
         render_flash_and_scroll
@@ -1663,7 +1668,6 @@ module ApplicationController::CiProcessing
         end
       end
     end
-
     vms.count
   end
 
@@ -1693,6 +1697,8 @@ module ApplicationController::CiProcessing
       klass = Vm
     end
 
+    assert_rbac(current_user, get_rec_cls, objs)
+
     return if objs.empty?
 
     options = {:ids => objs, :task => task, :userid => session[:userid]}
@@ -1713,15 +1719,15 @@ module ApplicationController::CiProcessing
         add_flash(_("%{record} no longer exists") % {:record => ui_lookup(:table => controller_name)}, :error)
       else
         items.push(params[:id])
-        @single_delete = true if method == 'destroy' && !flash_errors?
       end
     else
       items = find_checked_items
-      if items.empty?
-        add_flash(_("No providers were selected for %{task}") % {:task  => display_name}, :error)
-      else
-        process_cfgmgr(items, method) unless items.empty? && !flash_errors?
-      end
+    end
+
+    if items.empty?
+      add_flash(_("No providers were selected for %{task}") % {:task  => display_name}, :error)
+    else
+      process_cfgmgr(items, method) unless items.empty? && !flash_errors?
     end
   end
 
@@ -2167,6 +2173,26 @@ module ApplicationController::CiProcessing
     end
   end
 
+  # Common Stacks button handler routines
+  def process_configuration_jobs(stacks, task, _ = nil)
+    stacks, = filter_ids_in_region(stacks, "ManageIQ::Providers::AnsibleTower::ConfigurationManager::Job")
+    return if stacks.empty?
+
+    if task == "destroy"
+      ManageIQ::Providers::AnsibleTower::ConfigurationManager::Job.where(:id => stacks).order("lower(name)").each do |stack|
+        id = stack.id
+        stack_name = stack.name
+        audit = {:event        => "stack_record_delete_initiated",
+                 :message      => "[#{stack_name}] Record delete initiated",
+                 :target_id    => id,
+                 :target_class => "ManageIQ::Providers::AnsibleTower::ConfigurationManager::Job",
+                 :userid       => session[:userid]}
+        AuditEvent.success(audit)
+      end
+      ManageIQ::Providers::AnsibleTower::ConfigurationManager::Job.destroy_queue(stacks)
+    end
+  end
+
   # Refresh all selected or single displayed host(s)
   def refreshhosts
     assert_privileges("host_refresh")
@@ -2358,6 +2384,13 @@ module ApplicationController::CiProcessing
     delete_elements(OrchestrationStack, :process_orchestration_stacks)
   end
 
+  def configuration_job_delete
+    assert_privileges("configuration_job_delete")
+    delete_elements(ManageIQ::Providers::AnsibleTower::ConfigurationManager::Job,
+                    :process_configuration_jobs,
+                    'configuration_job')
+  end
+
   # Delete all selected or single displayed datastore(s)
   def deletestorages
     assert_privileges("storage_delete")
@@ -2395,27 +2428,31 @@ module ApplicationController::CiProcessing
     end
   end
 
-  def delete_elements(model_class, destroy_method)
+  def delete_elements(model_class, destroy_method, model_name = nil)
     elements = []
-    if @lastaction == "show_list" || (@lastaction == "show" && @layout != model_class.table_name.singularize)  # showing a list
+    model_name ||= model_class.table_name
+    if @lastaction == "show_list" || (@lastaction == "show" && @layout != model_name.singularize) # showing a list
       elements = find_checked_items
       if elements.empty?
         add_flash(_("No %{model} were selected for deletion") %
-          {:model => ui_lookup(:tables => model_class.table_name)}, :error)
+          {:model => ui_lookup(:tables => model_name)}, :error)
       end
       send(destroy_method, elements, "destroy") unless elements.empty?
-      add_flash(_("Delete initiated for %{count_model} from the CFME Database") %
-        {:count_model => pluralize(elements.length, ui_lookup(:table => model_class.table_name))}) unless flash_errors?
+      add_flash(n_("Delete initiated for %{count} %{model} from the CFME Database",
+                   "Delete initiated for %{count} %{models} from the CFME Database", elements.length) %
+        {:count  => elements.length,
+         :model  => ui_lookup(:table => model_name),
+         :models => ui_lookup(:tables => model_name)}) unless flash_errors?
     else # showing 1 element, delete it
       if params[:id].nil? || model_class.find_by_id(params[:id]).nil?
-        add_flash(_("%{record} no longer exists") % {:record => ui_lookup(:table => model_class.table_name)}, :error)
+        add_flash(_("%{record} no longer exists") % {:record => ui_lookup(:table => model_name)}, :error)
       else
         elements.push(params[:id])
       end
       send(destroy_method, elements, "destroy") unless elements.empty?
       @single_delete = true unless flash_errors?
       add_flash(_("The selected %{record} was deleted") %
-        {:record => ui_lookup(:table => model_class.table_name)}) if @flash_array.nil?
+        {:record => ui_lookup(:table => model_name)}) if @flash_array.nil?
     end
     if @lastaction == "show_list"
       show_list

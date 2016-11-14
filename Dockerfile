@@ -64,6 +64,16 @@ RUN yum -y install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.n
 # Add persistent data volume for postgres
 VOLUME [ "/var/opt/rh/rh-postgresql94/lib/pgsql/data" ]
 
+## Systemd cleanup base image
+RUN (cd /lib/systemd/system/sysinit.target.wants && for i in *; do [ $i == systemd-tmpfiles-setup.service ] || rm -vf $i; done) && \
+    rm -vf /lib/systemd/system/multi-user.target.wants/* && \
+    rm -vf /etc/systemd/system/*.wants/* && \
+    rm -vf /lib/systemd/system/local-fs.target.wants/* && \
+    rm -vf /lib/systemd/system/sockets.target.wants/*udev* && \
+    rm -vf /lib/systemd/system/sockets.target.wants/*initctl* && \
+    rm -vf /lib/systemd/system/basic.target.wants/* && \
+    rm -vf /lib/systemd/system/anaconda.target.wants/*
+
 # Download chruby and chruby-install, install, setup environment, clean all
 RUN curl -sL https://github.com/postmodern/chruby/archive/v0.3.9.tar.gz | tar xz && \
     cd chruby-0.3.9 && \
@@ -105,7 +115,6 @@ RUN ${APPLIANCE_ROOT}/setup && \
 WORKDIR ${APP_ROOT}
 RUN source /etc/default/evm && \
     export RAILS_USE_MEMORY_STORE="true" && \
-    npm install npm -g && \
     npm install gulp bower -g && \
     gem install bundler -v ">=1.8.4" && \
     bin/setup --no-db --no-tests && \
@@ -168,6 +177,12 @@ LABEL name="manageiq" \
             $IMAGE' \
       STOP='docker stop ${NAME}_run && echo "Container ${NAME}_run has been stopped"' \
       UNINSTALL='docker rm -v ${NAME}_volume ${NAME}_run && echo "Uninstallation complete"'
+
+## OpenShift Labels
+LABEL io.k8s.description="ManageIQ is a management and automation platform for virtual, private, and hybrid cloud infrastructures." \
+      io.k8s.display-name="ManageIQ" \
+      io.openshift.expose-services="443:https" \
+      io.openshift.tags="ManageIQ,miq,manageiq"
 
 ## Call systemd to bring up system
 CMD [ "/usr/sbin/init" ]

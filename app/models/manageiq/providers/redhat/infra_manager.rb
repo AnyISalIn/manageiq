@@ -14,6 +14,8 @@ class ManageIQ::Providers::Redhat::InfraManager < ManageIQ::Providers::InfraMana
   require_nested :Template
   require_nested :Vm
 
+  supports :provisioning
+
   def self.ems_type
     @ems_type ||= "rhevm".freeze
   end
@@ -31,6 +33,14 @@ class ManageIQ::Providers::Redhat::InfraManager < ManageIQ::Providers::InfraMana
       USER_VDC_LOGOUT
       USER_VDC_LOGIN_FAILED
     )
+  end
+
+  def self.without_iso_datastores
+    includes(:iso_datastore).where(:iso_datastores => {:id => nil})
+  end
+
+  def self.any_without_iso_datastores?
+    without_iso_datastores.count > 0
   end
 
   def supports_port?
@@ -107,13 +117,17 @@ class ManageIQ::Providers::Redhat::InfraManager < ManageIQ::Providers::InfraMana
   end
 
   def verify_credentials_for_rhevm(options = {})
-    connect(options).api
-  rescue URI::InvalidURIError
-    raise "Invalid URI specified for RHEV server."
-  rescue SocketError => err
-    raise "Error occurred attempted to connect to RHEV server.", err
-  rescue => err
-    raise MiqException::MiqEVMLoginError, err
+    with_provider_connection(options, &:api)
+  rescue SocketError, Errno::EHOSTUNREACH, Errno::ENETUNREACH
+    _log.warn($ERROR_INFO)
+    raise MiqException::MiqUnreachableError, $ERROR_INFO
+  rescue Ovirt::MissingResourceError, URI::InvalidURIError
+    raise MiqException::MiqUnreachableError, "Invalid URI specified for the server."
+  rescue RestClient::Unauthorized
+    raise MiqException::MiqInvalidCredentialsError, "Incorrect user name or password."
+  rescue
+    _log.error("Error while verifying credentials #{$ERROR_INFO}")
+    raise MiqException::MiqEVMLoginError, $ERROR_INFO
   end
 
   def rhevm_metrics_connect_options(options = {})
@@ -210,7 +224,7 @@ class ManageIQ::Providers::Redhat::InfraManager < ManageIQ::Providers::InfraMana
 
     vm.with_provider_object do |rhevm_vm|
       _log.info("#{log_header} Started...")
-      rhevm_vm.memory = spec["memoryMB"] * 1.megabyte   if spec["memoryMB"]
+      update_vm_memory(rhevm_vm, spec["memoryMB"] * 1.megabyte) if spec["memoryMB"]
 
       cpu_options = {}
       cpu_options[:cores]   = spec["numCoresPerSocket"] if spec["numCoresPerSocket"]
@@ -219,6 +233,19 @@ class ManageIQ::Providers::Redhat::InfraManager < ManageIQ::Providers::InfraMana
       rhevm_vm.cpu_topology = cpu_options if cpu_options.present?
     end
     _log.info("#{log_header} Completed.")
+  end
+
+  # RHEVM requires that the memory of the VM will be bigger or equal to the reserved memory at any given time.
+  # Therefore, increasing the memory of the vm should precede to updating the reserved memory, and the opposite:
+  # Decreasing the memory to a lower value than the reserved memory requires first to update the reserved memory
+  def update_vm_memory(rhevm_vm, memory)
+    if memory > rhevm_vm.attributes.fetch_path(:memory)
+      rhevm_vm.memory = memory
+      rhevm_vm.memory_reserve = memory
+    else
+      rhevm_vm.memory_reserve = memory
+      rhevm_vm.memory = memory
+    end
   end
 
   # Calculates an "ems_ref" from the "href" attribute provided by the oVirt REST API, removing the

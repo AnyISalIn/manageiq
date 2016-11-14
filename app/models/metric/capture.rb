@@ -13,7 +13,7 @@ module Metric::Capture
   end
 
   def self.historical_days
-    (VMDB::Config.new("vmdb").config.fetch_path(:performance, :history, :initial_capture_days) || 7).to_i
+    (Settings.performance.history.initial_capture_days || 7).to_i
   end
 
   def self.historical_start_time
@@ -21,10 +21,20 @@ module Metric::Capture
   end
 
   def self.concurrent_requests(interval_name)
-    requests = VMDB::Config.new("vmdb").config.fetch_path(:performance, :concurrent_requests, interval_name.to_sym)
+    requests = Settings.performance.concurrent_requests[interval_name]
     requests ||= interval_name == 'realtime' ? 20 : 1
     requests = 20 if requests < 20 && interval_name == 'realtime'
     requests
+  end
+
+  def self.standard_capture_threshold(target)
+    target_key = target.class.base_model.to_s.underscore.to_sym
+    minutes_ago(Settings.performance.capture_threshold[target_key] || 10)
+  end
+
+  def self.alert_capture_threshold(target)
+    target_key = target.class.base_model.to_s.underscore.to_sym
+    minutes_ago(Settings.performance.capture_threshold_with_alerts[target_key] || 1)
   end
 
   def self.perf_capture_timer(zone = nil)
@@ -45,9 +55,10 @@ module Metric::Capture
     _log.info "Queueing performance capture...Complete"
   end
 
-  def self.perf_capture_gap(start_time, end_time, zone = nil)
+  def self.perf_capture_gap(start_time, end_time, zone_id = nil)
     _log.info "Queueing performance capture for range: [#{start_time} - #{end_time}]..."
 
+    zone = Zone.find(zone_id) if zone_id
     targets = Metric::Targets.capture_targets(zone, :exclude_storages => true)
     targets.each { |target| target.perf_capture_queue('historical', :start_time => start_time, :end_time => end_time, :zone => zone) }
 
@@ -60,32 +71,25 @@ module Metric::Capture
       :method_name => "perf_capture_gap",
       :role        => "ems_metrics_coordinator",
       :priority    => MiqQueue::HIGH_PRIORITY,
-      :args        => [start_time, end_time, zone]
+      :args        => [start_time, end_time, zone.try(:id)]
     }
-
-    zone = Zone.find(zone) if zone.kind_of?(Integer)
-    item[:zone] = zone.name if zone.kind_of?(Zone)
+    item[:zone] = zone.name if zone
 
     MiqQueue.put(item)
   end
 
+  # if it has not been run, or it was a very long time ago, just run it
+  # if it has been run very recently (even too recently for realtime) then skip it
+  # otherwise, it needs to be run if it is realtime, but not if it is standard threshold
+  # assumes alert capture threshold <= standard capture threshold
   def self.perf_capture_now?(target)
-    target.last_perf_capture_on.nil? || (target.last_perf_capture_on < capture_threshold(target))
+    return true  if target.last_perf_capture_on.nil?
+    return true  if target.last_perf_capture_on < standard_capture_threshold(target)
+    return false if target.last_perf_capture_on >= alert_capture_threshold(target)
+    MiqAlert.target_needs_realtime_capture?(target)
   end
 
   private
-
-  def self.capture_threshold(target)
-    key, default = MiqAlert.target_needs_realtime_capture?(target) ? [:capture_threshold_with_alerts, 1] : [:capture_threshold, 10]
-
-    value = VMDB::Config.new("vmdb").config.fetch_path(:performance, key, target.class.base_model.to_s.underscore.to_sym) || default
-    value = if value.kind_of?(Fixnum) # Default unit is minutes
-              value.minutes.ago.utc
-            else
-              value.to_i_with_method.seconds.ago.utc unless value.nil?
-            end
-    value
-  end
 
   #
   # Capture entry points
@@ -192,7 +196,7 @@ module Metric::Capture
         target.perf_capture_queue(interval_name, options)
       else
         _log.debug do
-          log_target = "#{self.class.name} name: [#{name}], id: [#{id}]"
+          log_target = "#{target.class.name} name: [#{target.name}], id: [#{target.id}]"
           "Skipping capture of #{log_target} -" +
             "Performance last captured on [#{target.last_perf_capture_on}] is within threshold"
         end
@@ -209,6 +213,16 @@ module Metric::Capture
     when Host, VmOrTemplate then                       "realtime"
     when ContainerNode, Container, ContainerGroup then "realtime"
     when Storage then                                  "hourly"
+    end
+  end
+
+  def self.minutes_ago(value)
+    if value.kind_of?(Fixnum) # Default unit is minutes
+      value.minutes.ago.utc
+    elsif value.nil?
+      nil
+    else
+      value.to_i_with_method.seconds.ago.utc
     end
   end
 end

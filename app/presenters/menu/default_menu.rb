@@ -13,18 +13,19 @@ module Menu
       def configuration_menu_section
         Menu::Section.new(:conf, N_("Configuration"), 'fa fa-cog  fa-2x', [
           Menu::Item.new('provider_foreman', N_('Configuration Management'), 'provider_foreman_explorer',
-                         {:feature => 'provider_foreman_explorer', :any => true}, '/provider_foreman/explorer')
+                         {:feature => 'provider_foreman_explorer', :any => true}, '/provider_foreman/explorer'),
+          Menu::Item.new('configuration_job', N_('Jobs'), 'configuration_job', {:feature => 'configuration_job_show_list'}, '/configuration_job'),
         ])
       end
 
       def cloud_inteligence_menu_section
         Menu::Section.new(:vi, N_("Cloud Intel"), 'fa fa-dashboard fa-2x', [
-          Menu::Item.new('dashboard',  N_('Dashboard'),  'dashboard',  {:feature => 'dashboard_view'},           '/dashboard/'),
+          Menu::Item.new('dashboard',  N_('Dashboard'),  'dashboard',  {:feature => 'dashboard_view'},           '/dashboard/show'),
           Menu::Item.new('report',     N_('Reports'),    'miq_report', {:feature => 'miq_report', :any => true}, '/report/explorer'),
           # Menu::Item.new('usage',    N_('Usage'),      'usage',      {:feature => 'usage'},                    '/report/usage/'), #  / Hiding usage for now - release 5.2
           Menu::Item.new('chargeback', N_('Chargeback'), 'chargeback', {:feature => 'chargeback', :any => true}, '/chargeback/explorer'),
           Menu::Item.new('timeline',   N_('Timelines'),  'timeline',   {:feature => 'timeline'},                 '/dashboard/timeline/'),
-          Menu::Item.new('rss',        N_('RSS'),        'rss',        {:feature => 'rss'},                      '/alert/')
+          Menu::Item.new('rss',        N_('RSS'),        'rss',        {:feature => 'rss'},                      '/alert/show_list')
         ])
       end
 
@@ -32,7 +33,7 @@ module Menu
         Menu::Section.new(:svc, N_("Services"), 'fa pficon-service fa-2x', [
           Menu::Item.new('services',       N_('My Services'), 'service',             {:feature => 'service', :any => true},             '/service/explorer'),
           Menu::Item.new('catalogs',       N_('Catalogs'),    'catalog',             {:feature => 'catalog', :any => true},             '/catalog/explorer'),
-          Menu::Item.new('vm_or_template', N_('Workloads'),   'vm_explorer_accords', {:feature => 'vm_explorer_accords', :any => true}, '/vm_or_template/explorer'),
+          Menu::Item.new('vm_or_template', N_('Workloads'),   'vm_explorer',         {:feature => 'vm_explorer', :any => true},         '/vm_or_template/explorer'),
           Menu::Item.new('miq_request_vm', N_('Requests'),    'miq_request',         {:feature => 'miq_request_show_list'},             '/miq_request?typ=vm')
         ])
       end
@@ -44,7 +45,7 @@ module Menu
           Menu::Item.new('cloud_tenant',        N_('Tenants'),             'cloud_tenant',              {:feature => 'cloud_tenant_show_list'},                  '/cloud_tenant'),
           Menu::Item.new('cloud_volume',        N_('Volumes'),             'cloud_volume',              {:feature => 'cloud_volume_show_list'},                  '/cloud_volume'),
           Menu::Item.new('flavor',              N_('Flavors'),             'flavor',                    {:feature => 'flavor_show_list'},                        '/flavor'),
-          Menu::Item.new('vm_cloud',            N_('Instances'),           'vm_cloud_explorer',         {:feature => 'vm_cloud_explorer_accords', :any => true}, '/vm_cloud/explorer'),
+          Menu::Item.new('vm_cloud',            N_('Instances'),           'vm_cloud_explorer',         {:feature => 'vm_cloud_explorer', :any => true}, '/vm_cloud/explorer'),
           Menu::Item.new('orchestration_stack', N_('Stacks'),              'orchestration_stack',       {:feature => 'orchestration_stack_show_list'},           '/orchestration_stack'),
           Menu::Item.new('auth_key_pair_cloud', N_('Key Pairs'),           'auth_key_pair_cloud',       {:feature => 'auth_key_pair_cloud_show_list'},           '/auth_key_pair_cloud'),
           Menu::Item.new('cloud_object_store_container',
@@ -64,7 +65,7 @@ module Menu
           Menu::Item.new('ems_cluster',      clusters_name,          'ems_cluster',   {:feature => 'ems_cluster_show_list'},   '/ems_cluster'),
           Menu::Item.new('host',             hosts_name,             'host',          {:feature => 'host_show_list'},          '/host'),
           Menu::Item.new('vm_infra',         N_('Virtual Machines'), 'vm_infra_explorer',
-                         {:feature => 'vm_infra_explorer_accords', :any => true},
+                         {:feature => 'vm_infra_explorer', :any => true},
                          '/vm_infra/explorer'),
           Menu::Item.new('resource_pool',    N_('Resource Pools'),   'resource_pool', {:feature => 'resource_pool_show_list'}, '/resource_pool'),
           Menu::Item.new('storage',          deferred_ui_lookup(:tables => 'storages'),
@@ -143,9 +144,9 @@ module Menu
           Menu::Item.new('ems_network',      N_('Providers'),       'ems_network',      {:feature => 'ems_network_show_list'},    '/ems_network'),
           Menu::Item.new('cloud_network',    N_('Networks'),        'cloud_network',    {:feature => 'cloud_network_show_list'},  '/cloud_network'),
           Menu::Item.new('cloud_subnet',     N_('Subnets'),         'cloud_subnet',     {:feature => 'cloud_subnet_show_list'},   '/cloud_subnet'),
-          Menu::Item.new('network_router',   N_('Network Router'),  'network_router',   {:feature => 'network_router_show_list'}, '/network_router'),
+          Menu::Item.new('network_router',   N_('Network Routers'), 'network_router',   {:feature => 'network_router_show_list'}, '/network_router'),
           Menu::Item.new('security_group',   N_('Security Groups'), 'security_group',   {:feature => 'security_group_show_list'}, '/security_group'),
-          Menu::Item.new('floating_ip',      N_('Floating IP'),     'floating_ip',      {:feature => 'floating_ip_show_list'},    '/floating_ip'),
+          Menu::Item.new('floating_ip',      N_('Floating IPs'),    'floating_ip',      {:feature => 'floating_ip_show_list'},    '/floating_ip'),
           Menu::Item.new('network_port',     N_('Network Ports'),   'network_port',     {:feature => 'network_port_show_list'},   '/network_port'),
           Menu::Item.new('network_topology', N_('Topology'),        'network_topology', {:feature => 'network_topology'},         '/network_topology'),
         ])

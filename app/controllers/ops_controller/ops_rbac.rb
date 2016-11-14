@@ -789,11 +789,11 @@ module OpsController::OpsRbac
                     when "user"
                       get_view(User, :named_scope => :in_my_region)
                     when "group"
-                      get_view(MiqGroup, :named_scope => :non_tenant_groups)
+                      get_view(MiqGroup, :named_scope => :non_tenant_groups_in_my_region)
                     when "role"
                       get_view(MiqUserRole)
                     when "tenant"
-                      get_view(Tenant)
+                      get_view(Tenant, :named_scope => :in_my_region)
                     end
 
     @current_page = @pages[:current] unless @pages.nil? # save the current page number
@@ -940,8 +940,8 @@ module OpsController::OpsRbac
       @filters[f.split("/")[-2] + "-" + f.split("/")[-1]] = f
     end
     rbac_build_myco_tree                              # Build the MyCompanyTags tree for this user
-    build_belongsto_tree(@belongsto.keys)  # Build the Hosts & Clusters tree for this user
-    build_belongsto_tree(@belongsto.keys, true)  # Build the VMs & Templates tree for this user
+    @hac_tree = build_belongsto_tree(@belongsto.keys, false, false)  # Build the Hosts & Clusters tree for this user
+    @vat_tree = build_belongsto_tree(@belongsto.keys, true, false)  # Build the VMs & Templates tree for this user
   end
 
   def rbac_role_get_details(id)
@@ -959,19 +959,21 @@ module OpsController::OpsRbac
   # Set form variables for role edit
   def rbac_user_set_form_vars
     @edit = {}
-    @edit[:user_id] = @record.id if @sb[:typ] != "copy"
+    @edit[:user_id] = @record.id unless @sb[:typ] == "copy"
     @user = @sb[:typ] == "copy" ? @record.dup : @record # Save a shadow copy of the record if record is being copied
     @edit[:new] = {}
     @edit[:current] = {}
     @edit[:key] = "rbac_user_edit__#{@edit[:user_id] || "new"}"
 
     @edit[:new][:name] = @user.name
-    @edit[:new][:userid] = @user.userid
+    @edit[:new][:userid] = @user.userid unless @sb[:typ] == "copy"
     @edit[:new][:email] = @user.email.to_s
-    @edit[:new][:password] = @user.password
-    @edit[:new][:verify] = @user.password
+    @edit[:new][:password] = @user.password unless @sb[:typ] == "copy"
+    @edit[:new][:verify] = @user.password unless @sb[:typ] == "copy"
 
-    @edit[:groups] = MiqGroup.non_tenant_groups.sort_by { |g| g.description.downcase }.collect { |g| [g.description, g.id] }
+    @edit[:groups] = MiqGroup.non_tenant_groups_in_my_region
+                             .sort_by { |g| g.description.downcase }
+                             .collect { |g| [g.description, g.id] }
     @edit[:new][:group] = @user.current_group ? @user.current_group.id : nil
 
     @edit[:current] = copy_hash(@edit[:new])
@@ -1105,8 +1107,8 @@ module OpsController::OpsRbac
 
     @edit[:current] = copy_hash(@edit[:new])
     rbac_build_myco_tree                              # Build the MyCompanyTags tree for this user
-    build_belongsto_tree(@edit[:new][:belongsto].keys)  # Build the Hosts & Clusters tree for this user
-    build_belongsto_tree(@edit[:new][:belongsto].keys, true)  # Build the VMs & Templates tree for this user
+    @hac_tree = build_belongsto_tree(@edit[:new][:belongsto].keys, false, false)  # Build the Hosts & Clusters tree for this user
+    @vat_tree = build_belongsto_tree(@edit[:new][:belongsto].keys, true, false)  # Build the VMs & Templates tree for this user
   end
 
   # Build the MyCompany Tags tree
@@ -1142,8 +1144,7 @@ module OpsController::OpsRbac
       cat_node[:expand] = true if kids_checked
       cats.push(cat_node) unless cat_kids.empty?
     end
-    session[:myco_tree] = cats.to_json.html_safe # Add cats node array to root of tree
-    session[:tree] = "myco"
+    @myco_tree = cats.to_json.html_safe # Add cats node array to root of tree
   end
 
   # Set group record variables to new values

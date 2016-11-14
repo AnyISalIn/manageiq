@@ -79,6 +79,9 @@ module EmsCommon
     elsif @display == "orchestration_stacks" || session[:display] == "orchestration_stacks" && params[:display].nil?
       title = _("Stacks")
       view_setup_helper(OrchestrationStack, title, title.singularize)
+    elsif @display == "configuration_jobs" || session[:display] == "configuration_jobs" && params[:display].nil?
+      title = _("Configuration Jobs")
+      view_setup_helper(ConfigurationJob, title, title.singularize)
     elsif @display == "persistent_volumes" || session[:display] == "persistent_volumes" && params[:display].nil?
       title = ui_lookup(:tables => "persistent_volumes")
       view_setup_helper(PersistentVolume, title, title.singularize, :persistent_volumes)
@@ -339,35 +342,66 @@ module EmsCommon
     params[:display] = @display if ["vms", "hosts", "storages", "instances", "images"].include?(@display)  # Were we displaying vms/hosts/storages
     params[:page] = @current_page unless @current_page.nil?   # Save current page for list refresh
 
-    if params[:pressed].starts_with?("vm_", # Handle buttons from sub-items screen
-                                     "miq_template_",
+    # Handle buttons from sub-items screen
+    if params[:pressed].starts_with?("availability_zone_",
+                                     "cloud_network_",
+                                     "cloud_object_store_container_",
+                                     "cloud_subnet_",
+                                     "cloud_tenant_",
+                                     "cloud_volume_",
+                                     "ems_cluster_",
+                                     "flavor_",
+                                     "floating_ip_",
                                      "guest_",
+                                     "host_",
                                      "image_",
                                      "instance_",
+                                     "load_balancer_",
+                                     "miq_template_",
+                                     "network_port_",
+                                     "network_router_",
+                                     "orchestration_stack_",
+                                     "security_group_",
                                      "storage_",
-                                     "ems_cluster_",
-                                     "host_")
+                                     "vm_")
 
-      scanhosts if params[:pressed] == "host_scan"
-      analyze_check_compliance_hosts if params[:pressed] == "host_analyze_check_compliance"
-      check_compliance_hosts if params[:pressed] == "host_check_compliance"
-      refreshhosts if params[:pressed] == "host_refresh"
-      tag(Host) if params[:pressed] == "host_tag"
-      assign_policies(Host) if params[:pressed] == "host_protect"
-      deletehosts if params[:pressed] == "host_delete"
-      comparemiq if params[:pressed] == "host_compare"
-      edit_record  if params[:pressed] == "host_edit"
-
-      scanclusters if params[:pressed] == "ems_cluster_scan"
-      tag(EmsCluster) if params[:pressed] == "ems_cluster_tag"
-      assign_policies(EmsCluster) if params[:pressed] == "ems_cluster_protect"
-      deleteclusters if params[:pressed] == "ems_cluster_delete"
-      comparemiq if params[:pressed] == "ems_cluster_compare"
-
-      scanstorage if params[:pressed] == "storage_scan"
-      refreshstorage if params[:pressed] == "storage_refresh"
-      tag(Storage) if params[:pressed] == "storage_tag"
-      deletestorages if params[:pressed] == "storage_delete"
+      case params[:pressed]
+      # Clusters
+      when "ems_cluster_compare"              then comparemiq
+      when "ems_cluster_delete"               then deleteclusters
+      when "ems_cluster_protect"              then assign_policies(EmsCluster)
+      when "ems_cluster_scan"                 then scanclusters
+      when "ems_cluster_tag"                  then tag(EmsCluster)
+      # Hosts
+      when "host_analyze_check_compliance"    then analyze_check_compliance_hosts
+      when "host_check_compliance"            then check_compliance_hosts
+      when "host_compare"                     then comparemiq
+      when "host_delete"                      then deletehosts
+      when "host_edit"                        then edit_record
+      when "host_protect"                     then assign_policies(Host)
+      when "host_refresh"                     then refreshhosts
+      when "host_scan"                        then scanhosts
+      when "host_tag"                         then tag(Host)
+      # Storages
+      when "storage_delete"                   then deletestorages
+      when "storage_refresh"                  then refreshstorage
+      when "storage_scan"                     then scanstorage
+      when "storage_tag"                      then tag(Storage)
+      # Edit Tags for Network Manager Relationship pages
+      when "availability_zone_tag"            then tag(AvailabilityZone)
+      when "cloud_network_tag"                then tag(CloudNetwork)
+      when "cloud_object_store_container_tag" then tag(CloudObjectStoreContainer)
+      when "cloud_subnet_tag"                 then tag(CloudSubnet)
+      when "cloud_tenant_tag"                 then tag(CloudTenant)
+      when "cloud_volume_tag"                 then tag(CloudVolume)
+      when "flavor_tag"                       then tag(Flavor)
+      when "floating_ip_tag"                  then tag(FloatingIp)
+      when "load_balancer_tag"                then tag(LoadBalancer)
+      when "network_port_tag"                 then tag(NetworkPort)
+      when "network_router_tag"               then tag(NetworkRouter)
+      when "orchestration_stack_tag"          then tag(OrchestrationStack)
+      when "security_group_tag"               then tag(SecurityGroup)
+      end
 
       pfx = pfx_for_vm_button_pressed(params[:pressed])
       # Handle Host power buttons
@@ -437,14 +471,24 @@ module EmsCommon
       if params[:pressed] == "ems_cloud_recheck_auth_status" ||
          params[:pressed] == "ems_infra_recheck_auth_status" ||
          params[:pressed] == "ems_container_recheck_auth_status"
-        @record = find_by_id_filtered(model, params[:id])
-        result, details = @record.authentication_check_types_queue(@record.authentication_for_summary.pluck(:authtype),
-                                                                   :save => true)
-        if result
-          add_flash(_("Authentication status will be saved and workers will be restarted for this #{ui_lookup(:table => controller_name)}"))
+        if params[:id]
+          table_key = :table
+          _result, details = recheck_authentication
+          add_flash(_("Re-checking Authentication status for this %{controller_name} was not successful: %{details}") %
+                        {:controller_name => ui_lookup(:table => controller_name), :details => details}, :error) if details
         else
-          add_flash(_("Re-checking Authentication status for this #{ui_lookup(:table => "ems_cloud")} was not successful: %{details}") % {:details => details}, :error)
+          table_key = :tables
+          ems_ids = find_checked_items
+          ems_ids.each do |ems_id|
+            _result, details = recheck_authentication(ems_id)
+            add_flash(_("Re-checking Authentication status for the selected %{controller_name} %{name} was not successful: %{details}") %
+                          {:controller_name => ui_lookup(:table => controller_name),
+                           :name            => @record.name,
+                           :details         => details}, :error) if details
+          end
         end
+        add_flash(_("Authentication status will be saved and workers will be restarted for the selected %{controller_name}") %
+                      {:controller_name => ui_lookup(table_key => controller_name)})
         render_flash
         return
       end
@@ -472,6 +516,11 @@ module EmsCommon
         render_flash
       end
     end
+  end
+
+  def recheck_authentication(id = nil)
+    @record = find_by_id_filtered(model, id || params[:id])
+    @record.authentication_check_types_queue(@record.authentication_for_summary.pluck(:authtype), :save => true)
   end
 
   def provider_documentation_url

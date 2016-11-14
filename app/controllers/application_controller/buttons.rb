@@ -618,7 +618,6 @@ module ApplicationController::Buttons
     drop_breadcrumb(:name => title, :url => "/miq_ae_customization/button_new")
     @lastaction = "automate_button"
     @layout = "miq_ae_automate_button"
-    @custom_button = nil
     @sb[:buttons] = nil
     @sb[:button_groups] = nil
     replace_right_cell("button_edit")
@@ -852,7 +851,7 @@ module ApplicationController::Buttons
     @edit[:new][:button_image] = @custom_button.options && @custom_button.options[:button_image] ? @custom_button.options[:button_image] : ""
     @edit[:new][:display] = @custom_button.options && @custom_button.options.key?(:display) ? @custom_button.options[:display] : true
     @edit[:new][:object_message] = @custom_button.uri_message || "create"
-    @edit[:new][:instance_name] ||= "Automation"
+    @edit[:new][:instance_name] ||= "Request"
     @edit[:current] = copy_hash(@edit[:new])
 
     @edit[:new][:button_images] = @edit[:current][:button_images] = build_button_image_options
@@ -994,7 +993,7 @@ module ApplicationController::Buttons
     @resolve ||= {}
     @resolve[:new] ||= {}
     @resolve[:new][:starting_object] ||= "SYSTEM/PROCESS"
-    @resolve[:new][:readonly] = true
+    @resolve[:new][:readonly] = false
     @resolve[:throw_ready] = false
 
     # Following commented out since all resolutions start at SYSTEM/PROCESS
@@ -1004,7 +1003,7 @@ module ApplicationController::Buttons
     if matching_instances.any?
       @resolve[:instance_names] = matching_instances.collect(&:name)
       instance_name = @custom_button && @custom_button.uri_object_name
-      @resolve[:new][:instance_name] = instance_name ? instance_name : "Automation"
+      @resolve[:new][:instance_name] = instance_name ? instance_name : "Request"
       @resolve[:new][:object_message] = @custom_button && @custom_button.uri_message || "create"
       @resolve[:target_class] = nil
       @resolve[:target_classes] = {}

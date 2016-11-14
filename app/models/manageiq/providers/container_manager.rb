@@ -1,7 +1,7 @@
-include AvailabilityMixin
-
 module ManageIQ::Providers
   class ContainerManager < BaseManager
+    include AvailabilityMixin
+
     has_many :container_nodes, :foreign_key => :ems_id, :dependent => :destroy
     has_many :container_groups, :foreign_key => :ems_id, :dependent => :destroy
     has_many :container_services, :foreign_key => :ems_id, :dependent => :destroy
@@ -55,6 +55,10 @@ module ManageIQ::Providers
 
     def validate_authentication_status
       {:available => true, :message => nil}
+    end
+
+    def port_show
+      port.to_s
     end
   end
 end

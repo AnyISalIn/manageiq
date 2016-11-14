@@ -12,7 +12,8 @@ class MiqAeClass < ApplicationRecord
 
   validates_presence_of   :name, :namespace_id
   validates_uniqueness_of :name, :case_sensitive => false, :scope => :namespace_id
-  validates_format_of     :name, :with => /\A[A-Za-z0-9_.-]+\z/i
+  validates_format_of     :name, :with    => /\A[\w.-]+\z/i,
+                                 :message => N_("may contain only alphanumeric and _ . - characters")
 
   include ReportableMixin
 

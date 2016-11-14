@@ -105,21 +105,21 @@ class MiqAeClassController < ApplicationController
       @sb[:namespace_path] = rec.fqname
     when "aei"
       txt = ui_lookup(:model => "MiqAeInstance")
-      updated_by = rec.updated_by ? _(" by %{time}") % {:time => rec.updated_by} : ""
+      updated_by = rec.updated_by ? _(" by %{user}") % {:user => rec.updated_by} : ""
       @sb[:namespace_path] = rec.fqname
       @right_cell_text = _("%{model} [%{name} - Updated %{time}%{update}]") %
         {:model  => txt,
          :name   => get_rec_name(rec),
-         :time   => format_timezone(rec.created_on, Time.zone, "gtl"),
+         :time   => format_timezone(rec.updated_on, Time.zone, "gtl"),
          :update => updated_by}
     when "aem"
       txt = ui_lookup(:model => "MiqAeMethod")
-      updated_by = rec.updated_by ? _(" by %{time}") % {:time => rec.updated_by} : ""
+      updated_by = rec.updated_by ? _(" by %{user}") % {:user => rec.updated_by} : ""
       @sb[:namespace_path] = rec.fqname
       @right_cell_text = _("%{model} [%{name} - Updated %{time}%{update}]") %
         {:model  => txt,
          :name   => get_rec_name(rec),
-         :time   => format_timezone(rec.created_on, Time.zone, "gtl"),
+         :time   => format_timezone(rec.updated_on, Time.zone, "gtl"),
          :update => updated_by}
     when "aen"
       txt = ui_lookup(:model => rec.domain? ? "MiqAeDomain" : "MiqAeNamespace")
@@ -623,7 +623,6 @@ class MiqAeClassController < ApplicationController
       rescue StandardError => bang
         add_flash(_("Error during 'save': %{error_message}") % {:error_message => bang.message}, :error)
         @in_a_form = true
-        flash_validation_errors(@ae_inst)
         render :update do |page|
           page << javascript_prologue
           if @sb[:row_selected]
@@ -682,7 +681,6 @@ class MiqAeClassController < ApplicationController
       rescue StandardError => bang
         add_flash(_("Error during 'add': %{message}") % {:message => bang.message}, :error)
         @in_a_form = true
-        flash_validation_errors(add_aeinst)
         render :update do |page|
           page << javascript_prologue
           page.replace("flash_msg_div_class_instances", :partial => "layouts/flash_msg", :locals => {:div_num => "_class_instances"})
@@ -875,10 +873,14 @@ class MiqAeClassController < ApplicationController
           page << javascript_hide("field_default_value")
           page << javascript_show("field_password_value")
           page << "$('#field_password_value').val('');"
+          session[:field_data][:default_value] =
+            @edit[:new_field][:default_value] = ''
         elsif params[:field_datatype]
           page << javascript_hide("field_password_value")
           page << javascript_show("field_default_value")
           page << "$('#field_default_value').val('');"
+          session[:field_data][:default_value] =
+            @edit[:new_field][:default_value] = ''
         end
         params.keys.each do |field|
           if field.to_s.starts_with?("fields_datatype")
@@ -1077,7 +1079,6 @@ class MiqAeClassController < ApplicationController
         end  # end of transaction
       rescue StandardError => bang
         add_flash(_("Error during 'save': %{error_message}") % {:error_message => bang.message}, :error)
-        flash_validation_errors(ae_class)
         session[:changed] = @changed = true
         render :update do |page|
           page << javascript_prologue
@@ -1175,7 +1176,6 @@ class MiqAeClassController < ApplicationController
         end  # end of transaction
       rescue StandardError => bang
         add_flash(_("Error during 'save': %{error_message}") % {:error_message => bang.message}, :error)
-        flash_validation_errors(ae_method)
         session[:changed] = @changed
         @changed = true
         render :update do |page|
@@ -1289,7 +1289,6 @@ class MiqAeClassController < ApplicationController
         end
       rescue StandardError => bang
         add_flash(_("Error during 'add': %{error_message}") % {:error_message => bang.message}, :error)
-        flash_validation_errors(add_aemethod)
         @in_a_form = true
         render :update do |page|
           page << javascript_prologue
@@ -2050,14 +2049,15 @@ class MiqAeClassController < ApplicationController
 
       field_attributes.each do |field|
         field_name = "field_#{field}".to_sym
+        field_sym = field.to_sym
         if field == "substitute"
-          field_data[field] = new_field[field] = params[field_name] == "1" if params[field_name]
-        else
-          field_data[field] = new_field[field] = params[field_name] if params[field_name]
+          field_data[field_sym] = new_field[field_sym] = params[field_name] == "1" if params[field_name]
+        elsif params[field_name]
+          field_data[field_sym] = new_field[field_sym] = params[field_name]
         end
       end
 
-      field_data['default_value'] = new_field[:default_value] =
+      field_data[:default_value] = new_field[:default_value] =
           params[:field_password_value] if params[:field_password_value]
       new_field[:priority] = 1
       @edit[:new][:fields].each_with_index do |flds, i|
@@ -2074,22 +2074,25 @@ class MiqAeClassController < ApplicationController
       @edit[:new][:fields].each_with_index do |fld, i|
         field_attributes.each do |field|
           field_name = "fields_#{field}_#{i}".to_sym
+          field_sym = field.to_sym
           if field == "substitute"
-            fld[field] = params[field_name].to_i == 1 if params[field_name]
+            fld[field_sym] = params[field_name].to_i == 1 if params[field_name]
           elsif %w(aetype datatype).include?(field)
             var_name = "fields_#{field}#{i}"
-            fld[field] = params[var_name.to_sym] if params[var_name.to_sym]
+            fld[field_sym] = params[var_name.to_sym] if params[var_name.to_sym]
           elsif field == "default_value"
-            fld[field] = params[field_name] if params[field_name]
-            fld[field] = params["fields_password_value_#{i}".to_sym] if params["fields_password_value_#{i}".to_sym]
+            fld[field_sym] = params[field_name] if params[field_name]
+            fld[field_sym] = params["fields_password_value_#{i}".to_sym] if params["fields_password_value_#{i}".to_sym]
           else
             fld[field] = params[field_name] if params[field_name]
           end
         end
       end
     elsif params[:button] == "accept"
-      if session[:field_data]['name'].blank?
-        add_flash(_("Name is required"), :error)
+      if session[:field_data][:name].blank? || session[:field_data][:aetype].blank?
+        field = session[:field_data][:name].blank? ? "Name" : "Type"
+        field += " and Type" if field == "Name" && session[:field_data][:aetype].blank?
+        add_flash(_(field + " is required"), :error)
         return
       end
       new_fields = {}

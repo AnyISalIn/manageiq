@@ -87,6 +87,7 @@ describe OrchestrationTemplateDialogService do
     mode_values = [["Complete",    "Complete (Delete other resources in the group)"],
                    ["Incremental", "Incremental (Default)"]]
     assert_field(fields[4], DialogFieldDropDownList, :name => "deploy_mode", :values => mode_values)
+    expect(fields[4].default_value).to eq("Incremental")
   end
 
   def assert_field(field, clss, attributes)
@@ -110,7 +111,7 @@ describe OrchestrationTemplateDialogService do
 
   def assert_parameter_group2(group)
     expect(group).to have_attributes(
-      :label   => "DB parameters",
+      :label   => "Parameter Group2",
       :display => "edit",
     )
 

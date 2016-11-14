@@ -124,19 +124,32 @@ module ManageIQ::Providers
         end
       end
 
+      def get_resource_status_message(resource)
+        return nil unless resource.properties.respond_to?(:status_message)
+        if resource.properties.status_message.respond_to?(:error)
+          resource.properties.status_message.error.message
+        else
+          resource.properties.status_message.to_s
+        end
+      end
+
       # new_resource is to be excluded.
       # copy any failed state to the old resource; concatenate all status messages
       def transfer_selected_resource_properties(old_resource, new_resource)
         if new_resource.properties.provisioning_state != 'Succeeded'
-          old_resource.properties.provisioning_state = resource.properties.provisioning_state
+          old_resource.properties.provisioning_state = new_resource.properties.provisioning_state
         end
-        if new_resource.properties.try(:status_message)
-          if old_resource.properties.try(:status_message)
-            old_resource.properties.status_message += "\n#{new_resource.properties.status_message}"
-          else
-            old_resource.properties['status_message'] = new_resource.properties.status_message
-          end
-        end
+
+        new_status_message = get_resource_status_message(new_resource)
+        return unless new_status_message
+
+        old_status_message = get_resource_status_message(old_resource)
+
+        old_resource.properties['status_message'] = if old_status_message
+                                                      "#{old_status_message}\n#{new_status_message}"
+                                                    else
+                                                      new_status_message
+                                                    end
       end
 
       def get_stack_template(stack, content)
@@ -148,8 +161,15 @@ module ManageIQ::Providers
         process_collection(instances, :vms) { |instance| parse_instance(instance) }
       end
 
+      # The underlying method that gathers these images is a bit brittle.
+      # Consequently, if it raises an error we just log it and move on so
+      # that it doesn't affect the rest of inventory collection.
+      #
       def get_images
-        images = gather_data_for_this_region(@sas, 'list_private_images')
+        images = gather_data_for_this_region(@sas, 'list_all_private_images')
+      rescue Azure::Armrest::ApiException => err
+        _log.warn("Unable to collect Azure private images for: [#{@ems.name}] - [#{@ems.id}]: #{err.message}")
+      else
         process_collection(images, :vms) { |image| parse_image(image) }
       end
 
@@ -164,7 +184,7 @@ module ManageIQ::Providers
       end
 
       def parse_series(s)
-        name = uid = s.name
+        name = uid = s.name.downcase
         new_result = {
           :type           => "ManageIQ::Providers::Azure::CloudManager::Flavor",
           :ems_ref        => uid,
@@ -194,7 +214,7 @@ module ManageIQ::Providers
                            instance.resource_group.downcase,
                            instance.type.downcase,
                            instance.name)
-        series_name = instance.properties.hardware_profile.vm_size
+        series_name = instance.properties.hardware_profile.vm_size.downcase
         series      = @data_index.fetch_path(:flavors, series_name)
 
         # TODO(lsmola) NetworkManager, storing IP addresses under hardware/network will go away, once all providers are
@@ -343,8 +363,15 @@ module ManageIQ::Providers
       end
 
       def download_template(uri)
-        require 'open-uri'
-        open(uri) { |f| f.read }
+        options = {
+          :method      => 'get',
+          :url         => uri,
+          :proxy       => @config.proxy,
+          :ssl_version => @config.ssl_version,
+          :ssl_verify  => @config.ssl_verify
+        }
+
+        RestClient::Request.execute(options).body
       rescue => e
         _log.error("Failed to download Azure template #{uri}. Reason: #{e.inspect}")
         nil
@@ -429,7 +456,7 @@ module ManageIQ::Providers
       end
 
       def parse_stack_resource(resource, group)
-        status_message = resource.properties.try(:status_message)
+        status_message = get_resource_status_message(resource)
         status_code = resource.properties.try(:status_code)
         new_result = {
           :ems_ref                => resource.properties.target_resource.id,

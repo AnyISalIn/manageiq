@@ -147,11 +147,6 @@ class MiqRequestWorkflow
 
         if !field_values[:default].nil?
           val = field_values[:default]
-
-        # if default is not set to anything and there is only one value in hash,
-        # use set element to be displayed default
-        elsif field_values[:values] && field_values[:values].length == 1
-          val = field_values[:values].first[0]
         end
 
         if field_values[:values]
@@ -920,7 +915,7 @@ class MiqRequestWorkflow
   end
 
   def get_ems_folders(folder, dh = {}, full_path = "")
-    if folder.evm_object_class == :EmsFolder && !folder.hidden?
+    if folder.evm_object_class == :EmsFolder && !folder.hidden
       full_path += full_path.blank? ? "#{folder.name}" : " / #{folder.name}"
       dh[folder.id] = full_path unless folder.type == "Datacenter"
     end
@@ -933,6 +928,7 @@ class MiqRequestWorkflow
   end
 
   def get_ems_respool(node, dh = {}, full_path = "")
+    return if node.nil?
     if node.kind_of?(XmlHash::Element)
       folder = node.attributes[:object]
       if node.name == :ResourcePool
@@ -999,6 +995,7 @@ class MiqRequestWorkflow
 
   def get_ems_metadata_tree(src)
     @ems_metadata_tree ||= begin
+      return if src[:ems].nil?
       st = Time.zone.now
       result = load_ar_obj(src[:ems]).fulltree_arranged(:except_type => "VmOrTemplate")
       ems_metadata_tree_add_hosts_under_clusters!(result)
@@ -1050,7 +1047,7 @@ class MiqRequestWorkflow
   end
 
   def ems_folder_to_hash_struct(ci)
-    build_ci_hash_struct(ci, [:name, :type])
+    build_ci_hash_struct(ci, [:name, :type, :hidden])
   end
 
   def storage_to_hash_struct(ci)
@@ -1084,15 +1081,15 @@ class MiqRequestWorkflow
     get_source_and_targets
   end
 
-  def allowed_hosts_obj(_options = {})
-    return [] if (src = resources_for_ui).blank?
-
+  def allowed_hosts_obj(options = {})
+    return [] if (src = resources_for_ui).blank? || src[:ems].nil?
+    datacenter = src[:datacenter] || options[:datacenter]
     rails_logger('allowed_hosts_obj', 0)
     st = Time.now
     hosts_ids = find_all_ems_of_type(Host).collect(&:id)
     hosts_ids &= load_ar_obj(src[:storage]).hosts.collect(&:id) unless src[:storage].nil?
-    unless src[:datacenter].nil?
-      dc_node = load_ems_node(src[:datacenter], _log.prefix)
+    if datacenter
+      dc_node = load_ems_node(datacenter, _log.prefix)
       hosts_ids &= find_hosts_under_ci(dc_node.attributes[:object]).collect(&:id)
     end
     return [] if hosts_ids.blank?
@@ -1106,7 +1103,7 @@ class MiqRequestWorkflow
   end
 
   def allowed_storages(_options = {})
-    return [] if (src = resources_for_ui).blank?
+    return [] if (src = resources_for_ui).blank? || src[:ems].nil?
     hosts = src[:host].nil? ? allowed_hosts_obj({}) : [load_ar_obj(src[:host])]
     return [] if hosts.blank?
 

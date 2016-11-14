@@ -16,7 +16,7 @@ if (typeof(ManageIQ) === 'undefined') {
     timelineFilter: null, //
     toolbars: null, // toolbars
     oneTransition: {
-      IEButtonPressed: null, // pressed save/reset button identificator
+      IEButtonPressed: false, // pressed save/reset button identificator
       oneTrans: null, // used to generate Ajax request only once for a drawn screen
     },
     noCollapseEvent: false, // enable/disable events fired after collapsing an accordion
@@ -70,5 +70,10 @@ if (typeof(ManageIQ) === 'undefined') {
       processing: false, // is a request currently being processed?
       queue: [], // a queue of pending requests
     },
-  }
-};
+    qe: {
+      autofocus: 0, // counter of pending autofocus fields
+      debounced: {}, // running debounces
+      debounce_counter: 1,
+    },
+  };
+}

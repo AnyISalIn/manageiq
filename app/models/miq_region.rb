@@ -17,6 +17,8 @@ class MiqRegion < ApplicationRecord
   virtual_has_many :miq_templates,          :uses => :all_relationships
   virtual_has_many :vms,                    :uses => :all_relationships
 
+  after_save :clear_my_region_cache
+
   acts_as_miq_taggable
   include ReportableMixin
   include UuidMixin
@@ -185,6 +187,10 @@ class MiqRegion < ApplicationRecord
     ext_management_systems.select { |e| e.kind_of? ManageIQ::Providers::MiddlewareManager }
   end
 
+  def ems_configproviders
+    ext_management_systems.select { |e| e.kind_of? ManageIQ::Providers::ConfigurationManager }
+  end
+
   def assigned_roles
     miq_servers.collect(&:assigned_roles).flatten.uniq.compact
   end
@@ -312,5 +318,11 @@ class MiqRegion < ApplicationRecord
       options[type] = self.is_tagged_with?("capture_enabled", :ns => "/performance/#{type}")
     end
     @perf_capture_always = options.freeze
+  end
+
+  private
+
+  def clear_my_region_cache
+    MiqRegion.my_region_clear_cache
   end
 end

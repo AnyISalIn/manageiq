@@ -135,12 +135,20 @@ describe ManageIQ::Providers::Vmware::InfraManager::Provision do
           end
         end
 
-        let(:vm_folder) do
-          FactoryGirl.create(:ems_folder, :name => 'vm').tap { |v| v.parent = dc }
+        let(:dc_nested) do
+          EvmSpecHelper::EmsMetadataHelper.vmware_nested_folders(@ems)
         end
 
-        let(:discovered_vm_folder) do
-          FactoryGirl.create(:ems_folder, :name => 'Discovered virtual machine').tap { |f| f.parent = vm_folder }
+        let(:vm_folder_nested) do
+          FactoryGirl.create(:ems_folder, :name => 'vm', :ems_id => @ems.id).tap { |v| v.parent = dc_nested }
+        end
+
+        let(:vm_folder) do
+          FactoryGirl.create(:ems_folder, :name => 'vm', :ems_id => @ems.id).tap { |v| v.parent = dc }
+        end
+
+        let(:dest_host_nested) do
+          FactoryGirl.create(:host_vmware, :ext_management_system => @ems).tap { |h| h.parent = dc_nested }
         end
 
         let(:dest_host) do
@@ -152,10 +160,10 @@ describe ManageIQ::Providers::Vmware::InfraManager::Provision do
           expect(@vm_prov.dest_folder).to eq(user_folder)
         end
 
-        it "uses 'Discoverd virtual machine' folder in destination host" do
-          discovered_vm_folder
-          @vm_prov.options[:dest_host] = [dest_host.id, dest_host.name]
-          expect(@vm_prov.dest_folder).to eq(discovered_vm_folder)
+        it "correctly locates a nested folder in destination host" do
+          @vm_prov.options[:dest_host] = [dest_host_nested.id, dest_host_nested.name]
+          parent_datacenter = dest_host_nested.parent_datacenter
+          expect(parent_datacenter.folder_path).to eq("Datacenters/nested/testing/#{parent_datacenter.name}")
         end
 
         it "uses vm folder in destination host" do
@@ -187,13 +195,98 @@ describe ManageIQ::Providers::Vmware::InfraManager::Provision do
         end
 
         it "uses the resource pool from the cluster" do
-          @vm_prov.options[:dest_host] = [dest_host_with_cluster.id, dest_host_with_cluster.name]
+          @vm_prov.options[:dest_host]    = [dest_host_with_cluster.id, dest_host_with_cluster.name]
+          @vm_prov.options[:dest_cluster] = [cluster.id, cluster.name]
           expect(@vm_prov.dest_resource_pool).to eq(cluster.default_resource_pool)
         end
 
         it "uses the resource pool from destination host" do
           @vm_prov.options[:dest_host] = [dest_host.id, dest_host.name]
           expect(@vm_prov.dest_resource_pool).to eq(dest_host.default_resource_pool)
+        end
+      end
+
+      context "#start_clone" do
+        before(:each) do
+          ds_mor = "datastore-0"
+          storage = FactoryGirl.create(:storage_nfs, :ems_ref => ds_mor, :ems_ref_obj => ds_mor)
+
+          Array.new(2) do |i|
+            cluster_mor = "cluster-#{i}"
+            cluster     = FactoryGirl.create(:ems_cluster, :ems_ref => cluster_mor)
+
+            host_mor = "host-#{i}"
+            host_props = {
+              :ext_management_system => @ems,
+              :ems_cluster           => cluster,
+              :ems_ref               => host_mor,
+              :ems_ref_obj           => host_mor
+            }
+
+            FactoryGirl.create(:host_vmware, host_props).tap do |host|
+              host.storages = [storage]
+              hs = host.host_storages.first
+              hs.ems_ref = "datastore-#{i}"
+              hs.save
+            end
+          end
+        end
+
+        it "uses the ems_ref for the correct host" do
+          dest_host_mor      = "host-1"
+          dest_datastore_mor = "datastore-1"
+          task_mor           = "task-1"
+
+          clone_opts = {
+            :name      => @target_vm_name,
+            :host      => Host.find_by(:ems_ref => dest_host_mor),
+            :datastore => Storage.first
+          }
+
+          expected_vim_clone_opts = {
+            :name          => @target_vm_name,
+            :wait          => false,
+            :template      => false,
+            :transform     => nil,
+            :config        => nil,
+            :customization => nil,
+            :linked_clone  => nil,
+            :host          => dest_host_mor,
+            :datastore     => dest_datastore_mor
+          }
+
+          allow(@vm_prov).to receive(:clone_vm).with(expected_vim_clone_opts).and_return(task_mor)
+
+          result = @vm_prov.start_clone clone_opts
+          expect(result).to eq(task_mor)
+        end
+
+        it "uses the right ems_ref when given a cluster" do
+          dest_cluster_mor   = "cluster-1"
+          dest_datastore_mor = "datastore-1"
+          task_mor           = "task-1"
+
+          clone_opts = {
+            :name      => @target_vm_name,
+            :cluster   => EmsCluster.find_by(:ems_ref => dest_cluster_mor),
+            :datastore => Storage.first
+          }
+
+          expected_vim_clone_opts = {
+            :name          => @target_vm_name,
+            :wait          => false,
+            :template      => false,
+            :transform     => nil,
+            :config        => nil,
+            :customization => nil,
+            :linked_clone  => nil,
+            :datastore     => dest_datastore_mor
+          }
+
+          allow(@vm_prov).to receive(:clone_vm).with(expected_vim_clone_opts).and_return(task_mor)
+
+          result = @vm_prov.start_clone clone_opts
+          expect(result).to eq(task_mor)
         end
       end
     end

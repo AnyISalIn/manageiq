@@ -162,7 +162,7 @@ describe ProviderForemanController do
       provider2 = ManageIQ::Providers::Foreman::Provider.new(:name => "test2Foreman",
                                                              :url => "10.8.96.103", :zone => @zone)
       controller.instance_variable_set(:@provider_cfgmgmt, provider2)
-      expect(controller).to receive(:replace_right_cell).once
+      allow(controller).to receive(:render_flash)
       controller.save_provider_foreman
       expect(assigns(:flash_array).first[:message]).to include("Configuration_manager.name has already been taken")
     end
@@ -178,6 +178,27 @@ describe ProviderForemanController do
       expect(response.status).to eq(200)
       right_cell_text = controller.instance_variable_get(:@right_cell_text)
       expect(right_cell_text).to eq(_("Edit Configuration Manager Provider"))
+    end
+
+    it "should display the zone field" do
+      new_zone = FactoryGirl.create(:zone, :name => "TestZone")
+      controller.instance_variable_set(:@provider_cfgmgmt, @provider)
+      post :edit, :params => { :id => @config_mgr.id }
+      expect(response.status).to eq(200)
+      expect(response.body).to include("option value=\\\"#{new_zone.name}\\\"")
+    end
+
+    it "should save the zone field" do
+      new_zone = FactoryGirl.create(:zone, :name => "TestZone")
+      controller.instance_variable_set(:@provider_cfgmgmt, @provider)
+      allow(controller).to receive(:leaf_record).and_return(false)
+      post :edit, :params => { :button     => 'save',
+                               :id         => @config_mgr.id,
+                               :zone       => new_zone.name,
+                               :url        => @provider.url,
+                               :verify_ssl => @provider.verify_ssl }
+      expect(response.status).to eq(200)
+      expect(@provider.zone).to eq(new_zone)
     end
 
     it "renders the edit page when the configuration manager id is selected from a list view" do
@@ -208,6 +229,43 @@ describe ProviderForemanController do
       post :refresh, :params => {:miq_grid_checks => @config_mgr.id}
       expect(response.status).to eq(200)
       expect(assigns(:flash_array).first[:message]).to include("Refresh Provider initiated for 1 provider (Foreman)")
+    end
+
+    it "refreshes the provider when the configuration manager id is supplied" do
+      allow(controller).to receive(:replace_right_cell)
+      post :refresh, :params => { :id => @config_mgr.id }
+      expect(assigns(:flash_array).first[:message]).to include("Refresh Provider initiated for 1 provider")
+    end
+
+    it "it refreshes a provider when the configuration manager id is selected from a grid/tile" do
+      allow(controller).to receive(:replace_right_cell)
+      post :refresh, :params => { "check_#{ApplicationRecord.compress_id(@config_mgr.id)}"  => "1",
+                                  "check_#{ApplicationRecord.compress_id(@config_mgr2.id)}" => "1" }
+      expect(assigns(:flash_array).first[:message]).to include("Refresh Provider initiated for 2 providers")
+    end
+  end
+
+  context "#delete" do
+    before do
+      set_user_privileges
+    end
+
+    it "deletes the provider when the configuration manager id is supplied" do
+      allow(controller).to receive(:replace_right_cell)
+      post :delete, :params => { :id => @config_mgr.id }
+      expect(assigns(:flash_array).first[:message]).to include("Delete initiated for 1 provider")
+    end
+
+    it "it deletes a provider when the configuration manager id is selected from a list view" do
+      allow(controller).to receive(:replace_right_cell)
+      post :delete, :params => { :miq_grid_checks => "#{@config_mgr.id}, #{@config_mgr2.id}"}
+      expect(assigns(:flash_array).first[:message]).to include("Delete initiated for 2 providers")
+    end
+
+    it "it deletes a provider when the configuration manager id is selected from a grid/tile" do
+      allow(controller).to receive(:replace_right_cell)
+      post :delete, :params => { "check_#{ApplicationRecord.compress_id(@config_mgr.id)}" => "1" }
+      expect(assigns(:flash_array).first[:message]).to include("Delete initiated for 1 provider")
     end
   end
 
@@ -266,6 +324,20 @@ describe ProviderForemanController do
     tree_builder = TreeBuilderConfigurationManager.new("root", "", {})
     objects = tree_builder.send(:x_get_tree_objects, @inventory_group, nil, false, nil)
     expected_objects = [@ans_configured_system, @ans_configured_system2a]
+    expect(objects).to match_array(expected_objects)
+  end
+
+  it "foreman unassigned configuration profile tree node does not list ansible configured systems" do
+    controller.send(:build_configuration_manager_tree, :providers, :configuration_manager_providers_tree)
+    tree_builder = TreeBuilderConfigurationManager.new("root", "", {})
+    objects = tree_builder.send(:x_get_tree_objects, @inventory_group, nil, false, nil)
+    expected_objects = [@ans_configured_system, @ans_configured_system2a]
+    expect(objects).to match_array(expected_objects)
+    unassigned_id = "#{ems_id_for_provider(@provider)}-unassigned"
+    unassigned_configuration_profile = ConfigurationProfile.new(:name       => "Unassigned Profiles Group|#{unassigned_id}",
+                                                                :manager_id => ems_id_for_provider(@provider))
+    objects = tree_builder.send(:x_get_tree_cpf_kids, unassigned_configuration_profile, false)
+    expected_objects = [@configured_system_unprovisioned]
     expect(objects).to match_array(expected_objects)
   end
 
@@ -429,15 +501,46 @@ describe ProviderForemanController do
       expect(view.table.data[0].name).to eq("ConfigScript1")
       expect(view.table.data[1].name).to eq("ConfigScript3")
     end
+
+    it "calls get_view with the associated dbname for the Configuration Management Providers accordion" do
+      set_user_privileges
+      allow(controller).to receive(:x_active_tree).and_return(:configuration_manager_providers_tree)
+      allow(controller).to receive(:x_active_accord).and_return(:configuration_manager_providers)
+      allow(controller).to receive(:build_listnav_search_list)
+      controller.instance_variable_set(:@_params, :id => "configuration_manager_providers_accord")
+      expect(controller).to receive(:get_view).with("ManageIQ::Providers::ConfigurationManager", :dbname => :cm_providers).and_call_original
+      controller.send(:accordion_select)
+    end
+
+    it "calls get_view with the associated dbname for the Configured Systems accordion" do
+      set_user_privileges
+      allow(controller).to receive(:x_active_tree).and_return(:cs_filter_tree)
+      allow(controller).to receive(:x_active_accord).and_return(:cs_filter)
+      allow(controller).to receive(:build_listnav_search_list)
+      controller.instance_variable_set(:@_params, :id => "cs_filter_accord")
+      expect(controller).to receive(:get_view).with("ConfiguredSystem", :dbname => :cm_configured_systems).and_call_original
+      allow(controller).to receive(:build_listnav_search_list)
+      controller.send(:accordion_select)
+    end
+
+    it "calls get_view with the associated dbname for the Configuration Scripts accordion" do
+      set_user_privileges
+      allow(controller).to receive(:x_active_tree).and_return(:configuration_scripts_tree)
+      allow(controller).to receive(:x_active_accord).and_return(:configuration_scripts)
+      controller.instance_variable_set(:@_params, :id => "configuration_scripts")
+      expect(controller).to receive(:get_view).with("ManageIQ::Providers::AnsibleTower::ConfigurationManager::ConfigurationScript", :dbname => :configuration_scripts).and_call_original
+      controller.send(:accordion_select)
+    end
   end
 
   it "singularizes breadcrumb name" do
     expect(controller.send(:breadcrumb_name, nil)).to eq("#{ui_lookup(:ui_title => "foreman")} Provider")
   end
 
-  it "renders tagging editor" do
+  it "renders tagging editor for a configured system" do
     session[:tag_items] = [@configured_system.id]
     session[:assigned_filters] = []
+    allow(controller).to receive(:x_active_accord).and_return(:cs_filter)
     parent = FactoryGirl.create(:classification, :name => "test_category")
     FactoryGirl.create(:classification_tag,      :name => "test_entry",         :parent => parent)
     FactoryGirl.create(:classification_tag,      :name => "another_test_entry", :parent => parent)
@@ -583,7 +686,6 @@ describe ProviderForemanController do
 
     after(:each) do
       expect(controller.send(:flash_errors?)).not_to be_truthy
-      expect(assigns(:edit)).to be_nil
       expect(response.status).to eq(200)
     end
 
@@ -593,6 +695,20 @@ describe ProviderForemanController do
       controller.send(:configscript_service_dialog_submit)
       expect(assigns(:flash_array).first[:message]).to include("was successfully created")
       expect(Dialog.where(:label => @dialog_label).first).not_to be_nil
+      expect(assigns(:edit)).to be_nil
+    end
+
+    it "renders tagging editor for a job template system" do
+      session[:tag_items] = [@cs.id]
+      session[:assigned_filters] = []
+      allow(controller).to receive(:x_active_accord).and_return(:configuration_scripts)
+      allow(controller).to receive(:tagging_explorer_controller?).and_return(true)
+      parent = FactoryGirl.create(:classification, :name => "test_category")
+      FactoryGirl.create(:classification_tag,      :name => "test_entry",         :parent => parent)
+      FactoryGirl.create(:classification_tag,      :name => "another_test_entry", :parent => parent)
+      post :tagging, :params => {:id => @cs.id, :format => :js}
+      expect(response.status).to eq(200)
+      expect(response.body).to include('Job Template (Ansible Tower) Being Tagged')
     end
   end
 

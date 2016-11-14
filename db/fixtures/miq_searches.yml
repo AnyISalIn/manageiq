@@ -401,6 +401,26 @@
     search_type: global
     db: Storage
 - attributes:
+    name: default_Store Type / FCP
+    description: Store Type / FCP
+    filter: !ruby/object:MiqExpression
+      exp:
+        "=":
+          field: Storage-store_type
+          value: FCP
+    search_type: global
+    db: Storage
+- attributes:
+    name: default_Store Type / ISCSI
+    description: Store Type / ISCSI
+    filter: !ruby/object:MiqExpression
+      exp:
+        "=":
+          field: Storage-store_type
+          value: ISCSI
+    search_type: global
+    db: Storage
+- attributes:
     name: default_Store Type / GlusterFS
     description: Store Type / GlusterFS
     filter: !ruby/object:MiqExpression
@@ -1112,27 +1132,6 @@
         "=":
           field: VmInfra-power_state
           value: "on"
-    search_type: default
-    db: ManageIQ::Providers::InfraManager::Vm
-- attributes:
-    name: default_Type / Template
-    description: Type / Template
-    filter: !ruby/object:MiqExpression
-      exp:
-        "=":
-          field: VmInfra-template
-          value: "true"
-    search_type: default
-    db: ManageIQ::Providers::InfraManager::Vm
-- attributes:
-    name: default_Type / VM
-    description: Type / VM
-    filter: !ruby/object:MiqExpression
-      exp:
-        not:
-          ENDS WITH:
-            field: VmInfra-location
-            value: .vmtx
     search_type: default
     db: ManageIQ::Providers::InfraManager::Vm
 - attributes:

@@ -1,4 +1,4 @@
-- if %w(containers container_services).include?(@display)
+- if %w(containers container_services container_images).include?(@display)
     = render :partial => "layouts/gtl", :locals => {:action_url => "show/#{@record.id}"}
 - else
     - case @showtype
@@ -10,5 +10,7 @@
         = render(:partial => "layouts/performance")
         :javascript
             var miq_after_onload = "miqAsyncAjax('#{url_for(:action => @ajax_action, :id => @record)}');"
+    - when "compliance_history"
+        = render :partial => "shared/views/#{@showtype}"
     - else
         = render :partial => @showtype

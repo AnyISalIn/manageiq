@@ -153,22 +153,28 @@ module ApplicationController::MiqRequestMethods
         @edit[:src_vm_id] = params[:sel_id].to_i
       end
     else                                                        # First time in, build pre-provision screen
-      @layout = "miq_request_vm"
-      @edit = {}
-      @edit[:explorer] = @explorer
-      @edit[:vm_sortdir] ||= "ASC"
-      @edit[:vm_sortcol] ||= "name"
-      @edit[:prov_type] = "VM Provision"
-      @edit[:template_kls] = get_template_kls
-      templates = rbac_filtered_objects(@edit[:template_kls].eligible_for_provisioning).sort_by { |a| a.name.downcase }
-      build_vm_grid(templates, @edit[:vm_sortdir], @edit[:vm_sortcol])
-      session[:changed] = false                                 # Turn off the submit button
-      @edit[:explorer] = true if @explorer
-      @in_a_form = true
+      set_pre_prov_vars
     end
   end
   alias_method :instance_pre_prov, :pre_prov
   alias_method :vm_pre_prov, :pre_prov
+
+  def set_pre_prov_vars
+    @layout = "miq_request_vm"
+    @edit = {}
+    @edit[:explorer] = @explorer
+    @edit[:vm_sortdir] ||= "ASC"
+    @edit[:vm_sortcol] ||= "name"
+    @edit[:prov_type] = "VM Provision"
+    unless %w(image_miq_request_new miq_template_miq_request_new).include?(params[:pressed])
+      @edit[:template_kls] = get_template_kls
+      templates = rbac_filtered_objects(@edit[:template_kls].eligible_for_provisioning).sort_by { |a| a.name.downcase }
+      build_vm_grid(templates, @edit[:vm_sortdir], @edit[:vm_sortcol])
+    end
+    session[:changed] = false # Turn off the submit button
+    @edit[:explorer] = true if @explorer
+    @in_a_form = true
+  end
 
   def get_template_kls
     # when clone/migrate buttons are pressed from a sub list view,
@@ -1050,6 +1056,8 @@ module ApplicationController::MiqRequestMethods
     # Build the default filters tree for the search views
     all_tags = []                          # Array to hold all CIs
     kids_checked = false
+    parent_icon = ActionController::Base.helpers.image_path("100/folder.png")
+    child_icon  = ActionController::Base.helpers.image_path("100/tag.png")
     tags.each_with_index do |t, i| # Go thru all of the Searches
       if @curr_tag.blank? || @curr_tag != t[:name]
         if @curr_tag != t[:name] && @ci_node
@@ -1065,7 +1073,7 @@ module ApplicationController::MiqRequestMethods
         @ci_node[:title] += " *" if t[:single_value]
         @ci_node[:tooltip] = t[:description]
         @ci_node[:addClass] = "cfme-no-cursor-node"      # No cursor pointer
-        @ci_node[:icon] = ActionController::Base.helpers.image_path("100/folder.png")
+        @ci_node[:icon] = parent_icon
         @ci_node[:hideCheckbox] = @ci_node[:cfmeNoClick] = true
         @ci_node[:addClass] = "cfme-bold-node"  # Show node as different
         @ci_kids = []
@@ -1078,7 +1086,7 @@ module ApplicationController::MiqRequestMethods
           temp[:cfme_parent_key] = t[:id].to_s if t[:single_value]
           temp[:title] = temp[:tooltip] = c[1][:description]
           temp[:addClass] = "cfme-no-cursor-node"
-          temp[:icon] = ActionController::Base.helpers.image_path("100/tag.png")
+          temp[:icon] = child_icon
           if edit_mode              # Don't show checkboxes/radio buttons in non-edit mode
             if vm_tags && vm_tags.include?(c[0].to_i)
               temp[:select] = true

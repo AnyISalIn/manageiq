@@ -41,18 +41,47 @@ describe ManageIQ::Providers::Azure::CloudManager::Refresher do
     expect(described_class.ems_type).to eq(:azure)
   end
 
+  def setup_ems_and_cassette
+    @ems.reload
+    name = described_class.name.underscore
+
+    # Must decode compressed response for subscription id.
+    VCR.use_cassette(name, :allow_unused_http_interactions => true, :decode_compressed_response => true) do
+      EmsRefresh.refresh(@ems)
+      EmsRefresh.refresh(@ems.network_manager)
+    end
+
+    @ems.reload
+  end
+
+  context "proxy support" do
+    let(:proxy) { URI::HTTP.build(:host => 'localhost', :port => 8080) }
+
+    2.times do
+      it "will perform a full refresh with a plain proxy enabled" do
+        allow(VMDB::Util).to receive(:http_proxy_uri).and_return(proxy)
+        setup_ems_and_cassette
+        expect(OrchestrationTemplate.count).to eql(2)
+        assert_specific_orchestration_template
+      end
+    end
+
+    2.times do
+      it "will perform a full refresh with an authenticating proxy enabled" do
+        proxy.user = "foo"
+        proxy.password = "xxx"
+
+        allow(VMDB::Util).to receive(:http_proxy_uri).and_return(proxy)
+        setup_ems_and_cassette
+        expect(OrchestrationTemplate.count).to eql(2)
+        assert_specific_orchestration_template
+      end
+    end
+  end
+
   it "will perform a full refresh" do
     2.times do # Run twice to verify that a second run with existing data does not change anything
-      @ems.reload
-      name = described_class.name.underscore
-
-      # Must decode compressed response for subscription id.
-      VCR.use_cassette(name, :allow_unused_http_interactions => true, :decode_compressed_response => true) do
-        EmsRefresh.refresh(@ems)
-        EmsRefresh.refresh(@ems.network_manager)
-      end
-
-      @ems.reload
+      setup_ems_and_cassette
 
       assert_table_counts
       assert_ems
@@ -73,7 +102,7 @@ describe ManageIQ::Providers::Azure::CloudManager::Refresher do
   def expected_table_counts
     {
       :ext_management_system         => 2,
-      :flavor                        => 53,
+      :flavor                        => 63,
       :availability_zone             => 1,
       :vm_or_template                => 9,
       :vm                            => 8,
@@ -93,7 +122,7 @@ describe ManageIQ::Providers::Azure::CloudManager::Refresher do
       :security_group                => 8,
       :network_port                  => 10,
       :cloud_network                 => 6,
-      :floating_ip                   => 11,
+      :floating_ip                   => 10,
       :network_router                => 0,
       :cloud_subnet                  => 6,
     }
@@ -176,9 +205,13 @@ describe ManageIQ::Providers::Azure::CloudManager::Refresher do
   end
 
   def assert_specific_flavor
-    @flavor = ManageIQ::Providers::Azure::CloudManager::Flavor.where(:name => "Basic_A0").first
+    @flavor_not_found = ManageIQ::Providers::Azure::CloudManager::Flavor.where(:name => "Basic_A0").first
+    expect(@flavor_not_found).to eq(nil)
+
+    @flavor = ManageIQ::Providers::Azure::CloudManager::Flavor.where(:name => "basic_a0").first
+
     expect(@flavor).to have_attributes(
-      :name                     => "Basic_A0",
+      :name                     => "basic_a0",
       :description              => nil,
       :enabled                  => true,
       :cpus                     => 1,
@@ -294,7 +327,7 @@ describe ManageIQ::Providers::Azure::CloudManager::Refresher do
 
     expect(v.hardware.guest_devices.size).to eql(0)
     expect(v.hardware.nics.size).to eql(0)
-    floating_ip   = ManageIQ::Providers::Azure::NetworkManager::FloatingIp.where(:address => "13.92.253.245").first
+    floating_ip   = ManageIQ::Providers::Azure::NetworkManager::FloatingIp.where(:address => "40.117.32.144").first
     cloud_network = ManageIQ::Providers::Azure::NetworkManager::CloudNetwork.where(:name => "miq-azure-test1").first
     cloud_subnet  = cloud_network.cloud_subnets.first
     expect(v.floating_ip).to eql(floating_ip)
@@ -309,7 +342,7 @@ describe ManageIQ::Providers::Azure::CloudManager::Refresher do
     network = v.hardware.networks.where(:description => "public").first
     expect(network).to have_attributes(
       :description => "public",
-      :ipaddress   => "13.92.253.245",
+      :ipaddress   => "40.117.32.144",
       :hostname    => "ipconfig1"
     )
     network = v.hardware.networks.where(:description => "private").first
@@ -553,7 +586,7 @@ describe ManageIQ::Providers::Azure::CloudManager::Refresher do
   def assert_specific_nic_and_ip
     nic_group  = 'miq-azure-test1' # EastUS
     ip_group   = 'miq-azure-test4' # Also EastUS
-    ip_address = '40.76.5.200'
+    ip_address = '13.82.28.187'
 
     nic_name = "/subscriptions/#{@subscription_id}/resourceGroups"\
                "/#{nic_group}/providers/Microsoft.Network"\

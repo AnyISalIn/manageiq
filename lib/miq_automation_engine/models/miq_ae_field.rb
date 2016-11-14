@@ -2,13 +2,14 @@ class MiqAeField < ApplicationRecord
   include MiqAeSetUserInfoMixin
   include MiqAeYamlImportExportMixin
 
-  belongs_to :ae_class,   :class_name => "MiqAeClass",  :foreign_key => :class_id
-  belongs_to :ae_method,  :class_name => "MiqAeMethod", :foreign_key => :method_id
+  belongs_to :ae_class,   :class_name => "MiqAeClass",  :foreign_key => :class_id, :touch => true
+  belongs_to :ae_method,  :class_name => "MiqAeMethod", :foreign_key => :method_id, :touch => true
   has_many   :ae_values,  :class_name => "MiqAeValue",  :foreign_key => :field_id, :dependent => :destroy
 
   validates_uniqueness_of :name, :case_sensitive => false, :scope => [:class_id, :method_id]
   validates_presence_of   :name
-  validates_format_of     :name, :with => /\A[A-Za-z0-9_]+\z/i
+  validates_format_of     :name, :with    => /\A[\w]+\z/i,
+                                 :message => N_("may contain only alphanumeric and _ characters")
 
   validates_inclusion_of  :substitute, :in => [true, false]
   AVAILABLE_SCOPES    = ["class", "instance", "local"]

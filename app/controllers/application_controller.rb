@@ -925,6 +925,10 @@ class ApplicationController < ActionController::Base
           celltext = Dictionary.gettext(row[col], :type => :model, :notfound => :titleize)
         when 'approval_state'
           celltext = _(PROV_STATES[row[col]])
+        when "result"
+          new_row[:cells] << {:span => result_span_class(row[col]), :text => row[col].titleize}
+        when "severity"
+          new_row[:cells] << {:span => severity_span_class(row[col]), :text => row[col].titleize}
         when 'state'
           celltext = row[col].titleize
         when 'hardware.bitness'
@@ -937,7 +941,7 @@ class ApplicationController < ActionController::Base
           celltext = format_col_for_display(view, row, col, celltz || tz)
         end
 
-        new_row[:cells] << {:text => celltext}
+        new_row[:cells] << {:text => celltext} if celltext
       end
 
       if @row_button # Show a button in the last col
@@ -949,6 +953,28 @@ class ApplicationController < ActionController::Base
     end
 
     root
+  end
+
+  def result_span_class(value)
+    case value.downcase
+    when "pass"
+      "label label-success center-block"
+    when "fail"
+      "label label-danger center-block"
+    else
+      "label label-primary center-block"
+    end
+  end
+
+  def severity_span_class(value)
+    case value.downcase
+    when "high"
+      "label label-danger center-block"
+    when "medium"
+      "label label-warning center-block"
+    else
+      "label label-low-severity center-block"
+    end
   end
 
   def calculate_pct_img(val)
@@ -1043,13 +1069,18 @@ class ApplicationController < ActionController::Base
     else
       @title = new_bc [:name] # Set the title to be the new breadcrumb
     end
+
+    # Modify user feedback for quick searches when not found
+    unless @search_text.blank?
+      @title += _(" (Names with \"%{search_text}\")") % {:search_text => @search_text}
+    end
   end
 
   def handle_invalid_session(timed_out = nil)
     timed_out = PrivilegeCheckerService.new.user_session_timed_out?(session, current_user) if timed_out.nil?
     reset_session
 
-    session[:start_url] = request.url
+    session[:start_url] = request.url if request.method == "GET"
 
     respond_to do |format|
       format.html do
@@ -1566,7 +1597,7 @@ class ApplicationController < ActionController::Base
     @items_per_page = controller_name.downcase == "miq_policy" ? ONE_MILLION : get_view_pages_perpage(dbname)
     @items_per_page = ONE_MILLION if 'vm' == db_sym.to_s && controller_name == 'service'
 
-    @current_page = options[:page] || (params[:page].blank? ? 1 : params[:page].to_i)
+    @current_page = options[:page] || ((params[:page].to_i < 1) ? 1 : params[:page].to_i)
 
     view.conditions = options[:conditions] # Get passed in conditions (i.e. tasks date filters)
 
@@ -1932,6 +1963,20 @@ class ApplicationController < ActionController::Base
       if typ
         prov_edit
       else
+        if %w(image_miq_request_new miq_template_miq_request_new).include?(params[:pressed])
+          # skip pre prov grid
+          set_pre_prov_vars
+          templates = find_checked_items
+          templates = [params[:id]] if templates.blank?
+
+          template = VmOrTemplate.find_by_id(from_cid(templates.first))
+          render_flash_not_applicable_to_model("provisioning") unless template.supports_provisioning?
+          return if performed?
+
+          @edit[:src_vm_id] = templates.first
+          session[:edit] = @edit
+          @_params[:button] = "continue"
+        end
         vm_pre_prov
       end
     end
@@ -1939,6 +1984,7 @@ class ApplicationController < ActionController::Base
   alias_method :image_miq_request_new, :prov_redirect
   alias_method :instance_miq_request_new, :prov_redirect
   alias_method :vm_miq_request_new, :prov_redirect
+  alias_method :miq_template_miq_request_new, :prov_redirect
 
   def vm_clone
     prov_redirect("clone")
@@ -2289,7 +2335,7 @@ class ApplicationController < ActionController::Base
     end
 
     # Clearing out session objects that are no longer needed
-    session[:myco_tree] = session[:hac_tree] = session[:vat_tree] = nil if controller_name != "ops"
+    session[:hac_tree] = session[:vat_tree] = nil if controller_name != "ops"
     session[:dc_tree] = nil if !["ems_folders", "descendant_vms"].include?(params[:display]) && !["treesize", "tree_autoload"].include?(params[:action])
     session[:ch_tree] = nil if !["compliance_history"].include?(params[:display]) && params[:action] != "treesize" && params[:action] != "squash_toggle"
     session[:vm_tree] = nil if !["vmtree_info"].include?(params[:display]) && params[:action] != "treesize"
@@ -2406,6 +2452,11 @@ class ApplicationController < ActionController::Base
   def assert_privileges(feature)
     raise MiqException::RbacPrivilegeException,
           _("The user is not authorized for this task or item.") unless role_allows(:feature => feature)
+  end
+
+  def assert_rbac(user, klass, ids)
+    filtered, _ = Rbac.search(:targets => ids.map(&:to_i), :user => user, :class => klass, :results_format => :ids)
+    raise _("Unauthorized object or action") unless ids.length == filtered.length
   end
 
   def previous_breadcrumb_url

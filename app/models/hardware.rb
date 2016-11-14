@@ -25,6 +25,8 @@ class Hardware < ApplicationRecord
   virtual_column :ipaddresses,   :type => :string_set, :uses => :networks
   virtual_column :hostnames,     :type => :string_set, :uses => :networks
   virtual_column :mac_addresses, :type => :string_set, :uses => :nics
+  virtual_attribute :used_disk_storage,      :integer, :uses => :disks
+  virtual_attribute :allocated_disk_storage, :integer, :uses => :disks
 
   include ReportableMixin
 
@@ -116,6 +118,22 @@ class Hardware < ApplicationRecord
       Arel::Nodes::NamedFunction.new("CAST", [t[:disk_free_space].as("float")]),
       t[:disk_capacity]) * -100 + 100)
   end)
+
+  def allocated_disk_storage
+    if disks.loaded?
+      disks.blank? ? nil : disks.inject(0) { |t, d| t + d.size.to_i }
+    else
+      disks.sum('coalesce(size, 0)')
+    end
+  end
+
+  def used_disk_storage
+    if disks.loaded?
+      disks.blank? ? nil : disks.inject(0) { |t, d| t + (d.size_on_disk || d.size).to_i }
+    else
+      disks.sum('coalesce(size_on_disk, size, 0)')
+    end
+  end
 
   def m_controller(_parent, xmlNode, deletes)
     # $log.info("Adding controller XML elements for [#{xmlNode.attributes["type"]}]")

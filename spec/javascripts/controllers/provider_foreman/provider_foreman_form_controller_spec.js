@@ -12,13 +12,22 @@ describe('providerForemanFormController', function() {
     spyOn(miqService, 'sparkleOff');
     $scope = $rootScope.$new();
 
+    var providerForemanFormResponse = {
+      name: '',
+      url: '',
+      zone: 'foo_zone',
+      verify_ssl: false,
+      log_userid: ''
+    };
+
     $httpBackend = _$httpBackend_;
-    $httpBackend.whenGET('/provider_foreman/provider_foreman_form_fields/new').respond();
+    $httpBackend.whenGET('/provider_foreman/provider_foreman_form_fields/new').respond(providerForemanFormResponse);
     $controller = _$controller_('providerForemanFormController', {
       $scope: $scope,
       providerForemanFormId: 'new',
       miqService: miqService
     });
+    $httpBackend.flush();
   }));
 
   afterEach(function() {
@@ -28,46 +37,34 @@ describe('providerForemanFormController', function() {
 
   describe('initialization', function() {
     describe('when the providerForemanFormId is new', function() {
-    var providerForemanFormResponse = {
-      name: '',
-      url: '',
-      verify_ssl: false,
-      log_userid: ''
-    };
-
-    beforeEach(inject(function(_$controller_) {
-      $httpBackend.whenGET('/provider_foreman/provider_foreman_form_fields/new').respond(providerForemanFormResponse);
-      $controller = _$controller_('providerForemanFormController',
-        {
-          $scope: $scope,
-          providerForemanFormId: 'new',
-          miqService: miqService
-        });
-    }));
-    it('sets the name to blank', function () {
-      expect($scope.providerForemanModel.name).toEqual('');
+      it('sets the name to blank', function () {
+        expect($scope.providerForemanModel.name).toEqual('');
+      });
+      it('sets the zone to blank', function () {
+        expect($scope.providerForemanModel.zone).toEqual('foo_zone');
+      });
+      it('sets the url to blank', function () {
+        expect($scope.providerForemanModel.url).toEqual('');
+      });
+      it('sets the verify_ssl to blank', function () {
+        expect($scope.providerForemanModel.verify_ssl).toBeFalsy();
+      });
+      it('sets the log_userid to blank', function () {
+        expect($scope.providerForemanModel.log_userid).toEqual('');
+      });
+      it('sets the log_password to blank', function () {
+        expect($scope.providerForemanModel.log_password).toEqual('');
+      });
+      it('sets the log_verify to blank', function () {
+        expect($scope.providerForemanModel.log_verify).toEqual('');
+      });
     });
-    it('sets the url to blank', function () {
-      expect($scope.providerForemanModel.url).toEqual('');
-    });
-    it('sets the verify_ssl to blank', function () {
-      expect($scope.providerForemanModel.verify_ssl).toBeFalsy();
-    });
-    it('sets the log_userid to blank', function () {
-      expect($scope.providerForemanModel.log_userid).toEqual('');
-    });
-    it('sets the log_password to blank', function () {
-      expect($scope.providerForemanModel.log_password).toEqual('');
-    });
-    it('sets the log_verify to blank', function () {
-      expect($scope.providerForemanModel.log_verify).toEqual('');
-    });
-  });
 
     describe('when the providerForemanFormId is an Id', function() {
       var providerForemanFormResponse = {
         name: 'Foreman',
         url: '10.10.10.10',
+        zone: 'My Test Zone',
         verify_ssl: true,
         log_userid: 'admin'
       };
@@ -85,6 +82,9 @@ describe('providerForemanFormController', function() {
 
       it('sets the name to the value returned from http request', function () {
         expect($scope.providerForemanModel.name).toEqual('Foreman');
+      });
+      it('sets the zone to the value returned from the http request', function () {
+        expect($scope.providerForemanModel.zone).toEqual('My Test Zone');
       });
       it('sets the url to the value returned from http request', function () {
         expect($scope.providerForemanModel.url).toEqual('10.10.10.10');

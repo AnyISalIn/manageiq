@@ -10,6 +10,7 @@ module ManageIQ::Providers::Kubernetes
     def initialize
       @data = {}
       @data_index = {}
+      @label_tag_mapping = ContainerLabelTagMapping.cache
     end
 
     def ems_inv_to_hashes(inventory)
@@ -138,24 +139,40 @@ module ManageIQ::Providers::Kubernetes
       new_result
     end
 
+    def map_labels(model_name, labels)
+      ContainerLabelTagMapping.map_labels(@label_tag_mapping, model_name, labels)
+    end
+
     def find_host_by_provider_id(provider_id)
       scheme, instance_uri = provider_id.split("://", 2)
-      prov, name_field = {
-        "gce" => [ManageIQ::Providers::Google::CloudManager, :name],
-        "aws" => [ManageIQ::Providers::Amazon::CloudManager, :uid_ems],
-      }[scheme]
+      prov, name_field = scheme_to_provider_mapping[scheme]
       instance_id = instance_uri.split('/').last
 
       prov::Vm.find_by(name_field => instance_id) if !prov.nil? && !instance_id.blank?
     end
 
+    def scheme_to_provider_mapping
+      @scheme_to_provider_mapping ||= begin
+        {
+          'gce'       => ['ManageIQ::Providers::Google::CloudManager'.safe_constantize, :name],
+          'aws'       => ['ManageIQ::Providers::Amazon::CloudManager'.safe_constantize, :uid_ems],
+          'openstack' => ['ManageIQ::Providers::Openstack::CloudManager'.safe_constantize, :uid_ems]
+        }.reject { |_key, (provider, _name)| provider.nil? }
+      end
+    end
+
     def find_host_by_bios_uuid(new_result)
-      uuid_provider_types = [ManageIQ::Providers::Redhat::InfraManager::Vm.name,
-                             ManageIQ::Providers::Openstack::CloudManager::Vm.name,
-                             ManageIQ::Providers::Vmware::InfraManager::Vm.name]
       identity_system = new_result[:identity_system].try(:downcase)
       Vm.find_by(:uid_ems => identity_system,
                  :type    => uuid_provider_types) if identity_system
+    end
+
+    def uuid_provider_types
+      @uuid_provider_types ||= begin
+        ['ManageIQ::Providers::Redhat::InfraManager::Vm',
+         'ManageIQ::Providers::Openstack::CloudManager::Vm',
+         'ManageIQ::Providers::Vmware::InfraManager::Vm'].map(&:safe_constantize).compact.map(&:name)
+      end
     end
 
     def cross_link_node(new_result)
@@ -175,12 +192,14 @@ module ManageIQ::Providers::Kubernetes
     def parse_node(node)
       new_result = parse_base_item(node)
 
+      labels = parse_labels(node)
       new_result.merge!(
-        :type            => 'ManageIQ::Providers::Kubernetes::ContainerManager::ContainerNode',
-        :identity_infra  => node.spec.providerID,
-        :labels_and_tags => parse_labels(node),
-        :lives_on_id     => nil,
-        :lives_on_type   => nil
+        :type           => 'ManageIQ::Providers::Kubernetes::ContainerManager::ContainerNode',
+        :identity_infra => node.spec.providerID,
+        :labels         => labels,
+        :tags           => map_labels('ContainerNode', labels),
+        :lives_on_id    => nil,
+        :lives_on_type  => nil
       )
 
       node_info = node.status.try(:nodeInfo)
@@ -238,13 +257,14 @@ module ManageIQ::Providers::Kubernetes
         container_groups << cg unless cg.nil?
       end
 
+      labels = parse_labels(service)
       new_result.merge!(
         # TODO: We might want to change portal_ip to clusterIP
         :portal_ip        => service.spec.clusterIP,
         :session_affinity => service.spec.sessionAffinity,
         :service_type     => service.spec.type,
-
-        :labels_and_tags  => parse_labels(service),
+        :labels           => labels,
+        :tags             => map_labels('ContainerService', labels),
         :selector_parts   => parse_selector_parts(service),
         :container_groups => container_groups
       )
@@ -321,7 +341,8 @@ module ManageIQ::Providers::Kubernetes
 
       new_result[:container_conditions] = parse_conditions(pod)
 
-      new_result[:labels_and_tags] = parse_labels(pod)
+      new_result[:labels] = parse_labels(pod)
+      new_result[:tags] = map_labels('ContainerGroup', new_result[:labels])
       new_result[:node_selector_parts] = parse_node_selector_parts(pod)
       new_result[:container_volumes] = parse_volumes(pod)
       new_result
@@ -348,7 +369,8 @@ module ManageIQ::Providers::Kubernetes
 
     def parse_namespace(namespace)
       new_result = parse_base_item(namespace).except(:namespace)
-      new_result[:labels_and_tags] = parse_labels(namespace)
+      new_result[:labels] = parse_labels(namespace)
+      new_result[:tags] = map_labels('ContainerProject', new_result[:labels])
       new_result
     end
 
@@ -499,11 +521,13 @@ module ManageIQ::Providers::Kubernetes
     def parse_replication_controllers(container_replicator)
       new_result = parse_base_item(container_replicator)
 
+      labels = parse_labels(container_replicator)
       # TODO: parse template
       new_result.merge!(
         :replicas         => container_replicator.spec.replicas,
         :current_replicas => container_replicator.status.replicas,
-        :labels_and_tags  => parse_labels(container_replicator),
+        :labels           => labels,
+        :tags             => map_labels('ContainerReplicator', labels),
         :selector_parts   => parse_selector_parts(container_replicator)
       )
 
@@ -613,11 +637,11 @@ module ManageIQ::Providers::Kubernetes
       }
       state_attributes = parse_container_state container.lastState
       state_attributes.each { |key, val| h[key.to_s.prepend('last_').to_sym] = val } if state_attributes
-      h.merge! parse_container_state container.state
+      h.merge!(parse_container_state(container.state))
     end
 
     def parse_container_state(state_hash)
-      return if state_hash.to_h.empty?
+      return {} if state_hash.to_h.empty?
       res = {}
       # state_hash key is the state and value are attributes e.g 'running': {...}
       (state, state_info), = state_hash.to_h.to_a
@@ -704,7 +728,7 @@ module ManageIQ::Providers::Kubernetes
     def parse_image_name(image, image_ref)
       parts = %r{
         \A
-          (?:(?:(?<host>[^\.:\/]+\.[^\.:\/]+)|(?:(?<host2>[^:\/]+)(?::(?<port>\d+))))\/)?
+          (?:(?:(?<host>([^\.:\/]+\.)+[^\.:\/]+)|(?:(?<host2>[^:\/]+)(?::(?<port>\d+))))\/)?
           (?<name>(?:[^:\/@]+\/)*[^\/:@]+)
           (?:(?::(?<tag>.+))|(?:\@(?<digest>.+)))?
         \z

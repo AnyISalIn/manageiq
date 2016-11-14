@@ -59,7 +59,7 @@ class MiqProvisionVirtWorkflow < MiqProvisionWorkflow
 
   def update_request(request, values, _requester = nil)
     request = request.kind_of?(MiqRequest) ? request : MiqRequest.find(request)
-    request.src_vm_id = request.get_option(:src_vm_id)
+    request.src_vm_id = get_value(values[:src_vm_id])
     super
   end
 
@@ -226,7 +226,7 @@ class MiqProvisionVirtWorkflow < MiqProvisionWorkflow
     f = Hash.new { |h, k| h[k] = [] }
 
     if get_value(@values[:service_template_request])
-      f[:hide] = [:number_of_vms, :vm_description, :schedule_type, :schedule_time]
+      f[:hide] = [:vm_description, :schedule_type, :schedule_time]
     end
 
     auto_placement = show_flag = auto_placement_enabled? ? :hide : :edit
@@ -362,21 +362,6 @@ class MiqProvisionVirtWorkflow < MiqProvisionWorkflow
     fields(:customize) { |fn, f, _dn, _d| f[:read_only] = read_only unless exclude_list.include?(fn) }
     return unless options[:read_only_fields]
     fields(:hardware) { |fn, f, _dn, _d| f[:read_only] = true if options[:read_only_fields].include?(fn) }
-  end
-
-  def set_default_values
-    super
-    set_default_filters
-  end
-
-  def set_default_filters
-    [[:requester, :vm_filter, :Vm], [:environment, :host_filter, :Host], [:environment, :ds_filter, :Storage], [:environment, :cluster_filter, :EmsCluster]].each do |dialog, field, model|
-      filter = @dialogs.fetch_path(:dialogs, dialog, :fields, field)
-      unless filter.nil?
-        current_filter = get_value(@values[field])
-        filter[:default] = current_filter.nil? ? @requester.settings.fetch_path(:default_search, model) : current_filter
-      end
-    end
   end
 
   #
@@ -1147,18 +1132,18 @@ class MiqProvisionVirtWorkflow < MiqProvisionWorkflow
   private
 
   def create_hash_struct_from_vm_or_template(vm_or_template, options)
-    hash_struct = MiqHashStruct.new(
-      :id                     => vm_or_template.id,
-      :name                   => vm_or_template.name,
-      :guid                   => vm_or_template.guid,
-      :uid_ems                => vm_or_template.uid_ems,
-      :platform               => vm_or_template.platform,
-      :logical_cpus           => vm_or_template.cpu_total_cores,
-      :mem_cpu                => vm_or_template.mem_cpu,
-      :allocated_disk_storage => vm_or_template.allocated_disk_storage,
-      :v_total_snapshots      => vm_or_template.v_total_snapshots,
-      :evm_object_class       => :Vm
-    )
+    data_hash = {:id                     => vm_or_template.id,
+                 :name                   => vm_or_template.name,
+                 :guid                   => vm_or_template.guid,
+                 :uid_ems                => vm_or_template.uid_ems,
+                 :platform               => vm_or_template.platform,
+                 :logical_cpus           => vm_or_template.cpu_total_cores,
+                 :mem_cpu                => vm_or_template.mem_cpu,
+                 :allocated_disk_storage => vm_or_template.allocated_disk_storage,
+                 :v_total_snapshots      => vm_or_template.v_total_snapshots,
+                 :evm_object_class       => :Vm}
+    data_hash[:cloud_tenant] = vm_or_template.cloud_tenant if vm_or_template.respond_to?(:cloud_tenant)
+    hash_struct = MiqHashStruct.new(data_hash)
     hash_struct.operating_system = MiqHashStruct.new(
       :product_name => vm_or_template.operating_system.product_name
     ) if vm_or_template.operating_system

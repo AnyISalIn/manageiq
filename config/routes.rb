@@ -270,6 +270,44 @@ Vmdb::Application.routes.draw do
       )
     },
 
+    :configuration_job      => {
+      :get  => %w(
+        download_data
+        index
+        outputs
+        parameters
+        resources
+        show
+        show_list
+        tagging_edit
+        protect
+      ),
+      :post => %w(
+        button
+        outputs
+        listnav_search_selected
+        panel_control
+        parameters
+        quick_search
+        resources
+        sections_field_changed
+        show
+        show_list
+        protect
+        tagging_edit
+        tag_edit_form_field_changed
+      ) +
+        adv_search_post +
+        exp_post +
+        save_post
+    },
+
+    :consumption                  => {
+      :get => %w(
+        show
+      )
+    },
+
     :cloud_object_store_container => {
       :get => %w(
         download_data
@@ -475,6 +513,7 @@ Vmdb::Application.routes.draw do
         show_list
         tagging_edit
         tag_edit_form_field_changed
+        protect
       ),
       :post => %w(
         button
@@ -492,6 +531,8 @@ Vmdb::Application.routes.draw do
         wait_for_task
         tagging_edit
         tag_edit_form_field_changed
+        protect
+        squash_toggle
       ) +
                adv_search_post +
                exp_post +
@@ -510,6 +551,7 @@ Vmdb::Application.routes.draw do
         show_list
         tagging_edit
         tag_edit_form_field_changed
+        protect
       ),
       :post => %w(
         button
@@ -527,6 +569,8 @@ Vmdb::Application.routes.draw do
         wait_for_task
         tagging_edit
         tag_edit_form_field_changed
+        protect
+        squash_toggle
       ) +
                adv_search_post +
                exp_post +
@@ -545,6 +589,7 @@ Vmdb::Application.routes.draw do
         show_list
         tagging_edit
         tag_edit_form_field_changed
+        protect
       ),
       :post => %w(
         button
@@ -562,6 +607,8 @@ Vmdb::Application.routes.draw do
         wait_for_task
         tagging_edit
         tag_edit_form_field_changed
+        protect
+        squash_toggle
       ) +
                adv_search_post +
                exp_post +
@@ -583,7 +630,6 @@ Vmdb::Application.routes.draw do
         openscap_rule_results
         openscap_html
         protect
-        squash_toggle
       ),
       :post => %w(
         button
@@ -1179,6 +1225,7 @@ Vmdb::Application.routes.draw do
         button
         quick_search
         panel_control
+        listnav_search_selected
         show
         show_list
         tag_edit_form_field_changed
@@ -1186,6 +1233,7 @@ Vmdb::Application.routes.draw do
       ) +
         adv_search_post +
         compare_post +
+        save_post +
         exp_post
     },
 
@@ -1202,6 +1250,7 @@ Vmdb::Application.routes.draw do
         button
         quick_search
         panel_control
+        listnav_search_selected
         show
         show_list
         tag_edit_form_field_changed
@@ -1209,6 +1258,7 @@ Vmdb::Application.routes.draw do
       ) +
         adv_search_post +
         compare_post +
+        save_post +
         exp_post
     },
 
@@ -1227,11 +1277,13 @@ Vmdb::Application.routes.draw do
         panel_control
         show
         show_list
+        listnav_search_selected
         tag_edit_form_field_changed
         tagging_edit
       ) +
         adv_search_post +
         compare_post +
+        save_post +
         exp_post
     },
 
@@ -1248,6 +1300,7 @@ Vmdb::Application.routes.draw do
         button
         quick_search
         panel_control
+        listnav_search_selected
         show
         show_list
         tag_edit_form_field_changed
@@ -1255,6 +1308,7 @@ Vmdb::Application.routes.draw do
       ) +
         adv_search_post +
         compare_post +
+        save_post +
         exp_post
     },
 
@@ -1271,6 +1325,7 @@ Vmdb::Application.routes.draw do
         button
         quick_search
         panel_control
+        listnav_search_selected
         show
         show_list
         tag_edit_form_field_changed
@@ -1278,6 +1333,7 @@ Vmdb::Application.routes.draw do
       ) +
         adv_search_post +
         compare_post +
+        save_post +
         exp_post
     },
 
@@ -1294,6 +1350,7 @@ Vmdb::Application.routes.draw do
         button
         quick_search
         panel_control
+        listnav_search_selected
         show
         show_list
         tag_edit_form_field_changed
@@ -1301,6 +1358,7 @@ Vmdb::Application.routes.draw do
       ) +
         adv_search_post +
         compare_post +
+        save_post +
         exp_post
     },
 
@@ -2181,6 +2239,7 @@ Vmdb::Application.routes.draw do
         perf_chart_chooser
         protect
         quick_search
+        reload
         sections_field_changed
         show
         show_association

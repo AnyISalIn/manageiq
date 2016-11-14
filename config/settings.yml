@@ -97,6 +97,8 @@
       :read_timeout: 1.hour
   :ems_kubernetes:
     :miq_namespace: management-infra
+  :ems_amazon:
+    :disabled_regions: []
 :ems_events:
   :history:
     :keep_ems_events: 6.months
@@ -991,7 +993,7 @@
   :mks_version: 2.1.0.0
   :monitor_poll: 5.seconds
   :name: EVM
-  :rails_server: thin
+  :rails_server: puma
   :remote_console_type: VMRC
   :role: database_operations,event,reporting,scheduler,smartstate,ems_operations,ems_inventory,user_interface,websocket,web_services,automate
   :server_dequeue_frequency: 5.seconds
@@ -1325,7 +1327,6 @@
         - miq_enterprises
         - miq_event_definitions
         - miq_globals
-        - miq_groups
         - miq_policies
         - miq_policy_contents
         - miq_product_features

@@ -41,7 +41,7 @@ module ManageIQ::Providers::Azure::ManagerMixin
         :client_key      => client_key,
         :tenant_id       => azure_tenant_id,
         :subscription_id => subscription,
-        :proxy           => proxy_uri.to_s
+        :proxy           => proxy_uri
       )
     end
 
@@ -73,7 +73,7 @@ module ManageIQ::Providers::Azure::ManagerMixin
 
       # at least create the Azure-eastus region.
       if new_emses.blank? && known_emses.blank?
-        new_emses << create_discovered_region("Azure-eastus", clientid, clientkey, azure_tenant_id, subscription, all_ems_names)
+        new_emses << create_discovered_region("eastus", clientid, clientkey, azure_tenant_id, subscription, all_ems_names)
       end
 
       EmsRefresh.queue_refresh(new_emses) unless new_emses.blank?
@@ -81,7 +81,7 @@ module ManageIQ::Providers::Azure::ManagerMixin
       new_emses
     end
 
-    def discover_queue(clientid, clientkey, azure_tenant_id, subscription)
+    def discover_queue(clientid, clientkey, azure_tenant_id, subscription = nil)
       MiqQueue.put(
         :class_name  => name,
         :method_name => "discover_from_queue",

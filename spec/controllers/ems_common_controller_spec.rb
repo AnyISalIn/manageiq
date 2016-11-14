@@ -125,8 +125,11 @@ describe EmsCloudController do
 
       it "when Retire Button is pressed for a Cloud provider Instance" do
         allow(controller).to receive(:role_allows).and_return(true)
-        vm = FactoryGirl.create(:vm_vmware)
         ems = FactoryGirl.create("ems_vmware")
+        vm = FactoryGirl.create(:vm_vmware,
+                                :ext_management_system => ems,
+                                :storage               => FactoryGirl.create(:storage)
+                               )
         post :button, :params => { :pressed => "instance_retire", "check_#{vm.id}" => "1", :format => :js, :id => ems.id, :display => 'instances' }
         expect(response.status).to eq 200
         expect(response.body).to include('vm/retire')
@@ -170,11 +173,12 @@ describe EmsContainerController do
         after :each do
           set_user_privileges
           controller.instance_variable_set(:@_params, :name              => 'EMS 2',
+                                                      :default_userid    => '_',
                                                       :default_hostname  => '10.10.10.11',
                                                       :default_api_port  => '5000',
+                                                      :default_password  => 'valid-token',
                                                       :hawkular_hostname => '10.10.10.10',
                                                       :hawkular_api_port => '8443',
-                                                      :bearer_password   => 'valid-token',
                                                       :emstype           => @type)
           session[:edit] = assigns(:edit)
           controller.send(:set_ems_record_vars, @ems)
@@ -183,6 +187,7 @@ describe EmsContainerController do
           expect(@ems.connection_configurations.hawkular.endpoint.hostname).to eq('10.10.10.10')
           expect(@ems.connection_configurations.hawkular.endpoint.port).to eq(8443)
           expect(@ems.authentication_token("bearer")).to eq('valid-token')
+          expect(@ems.authentication_type("default")).to be_nil
           expect(@ems.hostname).to eq('10.10.10.11')
         end
 

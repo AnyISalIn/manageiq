@@ -848,6 +848,12 @@ class Storage < ApplicationRecord
       Benchmark.realtime_block(:process_perfs_tag) { VimPerformanceTagValue.build_from_performance_record(perf) }
 
       update_attribute(:last_perf_capture_on, hour)
+
+      # We don't rollup realtime to Storage, so we need to manually create bottlenecks
+      # when we capture hourly storage.
+      # See: https://github.com/ManageIQ/manageiq/blob/96753f2473391e586d0a563fad9cf7153deab671/app/models/metric/ci_mixin/rollup.rb#L102
+      Benchmark.realtime_block(:process_bottleneck) { BottleneckEvent.generate_future_events(self) } if interval_name == 'hourly'
+
       perf_rollup_to_parents(interval_name, hour)
     end
 
@@ -877,7 +883,11 @@ class Storage < ApplicationRecord
   end
 
   def tenant_identity
-    ext_management_system.tenant_identity
+    if ext_management_system
+      ext_management_system.tenant_identity
+    else
+      User.super_admin.tap { |u| u.current_group = Tenant.root_tenant.default_miq_group }
+    end
   end
 
   # @param [String, Storage] store_type upcased version of the storage type

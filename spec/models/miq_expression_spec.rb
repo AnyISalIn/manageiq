@@ -360,6 +360,90 @@ describe MiqExpression do
       expect(exp.to_ruby).to eq('<value ref=host, type=numeric_set>/virtual/enabled_inbound_ports</value> == [22,427,5988,5989]')
     end
 
+    it "escapes forward slashes for values in REGULAR EXPRESSION MATCHES expressions" do
+      value = "//; puts 'Hi, mom!';//"
+      actual = described_class.new("REGULAR EXPRESSION MATCHES" => {"field" => "Vm-name", "value" => value}).to_ruby
+      expected = "<value ref=vm, type=string>/virtual/name</value> =~ /\\/; puts 'Hi, mom!';\\//"
+      expect(actual).to eq(expected)
+    end
+
+    it "preserves the delimiters when escaping forward slashes in case-insensitive REGULAR EXPRESSION MATCHES expressions" do
+      value = "//; puts 'Hi, mom!';//i"
+      actual = described_class.new("REGULAR EXPRESSION MATCHES" => {"field" => "Vm-name", "value" => value}).to_ruby
+      expected = "<value ref=vm, type=string>/virtual/name</value> =~ /\\/; puts 'Hi, mom!';\\//i"
+      expect(actual).to eq(expected)
+    end
+
+    it "escapes forward slashes for non-Regexp literal values in REGULAR EXPRESSION MATCHES expressions" do
+      value = ".*/; puts 'Hi, mom!';/.*"
+      actual = described_class.new("REGULAR EXPRESSION MATCHES" => {"field" => "Vm-name", "value" => value}).to_ruby
+      expected = "<value ref=vm, type=string>/virtual/name</value> =~ /.*\\/; puts 'Hi, mom!';\\/.*/"
+      expect(actual).to eq(expected)
+    end
+
+    it "does not escape escaped forward slashes for values in REGULAR EXPRESSION MATCHES expressions" do
+      value = "\/foo\/bar"
+      actual = described_class.new("REGULAR EXPRESSION MATCHES" => {"field" => "Vm-name", "value" => value}).to_ruby
+      expected = "<value ref=vm, type=string>/virtual/name</value> =~ /\\/foo\\/bar/"
+      expect(actual).to eq(expected)
+    end
+
+    it "handles arbitarily long escaping of forward " do
+      value = "\\\\\\/foo\\\\\\/bar"
+      actual = described_class.new("REGULAR EXPRESSION MATCHES" => {"field" => "Vm-name", "value" => value}).to_ruby
+      expected = "<value ref=vm, type=string>/virtual/name</value> =~ /\\/foo\\/bar/"
+      expect(actual).to eq(expected)
+    end
+
+    it "escapes interpolation in REGULAR EXPRESSION MATCHES expressions" do
+      value = "/\#{puts 'Hi, mom!'}/"
+      actual = described_class.new("REGULAR EXPRESSION MATCHES" => {"field" => "Vm-name", "value" => value}).to_ruby
+      expected = "<value ref=vm, type=string>/virtual/name</value> =~ /\\\#{puts 'Hi, mom!'}/"
+      expect(actual).to eq(expected)
+    end
+
+    it "handles arbitrarily long escaping of interpolation in REGULAR EXPRESSION MATCHES expressions" do
+      value = "/\\\\\#{puts 'Hi, mom!'}/"
+      actual = described_class.new("REGULAR EXPRESSION MATCHES" => {"field" => "Vm-name", "value" => value}).to_ruby
+      expected = "<value ref=vm, type=string>/virtual/name</value> =~ /\\\#{puts 'Hi, mom!'}/"
+      expect(actual).to eq(expected)
+    end
+
+    it "escapes interpolation in non-Regexp literal values in REGULAR EXPRESSION MATCHES expressions" do
+      value = "\#{puts 'Hi, mom!'}"
+      actual = described_class.new("REGULAR EXPRESSION MATCHES" => {"field" => "Vm-name", "value" => value}).to_ruby
+      expected = "<value ref=vm, type=string>/virtual/name</value> =~ /\\\#{puts 'Hi, mom!'}/"
+      expect(actual).to eq(expected)
+    end
+
+    it "escapes forward slashes for values in REGULAR EXPRESSION DOES NOT MATCH expressions" do
+      value = "//; puts 'Hi, mom!';//"
+      actual = described_class.new("REGULAR EXPRESSION DOES NOT MATCH" => {"field" => "Vm-name", "value" => value}).to_ruby
+      expected = "<value ref=vm, type=string>/virtual/name</value> !~ /\\/; puts 'Hi, mom!';\\//"
+      expect(actual).to eq(expected)
+    end
+
+    it "preserves the delimiters when escaping forward slashes in case-insensitive REGULAR EXPRESSION DOES NOT MATCH expressions" do
+      value = "//; puts 'Hi, mom!';//i"
+      actual = described_class.new("REGULAR EXPRESSION DOES NOT MATCH" => {"field" => "Vm-name", "value" => value}).to_ruby
+      expected = "<value ref=vm, type=string>/virtual/name</value> !~ /\\/; puts 'Hi, mom!';\\//i"
+      expect(actual).to eq(expected)
+    end
+
+    it "escapes forward slashes for non-Regexp literal values in REGULAR EXPRESSION DOES NOT MATCH expressions" do
+      value = ".*/; puts 'Hi, mom!';/.*"
+      actual = described_class.new("REGULAR EXPRESSION DOES NOT MATCH" => {"field" => "Vm-name", "value" => value}).to_ruby
+      expected = "<value ref=vm, type=string>/virtual/name</value> !~ /.*\\/; puts 'Hi, mom!';\\/.*/"
+      expect(actual).to eq(expected)
+    end
+
+    it "does not escape escaped forward slashes for values in REGULAR EXPRESSION DOES NOT MATCH expressions" do
+      value = "\/foo\/bar"
+      actual = described_class.new("REGULAR EXPRESSION DOES NOT MATCH" => {"field" => "Vm-name", "value" => value}).to_ruby
+      expected = "<value ref=vm, type=string>/virtual/name</value> !~ /\\/foo\\/bar/"
+      expect(actual).to eq(expected)
+    end
+
     # Note: To debug these tests, the following may be helpful:
     # puts "Expression Raw:      #{filter.exp.inspect}"
     # puts "Expression in Human: #{filter.to_human}"
@@ -2057,6 +2141,35 @@ describe MiqExpression do
       obj = described_class.new(expression)
       obj.preprocess_options = {:vim_performance_daily_adhoc => true}
       expect(obj.field_in_sql?(field)).to eq(true)
+    end
+  end
+
+  describe ".operands2rubyvalue" do
+    RSpec.shared_examples :coerces_value_to_integer do |value|
+      it 'coerces the value to an integer' do
+        expect(subject.last).to eq(0)
+      end
+    end
+
+    let(:operator) { ">" }
+
+    subject do
+      described_class.operands2rubyvalue(operator, ops, nil)
+    end
+
+    context "when ops field equals count" do
+      let(:ops) { {"field" => "<count>", "value" => "foo"} }
+      include_examples :coerces_value_to_integer
+    end
+
+    context "when ops key is count" do
+      let(:ops) do
+        {
+          "count" => "ManageIQ::Providers::InfraManager::Vm.advanced_settings",
+          "value" => "foo"
+        }
+      end
+      include_examples :coerces_value_to_integer
     end
   end
 end

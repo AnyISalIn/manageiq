@@ -1,4 +1,6 @@
 class ContainerNode < ApplicationRecord
+  include ComplianceMixin
+  include MiqPolicyMixin
   include ReportableMixin
   include NewWithTypeStiMixin
 
@@ -7,6 +9,7 @@ class ContainerNode < ApplicationRecord
   has_many   :container_groups
   has_many   :container_conditions, :class_name => ContainerCondition, :as => :container_entity, :dependent => :destroy
   has_many   :containers, :through => :container_groups
+  has_many   :container_images, -> { distinct }, :through => :container_groups
   has_many   :container_services, -> { distinct }, :through => :container_groups
   has_many   :container_routes, -> { distinct }, :through => :container_services
   has_many   :container_replicators, -> { distinct }, :through => :container_groups
@@ -56,6 +59,14 @@ class ContainerNode < ApplicationRecord
     when :policy_events
       # TODO: implement policy events and its relationship
       ["#{events_table_name(assoc)}.ems_id = ?", ems_id]
+    end
+  end
+
+  def tenant_identity
+    if ext_management_system
+      ext_management_system.tenant_identity
+    else
+      User.super_admin.tap { |u| u.current_group = Tenant.root_tenant.default_miq_group }
     end
   end
 

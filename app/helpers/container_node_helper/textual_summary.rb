@@ -10,7 +10,7 @@ module ContainerNodeHelper::TextualSummary
   end
 
   def textual_group_relationships
-    %i(ems container_routes container_services container_replicators container_groups containers lives_on)
+    %i(ems container_routes container_services container_replicators container_groups containers lives_on container_images)
   end
 
   def textual_group_conditions
@@ -111,5 +111,9 @@ module ContainerNodeHelper::TextualSummary
 
   def textual_kernel_version
     @record.computer_system.try(:operating_system).try(:kernel_version) || _("N/A")
+  end
+
+  def textual_compliance_history
+    super(:title => _("Show Compliance History of this Node (Last 10 Checks)"))
   end
 end

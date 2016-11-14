@@ -80,7 +80,7 @@ describe MiqRequestWorkflow do
 
   describe "#init_from_dialog" do
     let(:dialogs) { workflow.instance_variable_get(:@dialogs) }
-    let(:init_values) { {} }
+    let(:init_values) { workflow.instance_variable_get(:@values) }
 
     context "when the initial values already have a value for the field name" do
       let(:init_values) { {:root_password => "root"} }
@@ -101,9 +101,10 @@ describe MiqRequestWorkflow do
       end
 
       it "does not modify the initial values" do
+        old_values = init_values.dup
         workflow.init_from_dialog(init_values)
 
-        expect(init_values).to eq({})
+        expect(init_values).to eq(old_values)
       end
     end
 
@@ -119,7 +120,7 @@ describe MiqRequestWorkflow do
       it "modifies the initial values with the default value" do
         workflow.init_from_dialog(init_values)
 
-        expect(init_values).to eq(:root_password => "not nil")
+        expect(init_values).to include(:root_password => "not nil")
       end
     end
 
@@ -141,10 +142,33 @@ describe MiqRequestWorkflow do
           end
         end
 
-        it "uses the first field value" do
+        it "should not auto select the first field value" do
           workflow.init_from_dialog(init_values)
 
-          expect(init_values).to eq(:root_password => [:something, "test"])
+          expect(init_values).to include(:root_password => [nil, nil])
+        end
+
+        context 'with auto_select_single' do
+          before do
+            allow(workflow).to receive(:allowed_filters).and_return(122 => "name not empty")
+          end
+          let(:values) { {:values_from => {:options => {:category => :EmsCluster}, :method => :allowed_filters}} }
+
+          it "auto-selects single value when true" do
+            values[:auto_select_single] = true
+            dialogs.store_path(:dialogs, :environment, :fields, :cluster_filter, values)
+            workflow.init_from_dialog(init_values)
+
+            expect(init_values).to include(:cluster_filter => [122, 'name not empty'])
+          end
+
+          it "should not auto-select single value when false" do
+            values[:auto_select_single] = false
+            dialogs.store_path(:dialogs, :environment, :fields, :cluster_filter, values)
+            workflow.init_from_dialog(init_values)
+
+            expect(init_values).to include(:cluster_filter => [nil, nil])
+          end
         end
       end
 
@@ -160,7 +184,7 @@ describe MiqRequestWorkflow do
         it "uses values as [value, description] for timezones aray" do
           workflow.init_from_dialog(init_values)
 
-          expect(init_values).to eq(:root_password => [nil, "test2"])
+          expect(init_values).to include(:root_password => [nil, "test2"])
         end
       end
     end
@@ -185,6 +209,7 @@ describe MiqRequestWorkflow do
     let(:cluster)       { FactoryGirl.create(:ems_cluster, :ems_id => ems.id) }
     let(:ems)           { FactoryGirl.create(:ext_management_system) }
     let(:resource_pool) { FactoryGirl.create(:resource_pool, :ems_id => ems.id) }
+    let(:host)          { FactoryGirl.create(:host, :ems_id => ems.id) }
 
     before { allow_any_instance_of(User).to receive(:get_timezone).and_return("UTC") }
 
@@ -227,6 +252,24 @@ describe MiqRequestWorkflow do
         workflow.allowed_resource_pools
       end
     end
+
+    context "#allowed_hosts does not fail for a deleted provider" do
+      it "allowed_hosts with a missing provider" do
+        host
+        allow(workflow).to receive(:get_source_and_targets).and_return(:ems => nil)
+        expect(workflow).to receive(:allowed_ci).with(:host, [:cluster, :respool, :folder], [])
+        workflow.allowed_hosts
+      end
+    end
+
+    context "#allowed_clusters does not fail for a deleted provider" do
+      it "with deleted provider" do
+        cluster
+        allow(workflow).to receive(:get_source_and_targets).and_return(:ems => nil)
+        expect(workflow).to receive(:allowed_ci).with(:cluster, [:respool, :host, :folder], [])
+        workflow.allowed_clusters
+      end
+    end
   end
 
   context "#ci_to_hash_struct" do
@@ -266,6 +309,17 @@ describe MiqRequestWorkflow do
       expect(hs.id).to               be_kind_of(Integer)
       expect(hs.evm_object_class).to eq(:ConfiguredSystem)
       expect(hs.name).to             be_kind_of(String)
+    end
+  end
+
+  context "#ems_folder_to_hash_struct" do
+    it 'contains hidden column' do
+      hs = workflow.ems_folder_to_hash_struct(FactoryGirl.create(:ems_folder, :name => 'vm', :hidden => true))
+
+      expect(hs.id).to               be_kind_of(Integer)
+      expect(hs.evm_object_class).to eq(:EmsFolder)
+      expect(hs.name).to             be_kind_of(String)
+      expect(hs.hidden).to           be true
     end
   end
 

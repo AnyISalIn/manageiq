@@ -35,20 +35,55 @@ describe ApiController do
   end
   let(:sample_rhevm) do
     {
-      "type"      => "ManageIQ::Providers::Redhat::InfraManager",
-      "name"      => "sample rhevm",
-      "port"      => 5000,
-      "hostname"  => "sample_rhevm.provider.com",
-      "ipaddress" => "100.200.300.2"
+      "type"              => "ManageIQ::Providers::Redhat::InfraManager",
+      "name"              => "sample rhevm",
+      "port"              => 5000,
+      "hostname"          => "sample_rhevm.provider.com",
+      "ipaddress"         => "100.200.300.2",
+      'security_protocol' => 'kerberos',
     }
   end
   let(:sample_openshift) do
     {
-      "type"      => "ManageIQ::Providers::Openshift::ContainerManager",
-      "name"      => "sample openshift",
-      "port"      => "8443",
-      "hostname"  => "sample_openshift.provider.com",
-      "ipaddress" => "100.200.300.3",
+      "type"              => "ManageIQ::Providers::Openshift::ContainerManager",
+      "name"              => "sample openshift",
+      "port"              => 8443,
+      "hostname"          => "sample_openshift.provider.com",
+      "ipaddress"         => "100.200.300.3",
+      'security_protocol' => 'kerberos',
+    }
+  end
+  let(:default_connection) do
+    {
+      "endpoint"       => {
+        "role"     => "default",
+        "hostname" => "sample_openshift_multi_end_point.provider.com",
+        "port"     => "8443"
+      },
+      "authentication" => {
+        "role"     => "bearer",
+        "auth_key" => SecureRandom.hex
+      }
+    }
+  end
+  let(:hawkular_connection) do
+    {
+      "endpoint"       => {
+        "role"     => "hawkular",
+        "hostname" => "sample_openshift_multi_end_point.provider.com",
+        "port"     => "443"
+      },
+      "authentication" => {
+        "role"     => "hawkular",
+        "auth_key" => SecureRandom.hex
+      }
+    }
+  end
+  let(:sample_openshift_multi_end_point) do
+    {
+      "type"                      => "ManageIQ::Providers::Openshift::ContainerManager",
+      "name"                      => "sample openshift with multiple endpoints",
+      "connection_configurations" => [default_connection, hawkular_connection]
     }
   end
 
@@ -124,7 +159,11 @@ describe ApiController do
 
       provider_id = response_hash["results"].first["id"]
       expect(ExtManagementSystem.exists?(provider_id)).to be_truthy
-      expect(ExtManagementSystem.find(provider_id).authentications.size).to eq(1)
+      ems = ExtManagementSystem.find(provider_id)
+      expect(ems.authentications.size).to eq(1)
+      ENDPOINT_ATTRS.each do |attr|
+        expect(ems.send(attr)).to eq(sample_openshift[attr]) if sample_openshift.key? attr
+      end
     end
 
     it "supports single provider creation via action" do
@@ -188,6 +227,36 @@ describe ApiController do
       p1_id, p2_id = results.first["id"], results.second["id"]
       expect(ExtManagementSystem.exists?(p1_id)).to be_truthy
       expect(ExtManagementSystem.exists?(p2_id)).to be_truthy
+    end
+
+    it "supports provider with multiple endpoints creation" do
+      def hostname(connection)
+        connection["endpoint"]["hostname"]
+      end
+
+      def token(connection)
+        connection["authentication"]["auth_key"]
+      end
+
+      api_basic_authorize collection_action_identifier(:providers, :create)
+
+      run_post(providers_url, gen_request(:create, sample_openshift_multi_end_point))
+
+      expect(response).to have_http_status(:ok)
+      expected = {"id"   => a_kind_of(Integer),
+                  "type" => "ManageIQ::Providers::Openshift::ContainerManager",
+                  "name" => "sample openshift with multiple endpoints"}
+      results = response.parsed_body["results"]
+      expect(results.first).to include(expected)
+
+      provider_id = results.first["id"]
+      expect(ExtManagementSystem.exists?(provider_id)).to be_truthy
+      provider = ExtManagementSystem.find(provider_id)
+
+      expect(provider.hostname).to eq(hostname(default_connection))
+      expect(provider.authentication_token).to eq(token(default_connection))
+      expect(provider.connection_configurations.hawkular.endpoint.hostname).to eq(hostname(hawkular_connection))
+      expect(provider.connection_configurations.hawkular.authentication.auth_key).to eq(token(hawkular_connection))
     end
   end
 
@@ -266,8 +335,8 @@ describe ApiController do
     it "supports multiple resource edits" do
       api_basic_authorize collection_action_identifier(:providers, :edit)
 
-      p1 = FactoryGirl.create(:ext_management_system, :name => "name1")
-      p2 = FactoryGirl.create(:ext_management_system, :name => "name2")
+      p1 = FactoryGirl.create(:ems_redhat, :name => "name1")
+      p2 = FactoryGirl.create(:ems_redhat, :name => "name2")
 
       run_post(providers_url, gen_request(:edit,
                                           [{"href" => providers_url(p1.id), "name" => "updated name1"},

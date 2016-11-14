@@ -24,6 +24,8 @@ class ManageIQ::Providers::Openstack::CloudManager < EmsCloud
   include ManageIQ::Providers::Openstack::ManagerMixin
   include HasManyCloudNetworksMixin
 
+  supports :provisioning
+
   def self.ems_type
     @ems_type ||= "openstack".freeze
   end
@@ -34,10 +36,22 @@ class ManageIQ::Providers::Openstack::CloudManager < EmsCloud
 
   def self.default_blacklisted_event_names
     %w(
+      identity.authenticate
       scheduler.run_instance.start
       scheduler.run_instance.scheduled
       scheduler.run_instance.end
     )
+  end
+
+  def hostname_uniqueness_valid?
+    return unless hostname_required?
+    return unless hostname.present? # Presence is checked elsewhere
+
+    existing_providers = Endpoint.where(:hostname => hostname.downcase)
+                                 .where.not(:resource_id => id).includes(:resource)
+                                 .select { |endpoint| endpoint.resource.uid_ems == keystone_v3_domain_id }
+
+    errors.add(:hostname, "has already been taken") if existing_providers.any?
   end
 
   def supports_port?

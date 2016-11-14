@@ -42,12 +42,16 @@ class ExplorerPresenter
   #   element_updates           -- do we need all 3 of the above?
   #   set_visible_elements      -- elements to cal 'set_visible' on
   #   reload_toolbars
+  #   add_element_class         -- add class to div/element
+  #   remove_element_class      -- remove class from div/element
   #
 
   def initialize(options = {})
-    @options = HashWithIndifferentAccess.new(
+    @options = {
       :lock_unlock_trees    => {},
       :set_visible_elements => {},
+      :add_element_class    => {},
+      :remove_element_class => {},
       :update_partials      => {},
       :element_updates      => {},
       :replace_partials     => {},
@@ -57,7 +61,7 @@ class ExplorerPresenter
       :osf_node             => '',
       :show_miq_buttons     => false,
       :load_chart           => nil
-    ).update(options)
+    }.update(options)
   end
 
   def reset_changes
@@ -95,6 +99,14 @@ class ExplorerPresenter
 
   def show(*elements)
     set_visibility(true, *elements)
+  end
+
+  def addClass(el, cls)
+    @options[:add_element_class][el] = cls
+  end
+
+  def removeClass(el,cls)
+    @options[:remove_element_class][el] = cls
   end
 
   def reload_toolbars(toolbars)
@@ -216,7 +228,7 @@ class ExplorerPresenter
     end
 
     # reset miq_record_id, else it remembers prev id and sends it when add is pressed from list view
-    [:record_id, :parent_id, :parent_class].each { |variable| @out << set_or_undef(variable.to_s) }
+    [:record_id, :parent_id, :parent_class].each { |variable| @out << set_or_undef(variable) }
 
     # Open, select, and focus node in current tree
     @out << "miqDynatreeActivateNodeSilently('#{@options[:active_tree]}', '#{@options[:osf_node]}');" unless @options[:osf_node].blank?
@@ -234,6 +246,14 @@ class ExplorerPresenter
 
     if @options[:focus]
       @out << "if ($('##{@options[:focus]}').length) $('##{@options[:focus]}').focus();"
+    end
+
+    @options[:add_element_class].each do |el, cls|
+      @out << "$('##{el}').addClass('#{cls}');"
+    end
+
+    @options[:remove_element_class].each do |el, cls|
+      @out << "$('##{el}').removeClass('#{cls}');"
     end
 
     @out << "$('#clear_search').#{@options[:clear_search_show_or_hide]}();" if @options[:clear_search_show_or_hide]
@@ -266,9 +286,9 @@ class ExplorerPresenter
   # Set a JS variable to value from options or 'undefined'
   def set_or_undef(variable)
     if @options[variable]
-      "ManageIQ.record.#{variable.camelize(:lower)} = '#{@options[variable]}';"
+      "ManageIQ.record.#{variable.to_s.camelize(:lower)} = '#{@options[variable]}';"
     else
-      "ManageIQ.record.#{variable.camelize(:lower)} = null;"
+      "ManageIQ.record.#{variable.to_s.camelize(:lower)} = null;"
     end
   end
 

@@ -426,8 +426,8 @@
             :method: :allowed_hosts
           :auto_select_single: false
           :description: Name
-          :required_method: :validate_placement
-          :required: true
+          :validation_method: :validate_placement_host_name
+          :required: false
           :display: :edit
           :data_type: :integer
           :required_description: Host Name
@@ -725,9 +725,13 @@
           :data_type: :integer
         :vm_memory:
           :values:
+            "1024": "1024"
             "2048": "2048"
             "4096": "4096"
-            "1024": "1024"
+            "8192": "8192"
+            "12288": "12288"
+            "16384": "16384"
+            "32768": "32768"
           :description: Memory (MB)
           :required: false
           :display: :edit

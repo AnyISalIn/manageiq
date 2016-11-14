@@ -9,7 +9,7 @@ module ContainerGroupHelper::TextualSummary
 
   def textual_group_relationships
     # Order of items should be from parent to child
-    %i(ems container_project container_services container_replicator containers container_node lives_on)
+    %i(ems container_project container_services container_replicator containers container_node lives_on container_images)
   end
 
   def textual_group_conditions
@@ -129,5 +129,9 @@ module ContainerGroupHelper::TextualSummary
 
   def textual_terminated
     container_statuses_summary[:terminated] || 0
+  end
+
+  def textual_compliance_history
+    super(:title => _("Show Compliance History of this Replicator (Last 10 Checks)"))
   end
 end

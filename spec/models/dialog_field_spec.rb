@@ -143,4 +143,8 @@ describe DialogField do
       dialog_field.update_and_serialize_values
     end
   end
+
+  it "does not use attr_accessor for default_value" do
+    expect(described_class.new(:default_value => "test")[:default_value]).to eq("test")
+  end
 end

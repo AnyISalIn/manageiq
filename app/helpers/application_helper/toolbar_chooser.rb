@@ -1,4 +1,6 @@
 class ApplicationHelper::ToolbarChooser
+  include RestfulControllerMixin
+
   # Return a blank tb if a placeholder is needed for AJAX explorer screens, return nil if no center toolbar to be shown
   def center_toolbar_filename
     if @explorer
@@ -39,12 +41,12 @@ class ApplicationHelper::ToolbarChooser
       'compare_view_tb'
     elsif @lastaction == "drift"
       'drift_view_tb'
-    elsif %w(ems_container).include?(@layout)
+    elsif %w(ems_container).include?(@layout) && %w(main dashboard topology).include?(@display)
       'dashboard_summary_toggle_view_tb'
     elsif !%w(all_tasks all_ui_tasks timeline diagnostics my_tasks my_ui_tasks miq_server usage).include?(@layout) &&
           (!@layout.starts_with?("miq_request")) && !@treesize_buttons &&
           @display == "main" && @showtype == "main" && !@in_a_form
-      @view_context.send(:restful?) ? "summary_view_restful_tb" : "summary_view_tb"
+      controller_restful? ? "summary_view_restful_tb" : "summary_view_tb"
     else
       'blank_view_tb'
     end
@@ -55,8 +57,9 @@ class ApplicationHelper::ToolbarChooser
   delegate :session, :from_cid, :x_node, :x_active_tree, :super_admin_user?, :render_gtl_view_tb?, :x_gtl_view_tb_render?,
            :to => :@view_context
 
-  def initialize(view_context, instance_data)
+  def initialize(view_context, view_binding, instance_data)
     @view_context = view_context
+    @view_binding = view_binding
 
     instance_data.each do |name, value|
       instance_variable_set(:"@#{name}", value)
@@ -430,31 +433,27 @@ class ApplicationHelper::ToolbarChooser
   def center_toolbar_filename_classic
     # Original non vmx view code follows
     # toolbar buttons on sub-screens
-    if ((@lastaction == "show" && @view) ||
-        (@lastaction == "show" && @display != "main")) &&
-       !@layout.starts_with?("miq_request")
+    to_display = %w(availability_zones cloud_networks cloud_object_store_containers cloud_subnets
+                    cloud_tenants cloud_volumes ems_clusters flavors floating_ips hosts load_balancers
+                    network_ports network_routers orchestration_stacks resource_pools security_groups storages)
+    to_display_center = %w(stack_orchestration_template topology)
+    if @lastaction == 'show' && (@view || @display != 'main') && !@layout.starts_with?("miq_request")
       if @display == "vms" || @display == "all_vms"
         return "vm_infras_center_tb"
-      elsif @display == "ems_clusters"
-        return "ems_clusters_center_tb"
-      elsif @display == "hosts"
-        return "hosts_center_tb"
       elsif @display == "images"
         return "template_clouds_center_tb"
       elsif @display == "instances"
         return "vm_clouds_center_tb"
       elsif @display == "miq_templates"
         return "template_infras_center_tb"
-      elsif @display == "resource_pools"
-        return "resource_pools_center_tb"
-      elsif @display == "storages"
-        return "storages_center_tb"
-      elsif @display == "stack_orchestration_template"
-        return "stack_orchestration_template_center"
       elsif (@layout == "vm" || @layout == "host") && @display == "performance"
         return "#{@explorer ? "x_" : ""}vm_performance_tb"
       elsif @display == "dashboard"
         return "#{@layout}_center_tb"
+      elsif to_display.include?(@display)
+        return "#{@display}_center_tb"
+      elsif to_display_center.include?(@display)
+        return "#{@display}_center"
       end
     elsif @lastaction == "compare_miq" || @lastaction == "compare_compress"
       return "compare_center_tb"
@@ -466,7 +465,7 @@ class ApplicationHelper::ToolbarChooser
       # show_list and show screens
       unless @in_a_form
         if %w(auth_key_pair_cloud availability_zone cloud_object_store_object cloud_object_store_container cloud_tenant
-              cloud_volume cloud_volume_snapshot container_group container_node container_service ems_cloud ems_cluster
+              cloud_volume cloud_volume_snapshot configuration_job container_group container_node container_service ems_cloud ems_cluster
               ems_container ems_middleware container_project container_route container_replicator container_image
               ems_network security_group floating_ip cloud_subnet network_router network_topology network_port cloud_network
               container_image_registry ems_infra flavor host container_build

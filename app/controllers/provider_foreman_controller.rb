@@ -25,6 +25,14 @@ class ProviderForemanController < ApplicationController
     end
   end
 
+  def self.model_to_type_name(provmodel)
+    if provmodel.include?("ManageIQ::Providers::AnsibleTower")
+      'ansible_tower'
+    elsif provmodel.include?("ManageIQ::Providers::Foreman")
+      'foreman'
+    end
+  end
+
   def self.model_to_cs_name(provmodel)
     if provmodel.include?("ManageIQ::Providers::AnsibleTower")
       ui_lookup(:ui_title => 'Ansible Tower Job Template')
@@ -39,6 +47,10 @@ class ProviderForemanController < ApplicationController
     ProviderForemanController.model_to_cs_name(provmodel)
   end
 
+  def model_to_type_name(provmodel)
+    ProviderForemanController.model_to_type_name(provmodel)
+  end
+
   def index
     redirect_to :action => 'explorer'
   end
@@ -51,11 +63,13 @@ class ProviderForemanController < ApplicationController
     assert_privileges("provider_foreman_add_provider")
     @provider_cfgmgmt = ManageIQ::Providers::ConfigurationManager.new
     @provider_types = ["Ansible Tower", ui_lookup(:ui_title => 'foreman')]
+    @server_zones = Zone.in_my_region.order('lower(description)').pluck(:description, :name)
     render_form
   end
 
   def edit
     @provider_types = ["Ansible Tower", ui_lookup(:ui_title => 'foreman')]
+    @server_zones = Zone.in_my_region.order('lower(description)').pluck(:description, :name)
     case params[:button]
     when "cancel"
       cancel_provider_foreman
@@ -74,6 +88,7 @@ class ProviderForemanController < ApplicationController
   def delete
     assert_privileges("provider_foreman_delete_provider") # TODO: Privelege name should match generic ways from Infra and Cloud
     checked_items = find_checked_items # TODO: Checked items are managers, not providers.  Make them providers
+    checked_items.push(params[:id]) if checked_items.empty? && params[:id]
     providers = ManageIQ::Providers::ConfigurationManager.where(:id => checked_items).includes(:provider).collect(&:provider)
     if providers.empty?
       add_flash(_("No %{model} were selected for %{task}") % {:model => ui_lookup(:tables => "providers"), :task => "deletion"}, :error)
@@ -129,9 +144,17 @@ class ProviderForemanController < ApplicationController
   end
 
   def tagging
-    assert_privileges("provider_foreman_configured_system_tag") if x_active_accord == :configuration_manager_providers
-    assert_privileges("configured_system_tag") if x_active_accord == :cs_filter
-    tagging_edit('ConfiguredSystem', false)
+    case x_active_accord
+    when :configuration_manager_providers
+      assert_privileges("provider_foreman_configured_system_tag")
+      tagging_edit('ConfiguredSystem', false)
+    when :cs_filter
+      assert_privileges("configured_system_tag")
+      tagging_edit('ConfiguredSystem', false)
+    when :configuration_scripts
+      assert_privileges("configuration_script_tag") 
+      tagging_edit('ManageIQ::Providers::AnsibleTower::ConfigurationManager::ConfigurationScript', false)
+    end
     render_tagging_form
   end
 
@@ -175,11 +198,10 @@ class ProviderForemanController < ApplicationController
       replace_right_cell([:configuration_manager_providers])
     else
       @provider_cfgmgmt.errors.each do |field, msg|
-        @in_a_form = false
         @sb[:action] = nil
         add_flash("#{field.to_s.capitalize} #{msg}", :error)
       end
-      replace_right_cell
+      render_flash
     end
   end
 
@@ -198,11 +220,17 @@ class ProviderForemanController < ApplicationController
 
   def provider_foreman_form_fields
     assert_privileges("provider_foreman_edit_provider")
+    # set value of read only zone text box, when there is only single zone
+    return render :json => {
+                             :zone => Zone.in_my_region.size >= 1 ? Zone.in_my_region.first.name : nil
+                           } if params[:id] == "new"
+
     config_mgr = find_record(ManageIQ::Providers::ConfigurationManager, params[:id])
     provider   = config_mgr.provider
 
     render :json => {:provtype   => model_to_name(config_mgr.type),
                      :name       => provider.name,
+                     :zone       => provider.zone.name,
                      :url        => provider.url,
                      :verify_ssl => provider.verify_ssl,
                      :log_userid => provider.authentications.first.userid}
@@ -232,7 +260,7 @@ class ProviderForemanController < ApplicationController
     @record = if configuration_profile_record?
                 find_record(ConfigurationProfile, id || params[:id])
               elsif inventory_group_record?
-                find_record(InventoryRootGroup, id || params[:id])
+                find_record(ManageIQ::Providers::ConfigurationManager::InventoryGroup, id || params[:id])
               else
                 find_record(ConfiguredSystem, id || params[:id])
               end
@@ -400,8 +428,8 @@ class ProviderForemanController < ApplicationController
       return
     end
 
-    if @record.class.base_model.to_s == "ConfiguredSystem"
-      rec_cls = "#{model_to_name(@record.class.to_s).downcase.tr(' ', '_')}_configured_system"
+    if @record.kind_of?(ConfiguredSystem)
+      rec_cls = "#{model_to_type_name(@record.ext_management_system.class.to_s)}_configured_system"
     end
     return unless %w(download_pdf main).include?(@display)
     @showtype     = "main"
@@ -432,19 +460,20 @@ class ProviderForemanController < ApplicationController
     if params[:button]
       @miq_after_onload = "miqAjax('/#{controller_name}/x_button?pressed=#{params[:button]}');"
     end
+
+    build_accordions_and_trees
+
     params.instance_variable_get(:@parameters).merge!(session[:exp_parms]) if session[:exp_parms]  # Grab any explorer parm overrides
     session.delete(:exp_parms)
     @in_a_form = false
+
     if params[:id] # If a tree node id came in, show in one of the trees
       nodetype, id = params[:id].split("-")
       # treebuilder initializes x_node to root first time in locals_for_render,
       # need to set this here to force & activate node when link is clicked outside of explorer.
       @reselect_node = self.x_node = "#{nodetype}-#{to_cid(id)}"
+      get_node_info(x_node)
     end
-
-    @sb[:open_tree_nodes] ||= []
-    build_accordions_and_trees
-
     render :layout => "application"
   end
 
@@ -493,7 +522,7 @@ class ProviderForemanController < ApplicationController
     @provider_cfgmgmt.name       = params[:name]
     @provider_cfgmgmt.url        = params[:url]
     @provider_cfgmgmt.verify_ssl = params[:verify_ssl].eql?("on")
-    @provider_cfgmgmt.zone       = Zone.find_by_name(MiqServer.my_zone)
+    @provider_cfgmgmt.zone       = Zone.find_by_name(params[:zone].to_s)
   end
 
   def features
@@ -759,7 +788,7 @@ class ProviderForemanController < ApplicationController
   def render_tagging_form
     return if %w(cancel save).include?(params[:button])
     @in_a_form = true
-    @right_cell_text = _("Edit Tags for Configured Systems")
+    @right_cell_text = _("Edit Tags")
     clear_flash_msg
     presenter, r = rendering_objects
     update_tagging_partials(presenter, r)
@@ -1160,7 +1189,7 @@ class ProviderForemanController < ApplicationController
   def process_show_list(options = {})
     options[:dbname] = case x_active_accord
                        when :configuration_manager_providers
-                         :cm_providers
+                         options[:model] && options[:model] == 'ConfiguredSystem' ? :cm_configured_systems : :cm_providers
                        when :cs_filter
                          :cm_configured_systems
                        when :configuration_scripts

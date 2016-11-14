@@ -89,15 +89,15 @@ module ManageIQ::Providers
     end
 
     def availability_zones_compute
-      @availability_zones_compute ||= safe_list { @connection.availability_zones }
+      @availability_zones_compute ||= safe_list { @connection.availability_zones.summary }
     end
 
     def availability_zones_volume
-      @availability_zones_volume ||= safe_list { @volume_service.availability_zones }
+      @availability_zones_volume ||= safe_list { @volume_service.availability_zones.summary }
     end
 
     def availability_zones
-      @availability_zones ||= availability_zones_compute + availability_zones_volume
+      @availability_zones ||= (availability_zones_compute + availability_zones_volume).uniq(&:zoneName)
     end
 
     def volumes
@@ -210,14 +210,13 @@ module ManageIQ::Providers
           :ems_ref => uid
         }
       else
-        uid = name = az.zoneName
+        name = uid = az.zoneName
         new_result = {
           :type    => "ManageIQ::Providers::Openstack::CloudManager::AvailabilityZone",
           :ems_ref => uid,
           :name    => name
         }
       end
-
       return uid, new_result
     end
 
@@ -418,7 +417,9 @@ module ManageIQ::Providers
         :host                => parent_host,
         :ems_cluster         => parent_cluster,
         :flavor              => flavor,
-        :availability_zone   => @data_index.fetch_path(:availability_zones, server.availability_zone.blank? ? "null_az" : server.availability_zone),
+        :availability_zone   => @data_index.fetch_path(
+          :availability_zones, server.availability_zone.blank? ? "null_az" : server.availability_zone
+        ),
         :key_pairs           => [@data_index.fetch_path(:key_pairs, server.key_name)].compact,
         # TODO(lsmola) moving this under has_many :security_groups, :through => :network_port will require changing
         # saving code and refresh of all providers

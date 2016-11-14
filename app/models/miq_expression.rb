@@ -82,6 +82,8 @@ class MiqExpression
     containers
     container_groups
     container_projects
+    container_images
+    container_nodes
     customization_scripts
     customization_script_media
     customization_script_ptables
@@ -230,6 +232,7 @@ class MiqExpression
     'ManageIQ::Providers::CloudManager'           => 'ext_management_system',
     'EmsCluster'                                  => 'ems_cluster',
     'ManageIQ::Providers::InfraManager'           => 'ext_management_system',
+    'ManageIQ::Providers::ContainerManager'       => 'ext_management_system',
     'ExtManagementSystem'                         => 'ext_management_system',
     'Host'                                        => 'host',
     'MiqGroup'                                    => 'miq_group',
@@ -244,6 +247,7 @@ class MiqExpression
     'VmOrTemplate'                                => 'vm',
     'ManageIQ::Providers::CloudManager::Vm'       => 'vm',
     'ManageIQ::Providers::InfraManager::Vm'       => 'vm',
+    'ContainerProject'                            => 'container_project'
   }
   EXCLUDE_FROM_RELATS = {
     "ManageIQ::Providers::CloudManager" => ["hosts", "ems_clusters", "resource_pools"]
@@ -473,7 +477,23 @@ class MiqExpression
       clause = "!(" + clause + ")" if operator.downcase == "not like"
     when "regular expression matches", "regular expression does not match"
       operands = operands2rubyvalue(operator, exp[operator], context_type)
-      operands[1] = "/" + operands[1].to_s + "/" unless operands[1].starts_with?("/") && (operands[1].ends_with?("/") || operands[1][-2..-2] == "/")
+
+      # If it looks like a regular expression, sanitize from forward
+      # slashes and interpolation
+      #
+      # Regular expressions with a single option are also supported,
+      # e.g. "/abc/i"
+      #
+      # Otherwise sanitize the whole string and add the delimiters
+      #
+      # TODO: support regexes with more than one option
+      if operands[1].starts_with?("/") && operands[1].ends_with?("/")
+        operands[1][1..-2] = sanitize_regular_expression(operands[1][1..-2])
+      elsif operands[1].starts_with?("/") && operands[1][-2] == "/"
+        operands[1][1..-3] = sanitize_regular_expression(operands[1][1..-3])
+      else
+        operands[1] = "/" + sanitize_regular_expression(operands[1].to_s) + "/"
+      end
       clause = operands.join(" #{normalize_ruby_operator(operator)} ")
     when "and", "or"
       clause = "(" + exp[operator].collect { |operand| _to_ruby(operand, context_type, tz) }.join(" #{normalize_ruby_operator(operator)} ") + ")"
@@ -1200,7 +1220,7 @@ class MiqExpression
     elsif ops["field"]
       if ops["field"] == "<count>"
         ret.push("<count>")
-        ret.push(ops["value"])
+        ret.push(quote(ops["value"], "integer"))
       else
         case context_type
         when "hash"
@@ -1223,7 +1243,7 @@ class MiqExpression
     elsif ops["count"]
       ref, count = value2tag(ops["count"])
       ret.push(ref ? "<count ref=#{ref}>#{count}</count>" : "<count>#{count}</count>")
-      ret.push(ops["value"])
+      ret.push(quote(ops["value"], "integer"))
     elsif ops["regkey"]
       ret.push("<registry>#{ops["regkey"].strip} : #{ops["regval"]}</registry>")
       if ["like", "not like", "starts with", "ends with", "includes", "regular expression matches", "regular expression does not match"].include?(operator)
@@ -1294,8 +1314,17 @@ class MiqExpression
     end
   end
 
+  # TODO: update this to use .sanitize_regular_expression for
+  # substitions after Regexp.escape. Substitutions are needed because:
+  #
+  # Regexp.escape("/") # => "/"
   def self.re_escape(s)
     Regexp.escape(s).gsub(/\//, '\/')
+  end
+
+  # Escape any unescaped forward slashes and/or interpolation
+  def self.sanitize_regular_expression(string)
+    string.gsub(%r{\\*/}, "\\/").gsub(/\\*#/, "\\\#")
   end
 
   def self.preprocess_managed_tag(tag)
@@ -1512,9 +1541,11 @@ class MiqExpression
     elsif model.ends_with?("Performance")
       @reporting_available_fields[model.to_s] ||= {}
       @reporting_available_fields[model.to_s][interval.to_s] ||= MiqExpression.model_details(model, :include_model => false, :include_tags => true, :interval => interval)
-    elsif model.to_s.start_with?("Chargeback")
+    elsif Chargeback.db_is_chargeback?(model)
+      cb_model = Chargeback.report_cb_model(model)
       @reporting_available_fields[model.to_s] ||=
-        MiqExpression.model_details(model, :include_model => false, :include_tags => true).select { |c| c.last.ends_with?(*ReportController::Reports::Editor::CHARGEBACK_ALLOWED_FIELD_SUFFIXES) }
+        MiqExpression.model_details(model, :include_model => false, :include_tags => true).select { |c| c.last.ends_with?(*ReportController::Reports::Editor::CHARGEBACK_ALLOWED_FIELD_SUFFIXES) } +
+        MiqExpression.tag_details(cb_model, model, {})
     else
       @reporting_available_fields[model.to_s] ||= MiqExpression.model_details(model, :include_model => false, :include_tags => true)
     end
